@@ -1,0 +1,9 @@
+github.com/koron/go-dproxy v1.2.1 h1:ascYt5K5lww8p2b1qQoZv3n6a9E7bMzoDd8srW4xAME=
+github.com/koron/go-dproxy v1.2.1/go.mod h1:sr1u347AB7iUHOVeVN58CkcQmCqr0SQj86qSbsYblJU=
+github.com/praserx/ipconv v1.2.1 h1:MWGfrF+OZ0pqIuTlNlMgvJDDbohC3h751oN1+Ov3x4k=
+github.com/praserx/ipconv v1.2.1/go.mod h1:DSy+AKre/e3w/npsmUDMio+OR/a2rvmMdI7rerOIgqI=
+github.com/tchap/go-patricia v1.0.1 h1:q5LEI+jYfwV/VWMM4e9TcVd32f1KrOZ29GYDrJtU3z4=
+github.com/tchap/go-patricia v2.3.0+incompatible h1:GkY4dP3cEfEASBPPkWd+AmjYxhmDkqO9/zg7R0lSQRs=
+github.com/tchap/go-patricia v2.3.0+incompatible/go.mod h1:bmLyhP68RS6kStMGxByiQ23RP/odRBOTVjwp2cDyi6I=
+github.com/yosuke-furukawa/json5 v0.1.1 h1:0F9mNwTvOuDNH243hoPqvf+dxa5QsKnZzU20uNsh3ZI=
+github.com/yosuke-furukawa/json5 v0.1.1/go.mod h1:sw49aWDqNdRJ6DYUtIQiaA3xyj2IL9tjeNYmX2ixwcU=
