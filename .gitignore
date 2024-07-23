@@ -1,3 +1,16 @@
+#一般的なファイル
 .vscode
 *.exe
+main
+# 生成ファイルや設定ファイル
+*.p7
+*.rule
+/simulator-settings
+/result
 
+#個人のファイル
+exec.sh
+test-module
+#除外
+!LRUCache.json
+!result/a.json
