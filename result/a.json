@@ -1,0 +1,111 @@
+{
+    "Type": "MultiLayerCacheExclusive[FullAssociativeDstipNbitLRUCache, FullAssociativeDstipNbitLRUCache]",
+    "Parameter": {
+        "Type": "MultiLayerCacheExclusive",
+        "CacheLayers": [
+            {
+                "Type": "FullAssociativeDstipNbitLRUCache",
+                "Size": 64
+            },
+            {
+                "Type": "FullAssociativeDstipNbitLRUCache",
+                "Size": 256
+            }
+        ],
+        "CachePolicies": [
+            "WriteThrough"
+        ]
+    },
+    "Processed": 222305156,
+    "Hit": 189857854,
+    "HitRate": 0.8540416129619594,
+    "StatDetail": {
+        "Refered": [
+            222305156,
+            222304564
+        ],
+        "Replaced": [
+            0,
+            32447037
+        ],
+        "Hit": [
+            592,
+            189857262
+        ],
+        "MatchMap": [
+            32447302,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            45232,
+            69414,
+            536360,
+            945547,
+            835350,
+            1188611,
+            1967580,
+            855338,
+            9840773,
+            3393539,
+            760903,
+            786941,
+            1578092,
+            1495756,
+            1227305,
+            676362,
+            1879182,
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "LongestMatchMap": [
+            8847108,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            6988,
+            36648,
+            451324,
+            582656,
+            663161,
+            1011214,
+            1556788,
+            604208,
+            8144664,
+            3234943,
+            555577,
+            653683,
+            1482801,
+            1207357,
+            972300,
+            556698,
+            1879182,
+            2,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0
+        ],
+        "DepthSum": 75437149,
+        "NotInserted": [
+            32447293,
+            9
+        ]
+    }
+}
