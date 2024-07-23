@@ -81,7 +81,7 @@ func NewNWaySetAssociativeLRUCache(size, way uint) *NWaySetAssociativeLRUCache {
 	for i := uint(0); i < sets_size; i++ {
 		sets[i] = *NewFullAssociativeLRUCache(way)
 	}
-		fp, err := os.Open( "rule.txt" )
+		fp, err := os.Open("rules/wide.rib.20240625.1400.rule")
 		if err != nil{
 			panic(err)
 		}

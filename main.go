@@ -66,7 +66,7 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 	packet.Proto = strings.ToLower(recordProtoStr)
 
 	switch packet.Proto {
-	case "tcp", "udp":
+	case "tcp", "udp","UDP","TCP":
 		srcPort, err := strconv.ParseUint(recordSrcPortStr, 10, 16)
 		if err != nil {
 			return nil, err
@@ -220,8 +220,8 @@ func main() {
 		defer fpCSV.Close() 
 	}
 
-	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 100000000)
-	runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
+	runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 100000000)
+	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 
 	fmt.Printf("%v\n", cacheSim.GetStatString())
 }

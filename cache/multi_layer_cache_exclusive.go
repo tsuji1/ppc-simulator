@@ -2,8 +2,8 @@ package cache
 
 import (
 	"fmt"
-	"test-module/routingtable"
 	"test-module/ipaddress"
+	"test-module/routingtable"
 )
 
 // MultiLayerCacheExclusive は、複数のキャッシュ層を持ち、それぞれのキャッシュ層に独自のキャッシュポリシーを設定できるキャッシュシステムです。
@@ -14,12 +14,12 @@ type MultiLayerCacheExclusive struct {
 	CacheReplacedByLayer []uint
 	CacheHitByLayer      []uint
 
-	CacheRefBits         []uint
-	CacheNotInserted     []uint
-	RoutingTable         routingtable.RoutingTablePatriciaTrie
-	DepthSum             uint64
-	LongestMatchMap      [33]int
-	MatchMap             [33]int
+	CacheRefBits     []uint
+	CacheNotInserted []uint
+	RoutingTable     routingtable.RoutingTablePatriciaTrie
+	DepthSum         uint64
+	LongestMatchMap  [33]int
+	MatchMap         [33]int
 }
 
 // StatString は、キャッシュの統計情報をJSON形式の文字列として返します。
@@ -102,13 +102,15 @@ func (c *MultiLayerCacheExclusive) StatString() string {
 }
 
 // IsCached は、パケットがキャッシュされているかを確認し、必要に応じてキャッシュを更新します。
-// 
+//
 // 引数:
-//   p: 確認するパケット。
-//   update: キャッシュを更新するかどうか。
+//
+//	p: 確認するパケット。
+//	update: キャッシュを更新するかどうか。
 //
 // 戻り値:
-//   パケットがキャッシュされているかどうかを示すブール値と、キャッシュされている層のインデックスへのポインタ。
+//
+//	パケットがキャッシュされているかどうかを示すブール値と、キャッシュされている層のインデックスへのポインタ。
 func (c *MultiLayerCacheExclusive) IsCached(p *Packet, update bool) (bool, *int) {
 	return c.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -116,11 +118,13 @@ func (c *MultiLayerCacheExclusive) IsCached(p *Packet, update bool) (bool, *int)
 // IsCachedWithFiveTuple は、FiveTuple で識別されたパケットがキャッシュされているかを確認し、必要に応じてキャッシュを更新します。
 //
 // 引数:
-//   f: パケットを識別する FiveTuple。
-//   update: キャッシュを更新するかどうか。
+//
+//	f: パケットを識別する FiveTuple。
+//	update: キャッシュを更新するかどうか。
 //
 // 戻り値:
-//   パケットがキャッシュされているかどうかを示すブール値と、キャッシュされている層のインデックスへのポインタ。
+//
+//	パケットがキャッシュされているかどうかを示すブール値と、キャッシュされている層のインデックスへのポインタ。
 func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
 	hit := false
 	var hitLayerIdx *int // ヒットした場合に nil ではない
@@ -176,10 +180,12 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 // CacheFiveTuple は、FiveTuple をキャッシュに挿入し、必要に応じてエントリを置換します。
 //
 // 引数:
-//   f: キャッシュする FiveTuple。
+//
+//	f: キャッシュする FiveTuple。
 //
 // 戻り値:
-//   置換された FiveTuple のスライス。
+//
+//	置換された FiveTuple のスライス。
 func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	fiveTuplesToCache := []*FiveTuple{f}
 	evictedFiveTuples := []*FiveTuple{}
@@ -233,7 +239,8 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 // InvalidateFiveTuple は、キャッシュ内の FiveTuple を無効化します。
 //
 // 引数:
-//   f: 無効化する FiveTuple。
+//
+//	f: 無効化する FiveTuple。
 func (c *MultiLayerCacheExclusive) InvalidateFiveTuple(f *FiveTuple) {
 	panic("not implemented")
 }
