@@ -1,0 +1,11 @@
+{
+    "Type": "SimpleCacheSimulator",
+    "Cache": {
+        "Type": "NWaySetAssociativeLRUCache",
+        "Size": 1024,
+        "Way": 4,
+            "Rule": "rules/wide.rib.20240625.1400.rule",
+            "OnceCacheLimit": 64
+    }
+
+}
