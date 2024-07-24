@@ -17,8 +17,8 @@ func (cache *FullAssociativeDstipNbitLRUCache) ReturnMaskedIP(IP uint32) uint32 
 	var temp uint32
 
 	temp = IP
-	temp = temp>>(32-cache.Refbits)
-	temp = temp<<(32-cache.Refbits)
+	temp = temp >> (32 - cache.Refbits)
+	temp = temp << (32 - cache.Refbits)
 	return temp
 }
 
@@ -117,7 +117,7 @@ func (cache *FullAssociativeDstipNbitLRUCache) Description() string {
 }
 
 func (cache *FullAssociativeDstipNbitLRUCache) ParameterString() string {
-	return fmt.Sprintf("{\"Type\": \"%s\", \"Size\": %d}", cache.Description(), cache.Size)
+	return fmt.Sprintf("{\"Type\": \"%s\", \"Size\": %d, \"Refbits\": %d}", cache.Description(), cache.Size, cache.Refbits)
 }
 
 func NewFullAssociativeDstipNbitLRUCache(refbits uint, size uint) *FullAssociativeDstipNbitLRUCache {
