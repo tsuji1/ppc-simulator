@@ -4,19 +4,18 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-
 	"hash/crc32"
-	"test-module/routingtable"
-	"test-module/ipaddress"
 	"os"
+	"test-module/ipaddress"
+	"test-module/routingtable"
 )
 
 type NWaySetAssociativeLRUCache struct {
-	Sets []FullAssociativeLRUCache // len(Sets) = Size / Way, each size == Way
-	Way  uint
-	Size uint
-	DepthSum             uint64
-	RoutingTable         routingtable.RoutingTablePatriciaTrie
+	Sets         []FullAssociativeLRUCache // len(Sets) = Size / Way, each size == Way
+	Way          uint
+	Size         uint
+	DepthSum     uint64
+	RoutingTable routingtable.RoutingTablePatriciaTrie
 }
 
 func fiveTupleToBigEndianByteArray(f *FiveTuple) []byte {
@@ -36,7 +35,11 @@ func (cache *NWaySetAssociativeLRUCache) IsCached(p *Packet, update bool) (bool,
 func (cache *NWaySetAssociativeLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
 	crc := crc32.ChecksumIEEE(fiveTupleToBigEndianByteArray(f))
-	return uint(crc) % maxSetIdx
+	idx := uint(crc) % maxSetIdx
+
+	// idx := (f.SrcPort + f.DstPort ) % maxSetIdx;
+
+	return uint(idx)
 }
 
 func (cache *NWaySetAssociativeLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
@@ -47,7 +50,7 @@ func (cache *NWaySetAssociativeLRUCache) IsCachedWithFiveTuple(f *FiveTuple, upd
 func (cache *NWaySetAssociativeLRUCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	setIdx := cache.setIdxFromFiveTuple(f)
 
-	_ , prefix_item := cache.RoutingTable.SearchLongestIP(ipaddress.NewIPaddress(f.DstIP), 32)
+	_, prefix_item := cache.RoutingTable.SearchLongestIP(ipaddress.NewIPaddress(f.DstIP), 32)
 	cache.DepthSum += prefix_item.(routingtable.Data).Depth
 
 	return cache.Sets[setIdx].CacheFiveTuple(f)
@@ -81,19 +84,19 @@ func NewNWaySetAssociativeLRUCache(size, way uint) *NWaySetAssociativeLRUCache {
 	for i := uint(0); i < sets_size; i++ {
 		sets[i] = *NewFullAssociativeLRUCache(way)
 	}
-		fp, err := os.Open("rules/wide.rib.20240625.1400.rule")
-		if err != nil{
-			panic(err)
-		}
-		defer fp.Close()
+	fp, err := os.Open("rules/wide.rib.20240625.1400.rule")
+	if err != nil {
+		panic(err)
+	}
+	defer fp.Close()
 
-		routingtable := routingtable.NewRoutingTablePatriciaTrie()
-		routingtable.ReadRule(fp)
-		
+	routingtable := routingtable.NewRoutingTablePatriciaTrie()
+	routingtable.ReadRule(fp)
+
 	return &NWaySetAssociativeLRUCache{
-		Sets: sets,
-		Way:  way,
-		Size: size,
-		RoutingTable:         *routingtable,
+		Sets:         sets,
+		Way:          way,
+		Size:         size,
+		RoutingTable: *routingtable,
 	}
 }

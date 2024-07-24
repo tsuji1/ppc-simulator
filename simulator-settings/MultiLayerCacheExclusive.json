@@ -1,24 +1,24 @@
 {
 	"Type": "SimpleCacheSimulator",
 	"Cache": {
-	  "Type": "MultiLayerCacheExclusive",
-	  "CacheLayers": [
-		{
-		  "Type": "FullAssociativeDstipNbitLRUCache",
-		  "Size": 64,
-		  "Refbits": 32
-		},
-		{
-		  "Type": "FullAssociativeDstipNbitLRUCache",
-		  "Size": 256,
-		  "Way": 4,
-		  "Refbits": 16
-		}
-	  ],
-	  "CachePolicies": [
-		"WriteThrough"
-	  ],
-	  "Rule": "rules/wide.rib.20240625.1400.rule",
-	  "OnceCacheLimit": 64
+		"Type": "MultiLayerCacheExclusive",
+		"CacheLayers": [
+			{
+				"Type": "FullAssociativeDstipNbitLRUCache",
+				"Size": 64,
+				"Refbits": 32
+			},
+			{
+				"Type": "FullAssociativeDstipNbitLRUCache",
+				"Size": 256,
+				"Way": 4,
+				"Refbits": 16
+			}
+		],
+		"CachePolicies": [
+			"WriteThrough"
+		],
+		"Rule": "rules/wide.rib.20240625.1400.rule",
+		"OnceCacheLimit": 64
 	}
-  }
+}

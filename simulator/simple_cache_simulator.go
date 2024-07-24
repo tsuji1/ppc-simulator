@@ -194,6 +194,7 @@ func buildCache(p dproxy.Proxy) (cache.Cache, error) {
 		cachePoliciesLen := cachePoliciesPS.Len()
 
 		// CachePoliciesの数はCacheLayersの数-1でなければならない
+		// CachePoliciesはCacheLayersの間のポリシーを表す
 		if cachePoliciesLen != (cacheLayersLen - 1) {
 			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
 		}
