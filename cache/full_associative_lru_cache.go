@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// FullAssociativeLRUCache は完全連想LRUキャッシュを表します。
 type FullAssociativeLRUCache struct {
 	Entries map[FiveTuple]*list.Element
 	Size    uint
@@ -17,10 +18,12 @@ type fullAssociativeLRUCacheEntry struct {
 	FiveTuple FiveTuple
 }
 
+// StatString はキャッシュの統計情報を文字列で返します。
 func (cache *FullAssociativeLRUCache) StatString() string {
 	return ""
 }
 
+// AssertImmutableCondition はキャッシュの不変条件をチェックします。
 func (cache *FullAssociativeLRUCache) AssertImmutableCondition() {
 	if int(cache.Size) < len(cache.Entries) {
 		panic(fmt.Sprintln("len(cache.Entries):", len(cache.Entries), ", expected: less than or equal to", cache.Size))
@@ -31,10 +34,12 @@ func (cache *FullAssociativeLRUCache) AssertImmutableCondition() {
 	}
 }
 
+// IsCached はパケットがキャッシュにあるかをチェックし、オプションでLRUリスト内の位置を更新します。
 func (cache *FullAssociativeLRUCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
 
+// IsCachedWithFiveTuple はFiveTupleがキャッシュにあるかをチェックし、オプションでLRUリスト内の位置を更新します。
 func (cache *FullAssociativeLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
 	hitElem, hit := cache.Entries[*f]
 
@@ -43,7 +48,7 @@ func (cache *FullAssociativeLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update
 	if hit && update {
 		cache.evictList.MoveToFront(hitElem)
 
-		// update refered count
+		// 参照カウントを更新
 		hitEntry := hitElem.Value.(fullAssociativeLRUCacheEntry)
 		hitElem.Value = fullAssociativeLRUCacheEntry{
 			Refered:   hitEntry.Refered + 1,
@@ -56,6 +61,7 @@ func (cache *FullAssociativeLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update
 	return hit, nil
 }
 
+// CacheFiveTuple はFiveTupleをキャッシュに追加し、必要に応じて最も最近使用されていないエントリを削除します。
 func (cache *FullAssociativeLRUCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	cache.AssertImmutableCondition()
 
@@ -88,6 +94,7 @@ func (cache *FullAssociativeLRUCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple 
 	return evictedFiveTuples
 }
 
+// InvalidateFiveTuple はキャッシュからFiveTupleを削除します。
 func (cache *FullAssociativeLRUCache) InvalidateFiveTuple(f *FiveTuple) {
 	hitElem, hit := cache.Entries[*f]
 
@@ -103,18 +110,22 @@ func (cache *FullAssociativeLRUCache) InvalidateFiveTuple(f *FiveTuple) {
 	cache.AssertImmutableCondition()
 }
 
+// Clear はキャッシュからすべてのエントリを削除します。
 func (cache *FullAssociativeLRUCache) Clear() {
-	panic("Not implemented")
+	panic("未実装")
 }
 
+// Description はキャッシュの文字列表現を返します。
 func (cache *FullAssociativeLRUCache) Description() string {
 	return "FullAssociativeLRUCache"
 }
 
+// ParameterString はキャッシュのパラメータを文字列で返します。
 func (cache *FullAssociativeLRUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Size\": %d}", cache.Description(), cache.Size)
 }
 
+// NewFullAssociativeLRUCache は指定されたサイズの新しいFullAssociativeLRUCacheを作成します。
 func NewFullAssociativeLRUCache(size uint) *FullAssociativeLRUCache {
 	evictList := list.New()
 
