@@ -267,6 +267,7 @@ func buildCache(p dproxy.Proxy) (cache.Cache, error) {
 			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
 		}
 
+		// CacheLayersの設定を取得して、キャッシュを構築
 		cacheLayers := make([]cache.Cache, cacheLayersLen)
 		for i := 0; i < cacheLayersLen; i++ {
 			cacheLayer, err := buildCache(cacheLayersPS.A(i))
@@ -278,6 +279,7 @@ func buildCache(p dproxy.Proxy) (cache.Cache, error) {
 			cacheRefbits[i] = uint(refbit)
 		}
 
+		//ポリシーを構築して 
 		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
 		for i := 0; i < cachePoliciesLen; i++ {
 			cachePolicyStr, err := cachePoliciesPS.A(i).String()
