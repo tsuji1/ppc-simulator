@@ -6,19 +6,20 @@ import json
 
 # JSONファイルのパス
 src_file_path = '../simulator-settings/MultiLayerCacheExclusive.json'
-
+first = 4
+last = 32
 # JSONファイルを読み込む
 with open(src_file_path, 'r') as file:
     data:dict = json.load(file)
 
 result_data = {}
-dst_file_path = '../result/10-24bits_exclusive.json'
+dst_file_path = f'../result/{first}-{last}bits_exclusive.json'
 with open(dst_file_path, 'w') as file:
     json.dump({}, file, indent=4)
 
 data["Cache"]["Rule"] = "../rules/wide.rib.20240625.1400.rule"  
 # Refbitsを変更する
-for refbits in range(10, 25):
+for refbits in range(first, last+1):
     tmp_file_path = '../simulator-settings/tmp.json'
     
     for layer in data["Cache"]["CacheLayers"]:
