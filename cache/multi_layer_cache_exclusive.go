@@ -125,6 +125,11 @@ func (c *MultiLayerCacheExclusive) IsCached(p *Packet, update bool) (bool, *int)
 // 戻り値:
 //
 //	パケットがキャッシュされているかどうかを示すブール値と、キャッシュされている層のインデックスへのポインタ。
+
+func IsLeafExecuted() bool {
+	fmt.Println("IsLeafExecuted")
+	return true
+}
 func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
 	hit := false
 	var hitLayerIdx *int // ヒットした場合に nil ではない
@@ -169,7 +174,6 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 				// 下位層を無効化
 				c.CacheLayers[*hitLayerIdx].InvalidateFiveTuple(f)
 			}
-
 			c.CacheFiveTuple(f)
 		}
 	}
@@ -187,40 +191,61 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 //
 //	置換された FiveTuple のスライス。
 func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
+	// キャッシュする FiveTuple を格納するスライス
 	fiveTuplesToCache := []*FiveTuple{f}
+	// 置換された FiveTuple を格納するスライス
 	evictedFiveTuples := []*FiveTuple{}
+	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
 	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
 
+	// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
+	// prefix には二進数のプレフィックス(ex."1011011")が格納される
+	// prefix_item にはNext hopとDepthが格納される
 	prefix, prefix_item := c.RoutingTable.SearchIP(fivetupleDstIP, 32)
+	// 最長一致するプレフィックスのインデックスを取得
 	prefix_size := len(prefix) - 1
+
+	// マッチしたプレフィックスの長さに基づいて MatchMap を更新
 	for _, p := range prefix {
 		c.MatchMap[len(p)] += 1
 	}
+	// 最長一致するプレフィックスのカウントを更新
 	c.LongestMatchMap[len(prefix[prefix_size])] += 1
 
+	// プレフィックスの深さの合計を更新
 	c.DepthSum += prefix_item[prefix_size].(routingtable.Data).Depth
 
-	if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])) {
-		c.CacheNotInserted[0] += 1
+	// キャッシュ挿入の条件をチェック
+	if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) &&  c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])) {
+		// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
+		c.CacheNotInserted[0] += 1 //32ビットキャッシュへの挿入なし
 	} else {
-		c.CacheNotInserted[1] += 1
+		// 条件を満たす場合、キャッシュ未挿入の別のカウントを更新し、キャッシュに挿入
+		c.CacheNotInserted[1] += 1 // nキャッシュへの挿入なし
 		evictedFiveTuples = c.CacheLayers[0].CacheFiveTuple(f)
+		// 置換された FiveTuple の数をカウント
 		c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples))
 		return evictedFiveTuples
 	}
-	for i, cache := range c.CacheLayers {
-		fiveTuplesToCacheNextLayer := []*FiveTuple{}
-		// fmt.Printf("%d %d\n", i , len(c.CacheLayers)-1)
-		if i != 0 {
 
+	// 複数レイヤーのキャッシュ処理
+	for i, cache := range c.CacheLayers {
+		// 次のレイヤーにキャッシュする FiveTuple を格納するスライス
+		fiveTuplesToCacheNextLayer := []*FiveTuple{}
+
+		// 最初のレイヤーは既に処理済みのためスキップ
+		if i != 0 {
+			// 現在のレイヤーにキャッシュする
 			for _, f := range fiveTuplesToCache {
 				evictedFiveTuples = cache.CacheFiveTuple(f)
 				c.CacheReplacedByLayer[i] += uint(len(evictedFiveTuples))
 
+				// 最後のレイヤーであれば次のレイヤーに渡さない
 				if i == (len(c.CacheLayers) - 1) {
 					continue
 				}
 
+				// キャッシュポリシーに応じて次のレイヤーに渡す FiveTuple を決定
 				switch c.CachePolicies[i] {
 				case WriteBackExclusive, WriteBackInclusive:
 					fiveTuplesToCacheNextLayer = append(fiveTuplesToCacheNextLayer, evictedFiveTuples...)
@@ -229,6 +254,7 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 				}
 			}
 
+			// 次のレイヤーに渡す FiveTuple を更新
 			fiveTuplesToCache = fiveTuplesToCacheNextLayer
 		}
 	}

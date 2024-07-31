@@ -12,7 +12,7 @@
 				"Type": "FullAssociativeDstipNbitLRUCache",
 				"Size": 256,
 				"Way": 4,
-				"Refbits": 16
+				"Refbits": 3
 			}
 		],
 		"CachePolicies": [

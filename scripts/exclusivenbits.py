@@ -6,7 +6,7 @@ import json
 
 # JSONファイルのパス
 src_file_path = '../simulator-settings/MultiLayerCacheExclusive.json'
-first = 4
+first = 0
 last = 32
 # JSONファイルを読み込む
 with open(src_file_path, 'r') as file:

@@ -1,13 +1,16 @@
 package routingtable
 
 import (
-	. "github.com/tchap/go-patricia/patricia"
+	"bufio"
 	"fmt"
+	"math/rand"
+	"os"
 	"strconv"
 	"strings"
-	"os"
-	"bufio"
 	"test-module/ipaddress"
+	"time"
+
+	. "github.com/tchap/go-patricia/patricia"
 )
 
 // RoutingTablePatriciaTrie は、ルーティングテーブルのためのPatricia Trieを保持する構造体です。
@@ -114,35 +117,47 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInChildrenRule(ip ipaddres
 
 // IsLeaf は、指定されたIPアドレスと参照ビットに一致するルールがリーフノードかどうかをチェックします。
 func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, refbits int) bool {
+	// 指定されたIPアドレスと参照ビットに一致する最長一致を検索します
 	hitted, _ := routingtable.SearchLongestIP(ip, refbits)
+
+	// 子ノードの数をカウントするための変数を初期化します
 	children := -1
+
+	// サブツリーを訪問する際に呼び出される関数
 	countchild := func(prefix Prefix, item Item) error {
 		children += 1
 		return nil
 	}
 
+	// 検索結果の長さが参照ビットと一致する場合
 	if len(hitted) == refbits {
+		// サブツリーを訪問し、子ノードの数をカウントします
 		routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(hitted), countchild)
 	} else {
+		// 一時的なデータを作成し、ツリーに挿入します
 		var temp Data
 		routingtable.RoutingTablePatriciaTrie.Insert(Prefix(ip.MaskedBitString(refbits)), temp)
+		// サブツリーを訪問し、子ノードの数をカウントします
 		routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(ip.MaskedBitString(refbits)), countchild)
+		// 一時的に挿入したデータを削除します
 		routingtable.RoutingTablePatriciaTrie.Delete(Prefix(ip.MaskedBitString(refbits)))
 	}
 
+	// 子ノードの数に応じてリーフノードかどうかを判定します
 	if children == 0 {
 		return true
 	}
 	if 1 <= children {
 		return false
 	}
+	// 想定外の状況の場合にパニックを発生させます
 	panic("Isleaf")
 }
 
 // IsShorter は、指定されたIPアドレスと参照ビットに一致するルールが指定された長さより短いかどうかをチェックします。
 func (routingtable *RoutingTablePatriciaTrie) IsShorter(ip ipaddress.IPaddress, refbits int, length int) bool {
 	hitted, _ := routingtable.SearchLongestIP(ip, refbits)
-	if len(hitted) <= length {
+	if len(hitted) != 0 && len(hitted) <= length {
 		return true
 	} else {
 		return false
@@ -151,8 +166,8 @@ func (routingtable *RoutingTablePatriciaTrie) IsShorter(ip ipaddress.IPaddress, 
 
 // SearchIP は、指定されたIPアドレスと参照ビットに一致するすべてのプレフィックスとアイテムを検索します。
 func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, refbits int) ([]string, []Item) {
-	var hitted []string
-	var items []Item
+	var hitted []string // ヒットしたプレフィックスを格納 "101110"など
+	var items []Item    // nexthop とdepth を格納
 	storeans := func(prefix Prefix, item Item) error {
 		hitted = append(hitted, string(prefix))
 		items = append(items, item)
@@ -165,7 +180,7 @@ func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, r
 
 // SearchLongestIP は、指定されたIPアドレスと参照ビットに一致する最も長いプレフィックスとアイテムを検索します。
 func (routingtable *RoutingTablePatriciaTrie) SearchLongestIP(ip ipaddress.IPaddress, refbits int) (string, Item) {
-	hitted, hoge := routingtable.SearchIP(ip, refbits)
+	hitted, hoge := routingtable.SearchIP(ip, refbits) //hogeはdatas
 	return hitted[len(hitted)-1], hoge[len(hoge)-1]
 }
 
@@ -210,8 +225,7 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 
 // NewRoutingTablePatriciaTrie は、Patricia Trieを用いた新しいルーティングテーブルを初期化します。
 func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
-	trie := NewTrie()
-	trie = NewTrie(MaxPrefixPerNode(33), MaxChildrenPerSparseNode(257))
+	trie := NewTrie(MaxPrefixPerNode(33), MaxChildrenPerSparseNode(257))
 
 	return &RoutingTablePatriciaTrie{
 		RoutingTablePatriciaTrie: trie,
@@ -221,6 +235,24 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 // p は、指定されたデータを出力するデバッグ用関数です。
 func p(hoge interface{}) {
 	fmt.Println(hoge)
+}
+
+func GetRandomDstIP() ipaddress.IPaddress {
+
+	// 乱数生成
+	strIP := ""
+	for i := 0; i < 4; i++ {
+		rand.NewSource(time.Now().UnixNano())
+		randomint := rand.Intn(254) // 0-253の乱数生成
+		randomint = randomint + 1
+		strIP += strconv.Itoa(randomint)
+		if i != 3 {
+			strIP += "."
+		}
+	}
+	ip := ipaddress.NewIPaddress(strIP)
+
+	return ip
 }
 
 /*func (routingtable *RoutingTablePatriciaTrie) CalTreeDepth() {

@@ -10,10 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yosuke-furukawa/json5/encoding/json5"
-
 	"test-module/cache"
 	"test-module/simulator"
+	"time"
+
+	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
 
 // parseCSVRecord は、CSVレコードを解析して cache.Packet オブジェクトを生成します。
@@ -169,9 +170,12 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 		if packet.FiveTuple() == nil {
 			continue
 		}
-
+		start := time.Now()
 		sim.Process(packet)
+		elapsed := time.Since(start)
+
 		if sim.GetStat().Processed%printInterval == 0 {
+			fmt.Printf("sim process time: %s\n", elapsed)
 			fmt.Printf("%v\n", sim.GetStatString())
 		}
 	}

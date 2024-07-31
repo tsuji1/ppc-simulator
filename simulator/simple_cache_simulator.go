@@ -3,9 +3,10 @@ package simulator
 import (
 	"fmt"
 
-	"github.com/koron/go-dproxy"
-	"test-module/cache"
 	"os"
+	"test-module/cache"
+
+	"github.com/koron/go-dproxy"
 
 	"test-module/routingtable"
 )
@@ -28,7 +29,13 @@ func (sim *SimpleCacheSimulator) Process(p *cache.Packet) bool {
 		sim.Stat.Hit += 1
 	} else {
 		// キャッシュミスの場合、新しいエントリをキャッシュに追加
-		sim.Cache.CacheFiveTuple(p.FiveTuple())
+		// start := time.Now()
+		sim.Cache.CacheFiveTuple(p.FiveTuple()) //平均20nsでキャッシュに追加される。
+		// elapsed := time.Since(start)
+		// if sim.Stat.Processed%1000000 == 0 {
+		// 	fmt.Printf("process %d\n", sim.Stat.Processed)
+		// 	fmt.Printf("cache five tuple execution time: %s\n", elapsed)
+		// }
 	}
 
 	sim.Stat.Processed += 1
@@ -279,7 +286,7 @@ func buildCache(p dproxy.Proxy) (cache.Cache, error) {
 			cacheRefbits[i] = uint(refbit)
 		}
 
-		//ポリシーを構築して 
+		//ポリシーを構築して
 		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
 		for i := 0; i < cachePoliciesLen; i++ {
 			cachePolicyStr, err := cachePoliciesPS.A(i).String()
