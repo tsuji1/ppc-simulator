@@ -124,45 +124,70 @@ func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, ref
 	// 	return false
 	// }
 	// 子ノードの数をカウントするための変数を初期化します
-	children := -1
+	// children := -1
+	hasChildren := false
 
 	// サブツリーを訪問する際に呼び出される関数
-	countchild := func(prefix Prefix, item Item) error {
-		children += 1
-		return nil
-	}
+	// countchild := func(prefix Prefix, item Item) error {
+	// 	children += 1
+	// 	// println("counted : ", string(prefix))
+	// 	return nil
+	// }
 
 	// 検索結果の長さが参照ビットと一致する場合
 	if len(hitted) == refbits {
 		// サブツリーを訪問し、子ノードの数をカウントします
-		routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(hitted), countchild)
+		// println("hitted : ", hitted)
+		hitted_0 := hitted + "0"
+		hitted_1 := hitted + "1"
+		// routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(hitted), countchild)
+		hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(hitted_0))
+		hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(hitted_1)) || hasChildren
 	} else {
 		// 一時的なデータを作成し、ツリーに挿入します
+
 		test_node_ip := ip.MaskedBitString(refbits)
+		test_node_ip_0 := test_node_ip + "0" // MatchSubtreeは自身もマッチしてしまうので、子ノードを探すために+1したIPを作成
+		test_node_ip_1 := test_node_ip + "1"
 		// test_node_ip_str := ipaddress.BitStringToIP(test_node_ip) // for debug
 		// fmt.Println("test_node_ip:", test_node_ip_str)
-
+		// println("test_node_ip:", test_node_ip)
 		var temp Data
 		if !routingtable.RoutingTablePatriciaTrie.Match(Prefix(test_node_ip)) {
 			routingtable.RoutingTablePatriciaTrie.Insert(Prefix(test_node_ip), temp)
 			// サブツリーを訪問し、子ノードの数をカウントします
-			routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(test_node_ip), countchild)
+			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_0))
+			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_1)) || hasChildren
+			// routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(test_node_ip), countchild)
+
 			// 一時的に挿入したデータを削除します
 			routingtable.RoutingTablePatriciaTrie.Delete(Prefix(test_node_ip))
 		} else {
-			routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(test_node_ip), countchild)
+			// routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(test_node_ip), countchild)
+			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_0))
+			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_1)) || hasChildren
 		}
 	}
 
 	// 子ノードの数に応じてリーフノードかどうかを判定します
-	if children == 0 {
-		return true
-	}
-	if 1 <= children {
-		return false
-	}
+	// if children == 0 {
+	// 	// println("children == 0", !hasChildren)
+	// 	if hasChildren {
+	// 		panic("Isleaf")
+	// 	}
+	// 	return true
+	// }
+	// if 1 <= children {
+	// 	if !hasChildren {
+	// 		panic("Isleaf")
+	// 	}
+	// 	// println("1 <= ", children, !hasChildren)
+	// 	return false
+	// }
+
+	return !hasChildren
 	// 想定外の状況の場合にパニックを発生させます
-	panic("Isleaf")
+	// panic("Isleaf")
 }
 
 // IsShorter は、指定されたIPアドレスと参照ビットに一致するルールが指定された長さより短いかどうかをチェックします。
