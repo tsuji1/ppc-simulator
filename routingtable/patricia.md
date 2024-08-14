@@ -1,5 +1,7 @@
 以下は、提供されたGo言語のTrie構造体とそのメソッドに関するドキュメントの日本語訳です：
+https://pkg.go.dev/github.com/tchap/go-patricia@v2.3.0+incompatible/patricia
 
+https://github.com/tchap/go-patricia
 ---
 
 ### 関数

@@ -1,39 +1,10 @@
 import json
 import matplotlib.pyplot as plt
 from typing import List, Dict
+from MultiLayerCacheExclusive import MultiLayerExclusiveCache
 
-class MultiLayerCache:
-    def __init__(self, data: Dict):
-        self.Type = data["Type"]
-        self.Parameter = data["Parameter"]
-        self.Processed = data["Processed"]
-        self.Hit = data["Hit"]
-        self.HitRate = data["HitRate"]
-        self.StatDetail = data["StatDetail"]
         
-    def display(self):
-        print("Type:", self.Type)
-        print("Processed:", self.Processed)
-        print("Hit:", self.Hit)
-        print("HitRate:", self.HitRate)
-
-        print("\nParameter Details:")
-        for layer in self.Parameter["CacheLayers"]:
-            print(f"Cache Layer Type: {layer['Type']}, Size: {layer['Size']}, Refbits: {layer['Refbits']}")
-
-        print("\nCache Policies:", self.Parameter["CachePolicies"])
-
-        print("\nStatDetail:")
-        stat_detail = self.StatDetail
-        print("Refered:", stat_detail["Refered"])
-        print("Replaced:", stat_detail["Replaced"])
-        print("Hit:", stat_detail["Hit"])
-        print("MatchMap:", stat_detail["MatchMap"])
-        print("LongestMatchMap:", stat_detail["LongestMatchMap"])
-        print("DepthSum:", stat_detail["DepthSum"])
-        print("NotInserted:", stat_detail["NotInserted"])
-        
-def plot_graph(dst_path,refbits: List[int], hit_rates: List[float]):
+def plot_graph_hit_rates(dst_path,refbits: List[int], hit_rates: List[float]):
     # グラフの作成
     plt.figure(figsize=(10, 6))
     plt.plot(refbits, hit_rates, marker='o')
@@ -48,6 +19,37 @@ def plot_graph(dst_path,refbits: List[int], hit_rates: List[float]):
 
     # グラフの保存
     plt.savefig(dst_path)
+def plot_graph_all(dst_path,refbits: List[int], data):
+        
+    # グラフの作成
+    fig, axs = plt.subplots(3, 2, figsize=(15, 15))
+
+    # ヒット率
+    axs[0, 0].bar(['Hit Rate'], [data['HitRate']])
+    axs[0, 0].set_title('Hit Rate')
+
+    # 参照された回数
+    axs[0, 1].bar(['Layer 1', 'Layer 2'], data['StatDetail']['Refered'])
+    axs[0, 1].set_title('Refered')
+
+    # 置き換えられた回数
+    axs[1, 0].bar(['Layer 1', 'Layer 2'], data['StatDetail']['Replaced'])
+    axs[1, 0].set_title('Replaced')
+
+    # ヒット回数
+    axs[1, 1].bar(['Layer 1', 'Layer 2'], data['StatDetail']['Hit'])
+    axs[1, 1].set_title('Hit')
+
+    # マッチマップ
+    axs[2, 0].plot(data['StatDetail']['MatchMap'])
+    axs[2, 0].set_title('Match Map')
+
+    # 最長マッチマップ
+    axs[2, 1].plot(data['StatDetail']['LongestMatchMap'])
+    axs[2, 1].set_title('Longest Match Map')
+    plt.tight_layout()
+    plt.savefig(dst_path)
+    
 filename = '10-24bits_exclusive.json'
 
 src_file_path = f'../result/{filename}'
@@ -55,17 +57,19 @@ src_file_path = f'../result/{filename}'
 with open(src_file_path, 'r') as file:
     data:dict = json.load(file)
 
-refbits_list= []
-HitRate_list = []
-for key, value in data.items():
-    refbits = key
-    cache = MultiLayerCache(value)
-    print("Refbits:", key, "HitRate:",cache.HitRate)
-    refbits_list.append(refbits)
-    HitRate_list.append(cache.HitRate)
-else:
-    dst_path = f'../result/{filename[:-5]}.png'
-    plot_graph(dst_path, refbits_list, HitRate_list)
+
+plot_graph_all('../result/test',16,data['16'])
+# refbits_list= []
+# HitRate_list = []
+# for key, value in data.items():
+#     refbits = key
+#     cache = MultiLayerCache(value)
+#     print("Refbits:", key, "HitRate:",cache.HitRate)
+#     refbits_list.append(refbits)
+#     HitRate_list.append(cache.HitRate)
+# else:
+#     dst_path = f'../result/{filename[:-5]}.png'
+#     plot_graph(dst_path, refbits_list, HitRate_list)
     
     
 

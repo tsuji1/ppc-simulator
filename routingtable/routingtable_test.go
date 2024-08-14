@@ -1,6 +1,7 @@
 package routingtable
 
 import (
+	"fmt"
 	"os"
 	"testing"
 )
@@ -26,7 +27,7 @@ func BenchmarkSearchLongestIP(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 
 		dstIP := GetRandomDstIP()
-		routingTable.SearchLongestIP(dstIP, 3)
+		routingTable.SearchLongestIP(dstIP, 16)
 
 	}
 }
@@ -36,10 +37,9 @@ func BenchmarkIsShorter(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 
 		dstIP := GetRandomDstIP()
-		routingTable.IsShorter(dstIP, 32, 3)
+		routingTable.IsShorter(dstIP, 32, 16)
 	}
 }
-
 
 func BenchmarkIsLeaf(b *testing.B) {
 	// テスト実施
@@ -47,8 +47,23 @@ func BenchmarkIsLeaf(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 
 		dstIP := GetRandomDstIP()
-		routingTable.IsLeaf(dstIP, 3)
+		routingTable.IsLeaf(dstIP, 16)
 
 	}
 
 }
+
+func TestIsLeaf(t *testing.T) {
+	// テスト実施
+	fmt.Println("Test IsLeaf")
+	routingTable := initializeRoutingTable()
+	dstIP := GetRandomDstIP()
+	fmt.Println(routingTable.IsLeaf(dstIP, 3))
+}
+
+// func TestPrintTrie(t *testing.T) {
+// 	// テスト実施
+// 	fmt.Println("Test PrintTrie")
+// 	routingTable := initializeRoutingTable()
+// 	routingTable.PrintTrie()
+// }

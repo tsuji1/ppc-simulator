@@ -4,10 +4,12 @@ import (
 	"encoding/binary"
 	"fmt"
 	"math"
+	"math/rand"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/praserx/ipconv"
 )
@@ -86,8 +88,8 @@ func Reverse(s string) string {
 	return string(runes)
 }
 
-// bitStringToIP関数は、ビット文字列をドット区切りのIPアドレス文字列に変換する。
-func bitStringToIP(a string) string {
+// BitStringToIP関数は、ビット文字列をドット区切りのIPアドレス文字列に変換する。
+func BitStringToIP(a string) string {
 	b := a + "00000000000000000000000000000000"
 	b = b[0:32]
 	c := func(c string) int {
@@ -113,7 +115,7 @@ func NewIPaddress(input interface{}) IPaddress {
 			i, _ := ipconv.IPv4ToInt(net.ParseIP(a))
 			temp = i
 		} else if isBitString(a) {
-			i, _ := ipconv.IPv4ToInt(net.ParseIP(bitStringToIP(a)))
+			i, _ := ipconv.IPv4ToInt(net.ParseIP(BitStringToIP(a)))
 			temp = i
 		} else {
 			panic(fmt.Sprintf("NewIPaddress:%v is not IPaddress string", input))
@@ -126,4 +128,22 @@ func NewIPaddress(input interface{}) IPaddress {
 	return IPaddress{
 		ipaddress: temp,
 	}
+}
+
+func GetRandomIP() IPaddress {
+
+	// 乱数生成
+	strIP := ""
+	for i := 0; i < 4; i++ {
+		rand.NewSource(time.Now().UnixNano())
+		randomint := rand.Intn(254) // 0-253の乱数生成
+		randomint = randomint + 1
+		strIP += strconv.Itoa(randomint)
+		if i != 3 {
+			strIP += "."
+		}
+	}
+	ip := NewIPaddress(strIP)
+
+	return ip
 }

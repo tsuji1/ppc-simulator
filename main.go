@@ -9,7 +9,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-
 	"test-module/cache"
 	"test-module/simulator"
 	"time"
@@ -221,7 +220,7 @@ func main() {
 		defer fpCSV.Close()
 	}
 
-	runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1000000000)
+	runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1000000000000000)
 	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 
 	fmt.Printf("%v\n", cacheSim.GetStatString())
