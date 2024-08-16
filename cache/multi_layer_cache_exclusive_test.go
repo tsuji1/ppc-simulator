@@ -2,8 +2,7 @@ package cache
 
 import (
 	"fmt"
-	"test-module/ipaddress"
-	"test-module/routingtable"
+
 	"testing"
 	"os"
 	"github.com/yosuke-furukawa/json5/encoding/json5"

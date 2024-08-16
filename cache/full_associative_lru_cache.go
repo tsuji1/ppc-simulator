@@ -16,6 +16,7 @@ type FullAssociativeLRUCache struct {
 type fullAssociativeLRUCacheEntry struct {
 	Refered   int
 	FiveTuple FiveTuple
+	NextHop  string
 }
 
 // StatString はキャッシュの統計情報を文字列で返します。

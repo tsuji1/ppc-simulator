@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"test-module/routingtable"
 
 	"hash/crc32"
 )
@@ -13,6 +14,8 @@ type NWaySetAssociativeDstipNbitLRUCache struct {
 	Way  uint
 	Size uint
 	Refbits uint
+	routingTable *routingtable.RoutingTablePatriciaTrie 
+	debugMode bool	
 }
 
 func returnMaskedIP(IP uint32, refbits uint) uint32 {
@@ -69,7 +72,7 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d}", cache.Description(), cache.Way, cache.Size)
 }
 
-func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint) *NWaySetAssociativeDstipNbitLRUCache {
+func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint,routingTable *routingtable.RoutingTablePatriciaTrie,debugMode bool) *NWaySetAssociativeDstipNbitLRUCache {
 	if size%way != 0 {
 		panic("Size must be multiplier of way")
 	}
@@ -78,7 +81,7 @@ func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint) *NWaySetAss
 	sets := make([]FullAssociativeDstipNbitLRUCache, sets_size)
 
 	for i := uint(0); i < sets_size; i++ {
-		sets[i] = *NewFullAssociativeDstipNbitLRUCache(refbits, way)
+		sets[i] = *NewFullAssociativeDstipNbitLRUCache(refbits, way, routingTable, debugMode)
 	}
 
 	return &NWaySetAssociativeDstipNbitLRUCache{
@@ -86,5 +89,7 @@ func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint) *NWaySetAss
 		Way:  way,
 		Size: size,
 		Refbits: refbits,
+		routingTable: routingTable,
+		debugMode: debugMode,
 	}
 }

@@ -22,7 +22,7 @@ type RoutingTablePatriciaTrie struct {
 // Data は、ルーティング情報を深さとネクストホップで保持するデータ構造です。
 type Data struct {
 	Depth   uint64
-	nexthop string
+	NextHop string
 }
 
 // PrintMatchRulesInfo は、指定されたIPアドレスと参照ビットに一致するルールの情報を出力します。
@@ -117,6 +117,7 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInChildrenRule(ip ipaddres
 }
 
 // IsLeaf は、指定されたIPアドレスと参照ビットに一致するルールがリーフノードかどうかをチェックします。
+//リーフノードである場合にtrueを返却します。
 func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, refbits int) bool {
 	// 指定されたIPアドレスと参照ビットに一致する最長一致を検索します
 	hitted, _ := routingtable.SearchLongestIP(ip, refbits)
@@ -185,9 +186,7 @@ func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, ref
 	// 	return false
 	// }
 
-	return !hasChildren
-	// 想定外の状況の場合にパニックを発生させます
-	// panic("Isleaf")
+	return !hasChildren // childrenがないということはリーフノード
 }
 
 // IsShorter は、指定されたIPアドレスと参照ビットに一致するルールが指定された長さより短いかどうかをチェックします。
@@ -209,6 +208,7 @@ func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, r
 		hitted = append(hitted, string(prefix))
 		items = append(items, item)
 		return nil
+
 	}
 
 	routingtable.RoutingTablePatriciaTrie.VisitPrefixes(Prefix(ip.MaskedBitString(refbits)), storeans)
@@ -245,7 +245,7 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 		a := ip.MaskedBitString(i)
 
 		var item Data
-		item.nexthop = slice[2]
+		item.NextHop = slice[2]
 
 		// プレフィックスの長さに基づいて深さを設定
 		if len(a) <= 16 {

@@ -20,6 +20,7 @@ type MultiLayerCacheExclusive struct {
 	DepthSum         uint64
 	LongestMatchMap  [33]int
 	MatchMap         [33]int
+	DebugMode        bool
 }
 
 // StatString は、キャッシュの統計情報をJSON形式の文字列として返します。
@@ -218,12 +219,12 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	// キャッシュ挿入の条件をチェック
 	// 最長一致したIPアドレスのプレフィックスがキャッシュ参照ビット以下である場合 + 葉ノードである場合
 	// /nに挿入
-	if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) &&  c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])) {
+	if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])) {
 		// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
 		c.CacheNotInserted[0] += 1 //32ビットキャッシュへの挿入なし
 	} else {
 		// 条件を満たす場合、キャッシュ未挿入の別のカウントを更新し、キャッシュに挿入
-		c.CacheNotInserted[1] += 1 // nキャッシュへの挿入なし
+		c.CacheNotInserted[1] += 1                             // nキャッシュへの挿入なし
 		evictedFiveTuples = c.CacheLayers[0].CacheFiveTuple(f) // /32キャッシュに挿入
 		// 置換された FiveTuple の数をカウント
 		c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples))
