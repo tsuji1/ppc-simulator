@@ -47,7 +47,7 @@ func BenchmarkIsLeaf(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 
 		dstIP := GetRandomDstIP()
-		routingTable.IsLeaf(dstIP, 16)
+		routingTable.IsLeaf(dstIP, 3)
 
 	}
 

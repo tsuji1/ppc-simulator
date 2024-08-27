@@ -10,16 +10,22 @@
 			},
 			{
 				"Type": "FullAssociativeDstipNbitLRUCache",
-				"Size": 256,
-				"Way": 4,
-				"Refbits": 4
+				"Size": 128,
+				"Refbits": 24
+			},
+			{
+				"Type": "FullAssociativeDstipNbitLRUCache",
+				"Size": 128,
+				"Refbits": 16
 			}
 		],
 		"CachePolicies": [
+			"WriteThrough",
 			"WriteThrough"
 		],
 		"OnceCacheLimit": 64
 	},
 	"Rule": "rules/wide.rib.20240625.1400.unique.rule",
-	"DebugMode": true
+	"DebugMode": false,
+	"Interval": 10000000
 }

@@ -14,13 +14,13 @@ type MultiLayerCacheExclusive struct {
 	CacheReplacedByLayer []uint
 	CacheHitByLayer      []uint
 
-	CacheRefBits     []uint
-	CacheNotInserted []uint
-	RoutingTable     routingtable.RoutingTablePatriciaTrie
-	DepthSum         uint64
-	LongestMatchMap  [33]int
-	MatchMap         [33]int
-	DebugMode        bool
+	CacheRefBits    []uint
+	CacheInserted   []uint
+	RoutingTable    routingtable.RoutingTablePatriciaTrie
+	DepthSum        uint64
+	LongestMatchMap [33]int
+	MatchMap        [33]int
+	DebugMode       bool
 }
 
 // StatString は、キャッシュの統計情報をJSON形式の文字列として返します。
@@ -87,9 +87,9 @@ func (c *MultiLayerCacheExclusive) StatString() string {
 	str += fmt.Sprintf("%v", c.DepthSum)
 
 	str += ", "
-	str += "\"NotInserted\": ["
+	str += "\"Inserted\": ["
 
-	for i, x := range c.CacheNotInserted {
+	for i, x := range c.CacheInserted {
 		if i != 0 {
 			str += ", "
 		}
@@ -219,47 +219,65 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	// キャッシュ挿入の条件をチェック
 	// 最長一致したIPアドレスのプレフィックスがキャッシュ参照ビット以下である場合 + 葉ノードである場合
 	// /nに挿入
-	if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])) {
-		// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
-		c.CacheNotInserted[0] += 1 //32ビットキャッシュへの挿入なし
-	} else {
-		// 条件を満たす場合、キャッシュ未挿入の別のカウントを更新し、キャッシュに挿入
-		c.CacheNotInserted[1] += 1                             // nキャッシュへの挿入なし
-		evictedFiveTuples = c.CacheLayers[0].CacheFiveTuple(f) // /32キャッシュに挿入
-		// 置換された FiveTuple の数をカウント
-		c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples))
-		return evictedFiveTuples
+
+	hitLayer := 0
+	//最終的にはレイヤ0であるのでk=0は確認していない。
+	for k := len(c.CacheLayers) - 1; k > 0; k-- {
+		if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[k])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[k])) {
+			// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
+			hitLayer = k
+
+			break
+		} else {
+			continue
+		}
 	}
+	c.CacheInserted[hitLayer] += 1
+	// 	// 条件を満たす場合、キャッシュ未挿入の別のカウントを更新し、キャッシュに挿入
+	// c.CacheNotInserted[1] += 1                             // nキャッシュへの挿入なし
+	// evictedFiveTuples = c.CacheLayers[0].CacheFiveTuple(f) // /32キャッシュに挿入
+	// // 置換された FiveTuple の数をカウント
+	// c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples))
+	// return evictedFiveTuples
 
 	// 複数レイヤーのキャッシュ処理
 	for i, cache := range c.CacheLayers {
-		// 次のレイヤーにキャッシュする FiveTuple を格納するスライス
-		fiveTuplesToCacheNextLayer := []*FiveTuple{}
-
-		// 最初のレイヤーは既に処理済みのためスキップ
-		if i != 0 {
-			// 現在のレイヤーにキャッシュする
+		if i == hitLayer {
 			for _, f := range fiveTuplesToCache {
 				evictedFiveTuples = cache.CacheFiveTuple(f)
 				c.CacheReplacedByLayer[i] += uint(len(evictedFiveTuples))
-
-				// 最後のレイヤーであれば次のレイヤーに渡さない
-				if i == (len(c.CacheLayers) - 1) {
-					continue
-				}
-
-				// キャッシュポリシーに応じて次のレイヤーに渡す FiveTuple を決定
-				switch c.CachePolicies[i] {
-				case WriteBackExclusive, WriteBackInclusive:
-					fiveTuplesToCacheNextLayer = append(fiveTuplesToCacheNextLayer, evictedFiveTuples...)
-				case WriteThrough:
-					fiveTuplesToCacheNextLayer = fiveTuplesToCache
-				}
 			}
-
-			// 次のレイヤーに渡す FiveTuple を更新
-			fiveTuplesToCache = fiveTuplesToCacheNextLayer
+		} else {
+			continue
 		}
+
+		// // 次のレイヤーにキャッシュする FiveTuple を格納するスライス
+		// fiveTuplesToCacheNextLayer := []*FiveTuple{}
+
+		// // 最初のレイヤーは既に処理済みのためスキップ
+		// if i != 0 {
+		// 	// 現在のレイヤーにキャッシュする
+		// 	for _, f := range fiveTuplesToCache {
+		// 		evictedFiveTuples = cache.CacheFiveTuple(f)
+		// 		c.CacheReplacedByLayer[i] += uint(len(evictedFiveTuples))
+
+		// 		// 最後のレイヤーであれば次のレイヤーに渡さない
+		// 		if i == (len(c.CacheLayers) - 1) {
+		// 			continue
+		// 		}
+
+		// 		// キャッシュポリシーに応じて次のレイヤーに渡す FiveTuple を決定
+		// 		switch c.CachePolicies[i] {
+		// 		case WriteBackExclusive, WriteBackInclusive:
+		// 			fiveTuplesToCacheNextLayer = append(fiveTuplesToCacheNextLayer, evictedFiveTuples...)
+		// 		case WriteThrough:
+		// 			fiveTuplesToCacheNextLayer = fiveTuplesToCache
+		// 		}
+		// 	}
+
+		// 	// 次のレイヤーに渡す FiveTuple を更新
+		// 	fiveTuplesToCache = fiveTuplesToCacheNextLayer
+		// }
 	}
 
 	return evictedFiveTuples

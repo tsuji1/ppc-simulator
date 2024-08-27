@@ -55,6 +55,7 @@ func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInRule(prefix Prefix) []s
 }
 
 // CountIPsInRule は、指定されたプレフィックスに含まれるIPアドレスの数を返します。
+// 例えば、/24のプレフィックスに含まれるIPアドレスの数は256です。
 func (routingtable *RoutingTablePatriciaTrie) CountIPsInRule(prefix Prefix) uint32 {
 	prefix_length := len(prefix)
 	var ans uint32
@@ -71,9 +72,11 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInRule(prefix Prefix) uint
 // ReturnIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるすべてのIPアドレスを返します。
 func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInChildrenRule(ip ipaddress.IPaddress, refbits int) []string {
 	hitted, data := routingtable.SearchLongestIP(ip, refbits)
-	depth := data.(Data).Depth
-	var ans []string
+	depth := data.(Data).Depth // 最長一致ルールの深さ
+	var ans []string 
 	countchild := func(prefix Prefix, item Item) error {
+
+		// 子ノードの深さが最長一致ルールの深さ+1の場合、そのルールに含まれるIPアドレスを返す
 		if item.(Data).Depth == depth+1 {
 			ans = append(ans, routingtable.ReturnIPsInRule(prefix)...)
 		}

@@ -172,89 +172,102 @@ func (c *MultiLayerCacheInclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 
 	return hit, hitLayerIdx
 }
-
 func (c *MultiLayerCacheInclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
-	fiveTuplesToCache := []*FiveTuple{f}
-	evictedFiveTuples := []*FiveTuple{}
-	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
+    // Cache対象のFiveTupleリストを作成し、最初の要素は引数で受け取ったFiveTuple
+    fiveTuplesToCache := []*FiveTuple{f}
+    evictedFiveTuples := []*FiveTuple{} // 退避されたFiveTupleリスト
+    fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP) // FiveTupleのDstIPからIPアドレスを作成
 
-	prefix , prefix_item := c.RoutingTable.SearchIP(fivetupleDstIP, 32)
-	prefix_size := len(prefix) - 1
-	for _,p := range(prefix) {
-		c.MatchMap[len(p)] += 1}
-	c.LongestMatchMap[len(prefix[prefix_size])] += 1
-	
-	c.DepthSum += prefix_item[prefix_size].(routingtable.Data).Depth
-	//c.RoutingTable.PrintMatchRulesInfo(fivetupleDstIP,32)
+    // ルーティングテーブルで目的地IPアドレスに一致するプレフィックスを検索
+    prefix, prefix_item := c.RoutingTable.SearchIP(fivetupleDstIP, 32)
+    prefix_size := len(prefix) - 1 // プレフィックスのサイズを取得
 
-	if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])){
-		//24 only
-		c.CacheNotInserted[0] += 1
-	}else{
-		temp_limit := c.RoutingTable.CountIPsInChildrenRule(fivetupleDstIP, int(c.CacheRefBits[1]))
-		if int(temp_limit) > c.OnceCacheLimit {
-		// 32 only
-			c.CacheNotInserted[1] += 1
-			evictedFiveTuples = c.CacheLayers[0].CacheFiveTuple(f)
-			c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples))
-			if len(evictedFiveTuples)>0 {
-				hitted ,_ := c.CacheLayers[1].IsCachedWithFiveTuple(evictedFiveTuples[0], false)
-				if hitted {
-					//fmt.Printf("by24 %v\n",evictedFiveTuples[0])
-					c.CacheLayers[1].InvalidateFiveTuple(evictedFiveTuples[0])
-					c.Special[1] += 1
-				}
-			}
-			return evictedFiveTuples
-		}
-		//32 + 24
-		//fmt.Printf("to24 %v\n",*f)
-		fiveTuplesToCacheL1 := c.RoutingTable.ReturnIPsInChildrenRule(fivetupleDstIP, int(c.CacheRefBits[1]))
-		c.DoInclusive += 1
-		c.Special[0] += uint(len(fiveTuplesToCacheL1))
-		for _, data := range fiveTuplesToCacheL1 {
-			var ff FiveTuple
-			ff = *f
-			ff.DstIP = ipaddress.NewIPaddress(data).Uint32()
-			evictedFiveTuples =  append(evictedFiveTuples, c.CacheLayers[0].CacheFiveTuple(&ff)...)
-			//fmt.Printf("to32 %v\n",ff)
-		}
-		c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples))
-		for _, data := range evictedFiveTuples {
-			hitted ,_ := c.CacheLayers[1].IsCachedWithFiveTuple(data, false)
-			if hitted {
-				//fmt.Printf("by24 %v\n",data)
-				c.CacheLayers[1].InvalidateFiveTuple(data)
-				c.Special[1] += 1
-			}
-		}
-	}
-	for i, cache := range c.CacheLayers {
-		fiveTuplesToCacheNextLayer := []*FiveTuple{}
-		//fmt.Printf("%d %d\n", i , len(c.CacheLayers)-1)
-		if i!=0{
+    // 一致したプレフィックスのサイズごとにカウントをインクリメント
+    for _, p := range prefix {
+        c.MatchMap[len(p)] += 1
+    }
+    c.LongestMatchMap[len(prefix[prefix_size])] += 1 // 最長一致したプレフィックスをカウント
 
-		for _, f := range fiveTuplesToCache {
-			evictedFiveTuples = cache.CacheFiveTuple(f)
-			c.CacheReplacedByLayer[i] += uint(len(evictedFiveTuples))
+    // プレフィックスに対応するルーティングテーブルの深さを累積
+    c.DepthSum += prefix_item[prefix_size].(routingtable.Data).Depth
 
-			if i == (len(c.CacheLayers) - 1) {
-				continue
-			}
+    // DstIPが指定された深さ（CacheRefBits[1]）より短いプレフィックスを持ち、かつ葉ノードならばキャッシュしない
+    if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[1])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[1])) {				
+        c.CacheNotInserted[0] += 1 // キャッシュに挿入されなかったカウントを増やす
+    } else {
+        // 子ルールに存在するIP数が閾値を超えている場合もキャッシュしない
+        temp_limit := c.RoutingTable.CountIPsInChildrenRule(fivetupleDstIP, int(c.CacheRefBits[1]))
+        if int(temp_limit) > c.OnceCacheLimit {
+            c.CacheNotInserted[1] += 1 // キャッシュに挿入されなかったカウントを増やす
+            evictedFiveTuples = c.CacheLayers[0].CacheFiveTuple(f) // 第一レイヤーキャッシュに格納し、退避されたエントリを取得
+            c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples)) // 退避カウントを更新
 
-			switch c.CachePolicies[i] {
-			case WriteBackExclusive, WriteBackInclusive:
-				fiveTuplesToCacheNextLayer = append(fiveTuplesToCacheNextLayer, evictedFiveTuples...)
-			case WriteThrough:
-				fiveTuplesToCacheNextLayer = fiveTuplesToCache
-			}
-		}
+            // 退避されたエントリが存在し、次のレイヤーにキャッシュされている場合は無効化
+            if len(evictedFiveTuples) > 0 {
+                hitted, _ := c.CacheLayers[1].IsCachedWithFiveTuple(evictedFiveTuples[0], false)
+                if hitted {
+                    c.CacheLayers[1].InvalidateFiveTuple(evictedFiveTuples[0])
+                    c.Special[1] += 1 // 特殊処理カウントを更新
+                }
+            }
+            return evictedFiveTuples // 退避されたエントリを返す
+        }
 
-		fiveTuplesToCache = fiveTuplesToCacheNextLayer}
-	}
+        // 32ビットと24ビットのプレフィックスを同時にキャッシュする場合
+        fiveTuplesToCacheL1 := c.RoutingTable.ReturnIPsInChildrenRule(fivetupleDstIP, int(c.CacheRefBits[1]))
+        c.DoInclusive += 1 // インクルーシブキャッシュのカウントを更新
+        c.Special[0] += uint(len(fiveTuplesToCacheL1)) // 特殊処理カウントを更新
 
-	return evictedFiveTuples
+        // 24ビットの子ルールのIPをキャッシュ
+        for _, data := range fiveTuplesToCacheL1 {
+            ff := *f
+            ff.DstIP = ipaddress.NewIPaddress(data).Uint32()
+            evictedFiveTuples = append(evictedFiveTuples, c.CacheLayers[0].CacheFiveTuple(&ff)...)
+        }
+        c.CacheReplacedByLayer[0] += uint(len(evictedFiveTuples)) // 退避カウントを更新
+
+        // 退避されたエントリが次のレイヤーにキャッシュされている場合は無効化
+        for _, data := range evictedFiveTuples {
+            hitted, _ := c.CacheLayers[1].IsCachedWithFiveTuple(data, false)
+            if hitted {
+                c.CacheLayers[1].InvalidateFiveTuple(data)
+                c.Special[1] += 1 // 特殊処理カウントを更新
+            }
+        }
+    }
+
+    // 各レイヤーキャッシュに対して処理を行う
+    for i, cache := range c.CacheLayers {
+        fiveTuplesToCacheNextLayer := []*FiveTuple{} // 次のレイヤーにキャッシュするエントリリスト
+
+        // 最初のレイヤー以外のキャッシュ処理
+        if i != 0 {
+            for _, f := range fiveTuplesToCache {
+                evictedFiveTuples = cache.CacheFiveTuple(f) // キャッシュし、退避されたエントリを取得
+                c.CacheReplacedByLayer[i] += uint(len(evictedFiveTuples)) // 退避カウントを更新
+
+                // 最後のレイヤーであれば処理をスキップ
+                if i == (len(c.CacheLayers) - 1) {
+                    continue
+                }
+
+                // キャッシュポリシーに基づいて次のレイヤーにキャッシュするエントリを決定
+                switch c.CachePolicies[i] {
+                case WriteBackExclusive, WriteBackInclusive:
+                    fiveTuplesToCacheNextLayer = append(fiveTuplesToCacheNextLayer, evictedFiveTuples...)
+                case WriteThrough:
+                    fiveTuplesToCacheNextLayer = fiveTuplesToCache
+                }
+            }
+
+            // 次のレイヤーにキャッシュするエントリを更新
+            fiveTuplesToCache = fiveTuplesToCacheNextLayer
+        }
+    }
+
+    return evictedFiveTuples // 退避されたエントリを返す
 }
+
 
 func (c *MultiLayerCacheInclusive) InvalidateFiveTuple(f *FiveTuple) {
 	panic("not implemented")

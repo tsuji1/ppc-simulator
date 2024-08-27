@@ -26,7 +26,30 @@ for refbits in refbits_list:
 
 
 
-
+def show_hitrate(hitrate_d):
+    # max hitrate
+    max_hitrate:float= 0
+    max_hitrate_refbits:int = 0
+    max_hitrate_c32:int = 0
+    max_hitrate_cn = 0
+    max_hitrate_with_restrict =[0,0,0,0]
+    k = 1024/3
+    for refbits, hitrate_data in hitrate_d.items():
+        for c32, cn, h in hitrate_data:
+            if h > max_hitrate:
+                max_hitrate = float(h)
+                max_hitrate_refbits = int(refbits)
+                max_hitrate_c32 = int(c32)
+                max_hitrate_cn = int(cn)
+            if max_hitrate_with_restrict[0] < float(h) and int(c32)+int(cn) <= k:
+                max_hitrate_with_restrict = [float(h), int(refbits), int(c32), int(cn)]
+            if(int(c32)==16 and 1024 == int(cn) and refbits == '24'):
+                print(f"refbits={refbits}, c32={c32}, cn={cn}, hitrate={h}")
+                
+    print(f"Max HitRate: {max_hitrate} (refbits={max_hitrate_refbits}, c32={max_hitrate_c32}, cn={max_hitrate_cn})")
+    print(f"Max HitRate with restriction: {max_hitrate_with_restrict[0]} (refbits={max_hitrate_with_restrict[1]}, c32={max_hitrate_with_restrict[2]}, cn={max_hitrate_with_restrict[3]})")
+    return max_hitrate
+    
 
 
 # グラフ描画
@@ -44,4 +67,5 @@ def plot_graph_all(hitrate_d):
         plt.xticks(rotation=45, ha='right', fontsize=8,position=(0.5, 0))  # ラベルを45度回転させ、フォントサイズを小さくする
         plt.tight_layout()
         plt.savefig(f'../result/{src_file_name[:-5]}_refbits{refbits}_hitrate.png')
-plot_graph_all(hitrate_dict)
+# plot_graph_all(hitrate_dict)
+max_hitrate = show_hitrate(hitrate_dict)

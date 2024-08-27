@@ -9,9 +9,11 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync"
 	"test-module/cache"
 	"test-module/simulator"
 	"time"
+	"github.com/koron/go-dproxy"
 
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
@@ -46,7 +48,7 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 		recordSrcPortStr = record[5]
 		recordDstPortStr = record[6]
 	default:
-		return nil, fmt.Errorf("Expected record have 7 or 8 fields, but not: %d", len(record))
+		return nil, fmt.Errorf("expected record have 7 or 8 fields, but not: %d", len(record))
 	}
 
 	packet.Time, err = strconv.ParseFloat(recordTimeStr, 64)
@@ -129,6 +131,88 @@ func getProperCSVReader(fp *os.File) *csv.Reader {
 
 // runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
 // printInterval ごとにシミュレーションの統計情報を出力します。
+func runSimpleCacheSimulatorWithCSVSync(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int) {
+	reader := getProperCSVReader(fp)
+
+	if reader == nil {
+		panic("Can't read input as valid tsv/csv file")
+	}
+	var wg sync.WaitGroup
+	// var mu sync.Mutex
+	var start time.Time
+	var elapsed time.Duration
+	var isEnd bool
+	isEnd = false
+
+	resultChan := make(chan bool)
+	limit := make(chan struct{}, 1000)
+	for i := 0; !isEnd; i += 1 {
+
+		wg.Add(1)
+		go func(resultChan chan bool) {
+			limit <- struct{}{} // バッファ付きのchanがバッファを超える要素を送信しようとしたときにブロックする。
+			defer wg.Done()
+
+			record, err := reader.Read()
+
+			if err != nil {
+				if err == io.EOF {
+					resultChan <- true
+				} else {
+
+					switch err.(type) {
+					case *csv.ParseError:
+						fmt.Println("ParseError:", err)
+						panic(err)
+					default:
+						fmt.Println(reflect.TypeOf(err))
+						panic(err)
+					}
+				}
+			} else {
+
+				packet, err := parseCSVRecord(record)
+
+				if err != nil {
+					fmt.Println("Error:", err)
+					panic(err)
+					// panic(err)
+				}
+
+				// if packet.Proto == "icmp" {
+				// 	// ICMPパケットは無視
+				// 	continue
+				// }
+
+				if packet.FiveTuple() == nil {
+					panic("FiveTuple is nil")
+				}
+				start = time.Now()
+				sim.Process(packet)
+				elapsed = time.Since(start)
+				if sim.GetStat().Processed%printInterval == 0 {
+					fmt.Printf("sim process time: %s\n", elapsed)
+					fmt.Printf("%v\n", sim.GetStatString())
+				}
+				resultChan <- false
+			}
+			<-limit
+		}(resultChan)
+		isEnd = <-resultChan
+
+		// go func() {
+
+		// 	mu.Lock()
+
+		// 	mu.Unlock()
+		// }()
+	}
+	wg.Wait()
+
+}
+
+// runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
+// printInterval ごとにシミュレーションの統計情報を出力します。
 func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int) {
 	reader := getProperCSVReader(fp)
 
@@ -199,9 +283,15 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	p := dproxy.New(simlatorDefinition)
+	interval,err := p.M("Interval").Int64()
+	if err!=nil{
+		interval = 100000 // interval回ごとに出力
+	}
+	
 
 	cacheSim, err := simulator.BuildSimpleCacheSimulator(simlatorDefinition)
-
+	
 	if err != nil {
 		panic(err)
 	}
@@ -220,7 +310,13 @@ func main() {
 		defer fpCSV.Close()
 	}
 
-	runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1000000000000000)
+	useSync := false   // 今のところgoroutineを使う方が遅いので、基本はfalse
+
+	if useSync {
+		runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval))
+	} else {
+		runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, int(interval))
+	}
 	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 
 	fmt.Printf("%v\n", cacheSim.GetStatString())
