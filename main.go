@@ -97,7 +97,11 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 	default:
 		return nil, fmt.Errorf("unknown packet proto: %s", packet.Proto)
 	}
-
+	packet.DstIPMasked = nil
+	packet.DstIPMasked = nil
+	packet.HitIPList = nil
+	packet.IsDstIPLeaf = nil
+	packet.HitItemList = nil
 	return packet, nil
 }
 
@@ -136,7 +140,7 @@ func getProperCSVReader(fp *os.File) *csv.Reader {
 
 // runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
 // printInterval ごとにシミュレーションの統計情報を出力します。
-func runSimpleCacheSimulatorWithCSVSync(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int) {
+func runSimpleCacheSimulatorWithCSVSync(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) {
 	reader := getProperCSVReader(fp)
 
 	if reader == nil {
@@ -218,7 +222,7 @@ func runSimpleCacheSimulatorWithCSVSync(fp *os.File, sim *simulator.SimpleCacheS
 
 // runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
 // printInterval ごとにシミュレーションの統計情報を出力します。
-func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int) {
+func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) {
 	reader := getProperCSVReader(fp)
 
 	if reader == nil {
@@ -263,8 +267,12 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 		elapsed := time.Since(start)
 
 		if sim.GetStat().Processed%printInterval == 0 {
+
 			fmt.Printf("sim process time: %s\n", elapsed)
 			fmt.Printf("%v\n", sim.GetStatString())
+			if bench {
+				os.Exit(0)
+			}
 		}
 	}
 }
@@ -273,6 +281,7 @@ var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 var cacheparam = flag.String("cacheparam", "", "cache parameter file")
 var trace = flag.String("trace", "", "network trace file")
+var bench = flag.Bool("bench", false, "to benchmark")
 
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
@@ -333,9 +342,9 @@ func main() {
 	useSync := false // 今のところgoroutineを使う方が遅いので、基本はfalse
 
 	if useSync {
-		runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval))
+		runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval), *bench)
 	} else {
-		runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, int(interval))
+		runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, int(interval), *bench)
 	}
 	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 

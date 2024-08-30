@@ -5,6 +5,7 @@ from typing_extensions import deprecated
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import heapq
+import os
 import numpy as np
 
 
@@ -122,10 +123,10 @@ class AnalysisResults:
         self.results = res
         
     def __init__(self, data: Dict):
-        self._explore_and_parse(data)
+        self.__explore_and_parse(data)
         
   
-    def _explore_and_parse(self, data:any) -> None:
+    def __explore_and_parse(self, data:any) -> None:
         if isinstance(data, dict):
             # 辞書の中に`Type`キーがあり、その値が'MultiLayerCacheExclusive'なら
             v = list(data.values())
@@ -139,7 +140,7 @@ class AnalysisResults:
             # 辞書のすべてのキーに対して再帰的に探索
             else:
                 for key, value in data.items():
-                    self._explore_and_parse(value)
+                    self.__explore_and_parse(value)
                     
 
     def find_top_n_hitrate(self, top=3,capacity_limit=float('inf'))->List[MultiLayerCacheExclusive]:
@@ -181,9 +182,110 @@ class AnalysisResults:
     def display(self):
         for data in self.results:
             data.shortly_display()
+    def get_capacity_range(self,res:list[MultiLayerCacheExclusive]):
+        capacity = []
+        for d in res:
+            for c in d.Parameter.CacheLayers.CacheLayers:
+                capacity.append(c.Size)
+        return min(capacity),max(capacity)
+        
+    def hitrate_3dplot_3layer(self, type="mesh",rotate=[0,100,200,300]):
+        # データを格納するリストの
+        # データを格納するリスト
+        data = self.query_results_with_refbits_all()
+        for i,d in data.items():
+            refbits = i
+            x = []
+            y = []
+            z = []
+            
+            for d in self.results:
+                x.append(d.Parameter.CacheLayers.CacheLayers[0].Size)
+                y.append(d.Parameter.CacheLayers.CacheLayers[1].Size)
+                z.append(d.HitRate)
+            xnp = np.array(x)
+            ynp = np.array(y)
+            znp = np.array(z)
+
+            # データの整形
+            unique_x = np.unique(xnp)
+            unique_y = np.unique(ynp)
+            print(xnp)
+
+            X, Y = np.meshgrid(unique_x, unique_y)
+            Z = np.full_like(X,np.nan, dtype=float)
+            print(Z)
+            # 各x, yに対応するzをセット
+            for i in range(len(znp)):
+                xi = np.where(unique_x == xnp[i])[0][0]
+                yi = np.where(unique_y == ynp[i])[0][0]
+                Z[yi, xi] = znp[i]
+
+            # 3Dグラフの描画
+
+            # カラーマップを使いたい場合は以下を使用
+            # ax.plot_surface(X, Y, Z, cmap='bwr')
+
+            # 3Dグラフを4つの異なる視点で描画
+            fig = plt.figure(figsize=(12, 12))
+
+            # View 1
+            r = rotate[0]
+            ax1 = fig.add_subplot(221, projection='3d')
+            ax1.plot_wireframe(X, Y, Z)
+            ax1.set_xlabel('refbits_layer2')
+            ax1.set_ylabel('refbits_layer3')
+            ax1.set_zlabel('hitrate')
+            ax1.view_init(elev=30, azim=r)  # 視点設定
+            ax1.set_title(f'{rotate}度回転',fontname ='Noto Sans CJK JP')
+
+            # View 2
+            r = rotate[1]
+            ax2 = fig.add_subplot(222, projection='3d')
+            ax2.plot_wireframe(X, Y, Z)
+            ax2.set_xlabel('refbits_layer2')
+            ax2.set_ylabel('refbits_layer3')
+            ax2.set_zlabel('hitrate')
+            ax2.view_init(elev=30, azim=r)  # 視点設定
+            ax2.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
+            # View 3
+            
+            r = rotate[2]
+            ax3 = fig.add_subplot(223, projection='3d')
+            ax3.plot_wireframe(X, Y, Z)
+            ax3.set_xlabel('refbits_layer2')
+            ax3.set_ylabel('refbits_layer3')
+            ax3.set_zlabel('hitrate')
+            ax3.view_init(elev=30, azim=r)  # 視点設定
+            ax3.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
+            # View 4
+            
+            r = rotate[3]
+            ax4 = fig.add_subplot(224, projection='3d')
+            ax4.plot_wireframe(X, Y, Z)
+            ax4.set_xlabel('refbits_layer2')
+            ax4.set_ylabel('refbits_layer3')
+            ax4.set_zlabel('hitrate')
+            ax4.view_init(elev=30, azim=r)  # 視点設定
+            ax4.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
+            # 使用例
+            top_d = self.find_top_n_hitrate(1)
+            max_hitrate, max_refbits_layer2, max_refbits_layer3 =top_d, top_d.Parameter.CacheLayers.CacheLayers[0].Size,top_d.Parameter.CacheLayers.CacheLayers[1].Size 
+            
+            
+            fig.text(0.1,0.06,f"Layer1は/32キャッシュで他のLayer2(/mキャッシュ)とLayer3(/nキャッシュ)の参照bitを変えている。32>m>nとなる。",fontsize=12,fontname ='Noto Sans CJK JP')
+
+            fig.text(0.1,0.04,f"最大のヒット率: {max_hitrate:.5f} (refbits_layer2: {max_refbits_layer2}, refbits_layer3: {max_refbits_layer3})",fontsize=12,fontname ='Noto Sans CJK JP')
+            
+            parameter_description = ""
+            for i,p in enumerate(top_d.Parameter.CacheLayers):
+                parameter_description += f"Layer{i+1}, Size: {p.Size}    "
+            min_cap,max_cap = self.get_capacity_range(d)    
+            src_file_name = f'hitrate_3dplot_3layer_refbits{refbits}_mincap{min_cap}_maxcap{max_cap}'
+            fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
+            plt.savefig(f"../result/hitrate_3dplot_3layer/{type}/{src_file_name}.png")
     
-    
-    def make_hitrate_plot_3dplot_3layer(self, type="mesh",rotate=[0,100,200,300]):
+    def hitrate_3dplot_3layer(self, type="mesh",rotate=[0,100,200,300]):
         # データを格納するリストの
         # データを格納するリスト
         x = []
@@ -275,21 +377,33 @@ class AnalysisResults:
                 
         fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
         plt.savefig("../result/multilayer_exclusive.png")
-    def plot_graph_2layer_refbits_capacity(self):
-        labels = []
-        hitrates = []
+    def query_results_with_refbits_all(self)->dict[int,list[MultiLayerCacheExclusive]]:
+        res :dict[int,list[MultiLayerCacheExclusive]] = {}
         for data in self.results:
-            c32 = data.Parameter.CacheLayers.CacheLayers[0].Size
-            cn = data.Parameter.CacheLayers.CacheLayers[1].Size
+            refbits = data.Parameter.CacheLayers.CacheLayers[1].Refbits
+            if res.get(refbits) is None:
+                res[refbits] = []
+            res[refbits].append(data)
+        return res
+    def hitrate_2dplot_2layer_refbits_capacity(self,src_file_name:str="test"):
+        if(src_file_name=="test"):
+            print("src_file_name is not set")
+        data = self.query_results_with_refbits_all()
+        for i,d in data.items():
+            labels = []
+            hitrates = []
+            refbits = i
+            c32 = d.Parameter.CacheLayers.CacheLayers[0].Size
+            cn = d.Parameter.CacheLayers.CacheLayers[1].Size
             labels.append(f"{c32}-{cn}")
             hitrates.append(data.HitRate)
 
-        plt.figure(figsize=(20, 8))
-        plt.bar(labels, hitrates, color='blue')
-        plt.xlabel('Configurations (/32キャッシュサイズ-/nビットキャッシュサイズ)',fontname ='Noto Sans CJK JP')
-        plt.ylabel('HitRate')
-        plt.title(f'HitRate for Different Cache Configurations (refbits={refbits})')
-        plt.ylim(0.6, 1.0)
-        plt.xticks(rotation=45, ha='right', fontsize=8,position=(0.5, 0))  # ラベルを45度回転させ、フォントサイズを小さくする
-        plt.tight_layout()
-        plt.savefig(f'../result/{src_file_name[:-5]}_refbits{refbits}_hitrate.png')
+            plt.figure(figsize=(20, 8))
+            plt.bar(labels, hitrates, color='blue')
+            plt.xlabel('Configurations (/32キャッシュサイズ-/nビットキャッシュサイズ)',fontname ='Noto Sans CJK JP')
+            plt.ylabel('HitRate')
+            plt.title(f'HitRate for Different Cache Configurations (refbits={refbits})')
+            plt.ylim(0.6, 1.0)
+            plt.xticks(rotation=45, ha='right', fontsize=8,position=(0.5, 0))  # ラベルを45度回転させ、フォントサイズを小さくする
+            plt.tight_layout()
+            plt.savefig(f'../result/2layer-refbits-capacity/{src_file_name}_refbits{refbits}_hitrate.png')

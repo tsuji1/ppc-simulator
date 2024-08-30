@@ -27,14 +27,7 @@ func (sim *SimpleCacheSimulator) Process(p *cache.Packet) bool {
 		// キャッシュヒットの場合
 		sim.Stat.Hit += 1
 	} else {
-		// キャッシュミスの場合、新しいエントリをキャッシュに追加
-		// start := time.Now()
 		sim.Cache.CacheFiveTuple(p.FiveTuple()) //平均20nsでキャッシュに追加される。
-		// elapsed := time.Since(start)
-		// if sim.Stat.Processed%1000000 == 0 {
-		// 	fmt.Printf("process %d\n", sim.Stat.Processed)
-		// 	fmt.Printf("cache five tuple execution time: %s\n", elapsed)
-		// }
 	}
 
 	sim.Stat.Processed += 1
@@ -306,56 +299,56 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 			CacheRefBits:         cacheRefbits,
 			RoutingTable:         *routingTable,
 		}
-	case "MultiLayerCacheInclusive":
-		// MultiLayerCacheInclusive の設定を取得
-		cacheLayersPS := p.M("CacheLayers").ProxySet()
-		cachePoliciesPS := p.M("CachePolicies").ProxySet()
-		cacheLayersLen := cacheLayersPS.Len()
-		cachePoliciesLen := cachePoliciesPS.Len()
+	// case "MultiLayerCacheInclusive":
+	// 	// MultiLayerCacheInclusive の設定を取得
+	// 	cacheLayersPS := p.M("CacheLayers").ProxySet()
+	// 	cachePoliciesPS := p.M("CachePolicies").ProxySet()
+	// 	cacheLayersLen := cacheLayersPS.Len()
+	// 	cachePoliciesLen := cachePoliciesPS.Len()
 
-		cacheRefbits := make([]uint, cacheLayersLen)
+	// 	cacheRefbits := make([]uint, cacheLayersLen)
 
-		if cachePoliciesLen != (cacheLayersLen - 1) {
-			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
-		}
+	// 	if cachePoliciesLen != (cacheLayersLen - 1) {
+	// 		return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
+	// 	}
 
-		cacheLayers := make([]cache.Cache, cacheLayersLen)
-		for i := 0; i < cacheLayersLen; i++ {
-			cacheLayer, err := buildCache(cacheLayersPS.A(i), routingTable, debugMode)
-			if err != nil {
-				return c, err
-			}
-			cacheLayers[i] = cacheLayer
-			refbit, _ := cacheLayersPS.A(i).M("Refbits").Int64()
-			cacheRefbits[i] = uint(refbit)
-		}
+	// 	cacheLayers := make([]cache.Cache, cacheLayersLen)
+	// 	for i := 0; i < cacheLayersLen; i++ {
+	// 		cacheLayer, err := buildCache(cacheLayersPS.A(i), routingTable, debugMode)
+	// 		if err != nil {
+	// 			return c, err
+	// 		}
+	// 		cacheLayers[i] = cacheLayer
+	// 		refbit, _ := cacheLayersPS.A(i).M("Refbits").Int64()
+	// 		cacheRefbits[i] = uint(refbit)
+	// 	}
 
-		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
-		for i := 0; i < cachePoliciesLen; i++ {
-			cachePolicyStr, err := cachePoliciesPS.A(i).String()
-			if err != nil {
-				return c, err
-			}
+	// 	cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
+	// 	for i := 0; i < cachePoliciesLen; i++ {
+	// 		cachePolicyStr, err := cachePoliciesPS.A(i).String()
+	// 		if err != nil {
+	// 			return c, err
+	// 		}
 
-			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
-		}
+	// 		cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
+	// 	}
 
-		onceCacheLimit, e := p.M("OnceCacheLimit").Int64()
-		if e != nil {
-			panic("OnceCacheLimit is not set")
-		}
-		c = &cache.MultiLayerCacheInclusive{
-			CacheLayers:          cacheLayers,
-			CachePolicies:        cachePolicies,
-			CacheReferedByLayer:  make([]uint, cacheLayersLen),
-			CacheReplacedByLayer: make([]uint, cacheLayersLen),
-			CacheHitByLayer:      make([]uint, cacheLayersLen),
-			CacheNotInserted:     make([]uint, cacheLayersLen),
-			Special:              make([]uint, cacheLayersLen),
-			CacheRefBits:         cacheRefbits,
-			RoutingTable:         *routingTable,
-			OnceCacheLimit:       int(onceCacheLimit),
-		}
+	// 	onceCacheLimit, e := p.M("OnceCacheLimit").Int64()
+	// 	if e != nil {
+	// 		panic("OnceCacheLimit is not set")
+	// 	}
+	// 	c = &cache.MultiLayerCacheInclusive{
+	// 		CacheLayers:          cacheLayers,
+	// 		CachePolicies:        cachePolicies,
+	// 		CacheReferedByLayer:  make([]uint, cacheLayersLen),
+	// 		CacheReplacedByLayer: make([]uint, cacheLayersLen),
+	// 		CacheHitByLayer:      make([]uint, cacheLayersLen),
+	// 		CacheNotInserted:     make([]uint, cacheLayersLen),
+	// 		Special:              make([]uint, cacheLayersLen),
+	// 		CacheRefBits:         cacheRefbits,
+	// 		RoutingTable:         *routingTable,
+	// 		OnceCacheLimit:       int(onceCacheLimit),
+	// 	}
 	default:
 		return nil, fmt.Errorf("unsupported cache type: %s", cache_type)
 	}
@@ -394,7 +387,6 @@ func BuildSimpleCacheSimulator(json interface{}) (*SimpleCacheSimulator, error) 
 	if err != nil {
 		debugMode = false
 	}
-	
 
 	// キャッシュを構築
 	cache, err := buildCache(cacheProxy, routingtable, debugMode)

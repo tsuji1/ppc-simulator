@@ -50,7 +50,7 @@ func (cache *NWaySetAssociativeLRUCache) IsCachedWithFiveTuple(f *FiveTuple, upd
 func (cache *NWaySetAssociativeLRUCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	setIdx := cache.setIdxFromFiveTuple(f)
 
-	_, prefix_item := cache.RoutingTable.SearchLongestIP(ipaddress.NewIPaddress(f.DstIP), 32)
+	_, prefix_item := cache.RoutingTable.SearchLongestIP(ipaddress.NewIPaddress(f.DstIP), 32, f.HitIPList, f.HitItemList)
 	cache.DepthSum += prefix_item.(routingtable.Data).Depth
 
 	return cache.Sets[setIdx].CacheFiveTuple(f)

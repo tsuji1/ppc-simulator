@@ -27,7 +27,7 @@ type Data struct {
 
 // PrintMatchRulesInfo は、指定されたIPアドレスと参照ビットに一致するルールの情報を出力します。
 func (routingtable *RoutingTablePatriciaTrie) PrintMatchRulesInfo(ip ipaddress.IPaddress, refbits int) {
-	hitted, _ := routingtable.SearchIP(ip, refbits)
+	hitted, _ := routingtable.SearchIP(ip, refbits, nil, nil)
 	ans := "["
 	for _, p := range hitted {
 		ans += strconv.Itoa(len(p))
@@ -71,9 +71,9 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInRule(prefix Prefix) uint
 
 // ReturnIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるすべてのIPアドレスを返します。
 func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInChildrenRule(ip ipaddress.IPaddress, refbits int) []string {
-	hitted, data := routingtable.SearchLongestIP(ip, refbits)
+	hitted, data := routingtable.SearchLongestIP(ip, refbits, nil, nil)
 	depth := data.(Data).Depth // 最長一致ルールの深さ
-	var ans []string 
+	var ans []string
 	countchild := func(prefix Prefix, item Item) error {
 
 		// 子ノードの深さが最長一致ルールの深さ+1の場合、そのルールに含まれるIPアドレスを返す
@@ -97,7 +97,7 @@ func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInChildrenRule(ip ipaddre
 
 // CountIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるIPアドレスの数を返します。
 func (routingtable *RoutingTablePatriciaTrie) CountIPsInChildrenRule(ip ipaddress.IPaddress, refbits int) uint32 {
-	hitted, data := routingtable.SearchLongestIP(ip, refbits)
+	hitted, data := routingtable.SearchLongestIP(ip, refbits, nil, nil)
 	depth := data.(Data).Depth
 	var ans uint32
 	countchild := func(prefix Prefix, item Item) error {
@@ -120,10 +120,13 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInChildrenRule(ip ipaddres
 }
 
 // IsLeaf は、指定されたIPアドレスと参照ビットに一致するルールがリーフノードかどうかをチェックします。
-//リーフノードである場合にtrueを返却します。
-func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, refbits int) bool {
+// リーフノードである場合にtrueを返却します。
+func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, refbits int, hitIpList *[]string, hitItemList *[]Item) bool {
 	// 指定されたIPアドレスと参照ビットに一致する最長一致を検索します
-	hitted, _ := routingtable.SearchLongestIP(ip, refbits)
+	var hitted string
+	if hitIpList == nil {
+		hitted, _ = routingtable.SearchLongestIP(ip, refbits, hitIpList, hitItemList)
+	}
 	// if len(hitted) == 0 {
 	// 	return false
 	// }
@@ -193,34 +196,40 @@ func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, ref
 }
 
 // IsShorter は、指定されたIPアドレスと参照ビットに一致するルールが指定された長さより短いかどうかをチェックします。
-func (routingtable *RoutingTablePatriciaTrie) IsShorter(ip ipaddress.IPaddress, refbits int, length int) bool {
-	hitted, _ := routingtable.SearchLongestIP(ip, refbits)
+func (routingtable *RoutingTablePatriciaTrie) IsShorter(ip ipaddress.IPaddress, refbits int, length int, hitIpList *[]string, hitItemList *[]Item) bool {
+	hitted, _ := routingtable.SearchLongestIP(ip, refbits, hitIpList, hitItemList)
+
 	// len(hitted) != 0 &&
 	if len(hitted) <= length {
 		return true
 	} else {
 		return false
 	}
+
 }
 
 // SearchIP は、指定されたIPアドレスと参照ビットに一致するすべてのプレフィックスとアイテムを検索します。
-func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, refbits int) ([]string, []Item) {
+func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, refbits int, hitIpList *[]string, hitItemList *[]Item) ([]string, []Item) {
+
 	var hitted []string // ヒットしたプレフィックスを格納 "101110"など
 	var items []Item    // nexthop とdepth を格納
-	storeans := func(prefix Prefix, item Item) error {
-		hitted = append(hitted, string(prefix))
-		items = append(items, item)
-		return nil
-
+	if hitIpList == nil {
+		storeans := func(prefix Prefix, item Item) error {
+			hitted = append(hitted, string(prefix))
+			items = append(items, item)
+			return nil
+		}
+		routingtable.RoutingTablePatriciaTrie.VisitPrefixes(Prefix(ip.MaskedBitString(refbits)), storeans)
+	} else {
+		hitted = *hitIpList
+		items = *hitItemList
 	}
-
-	routingtable.RoutingTablePatriciaTrie.VisitPrefixes(Prefix(ip.MaskedBitString(refbits)), storeans)
 	return hitted, items
 }
 
 // SearchLongestIP は、指定されたIPアドレスと参照ビットに一致する最も長いプレフィックスとアイテムを検索します。
-func (routingtable *RoutingTablePatriciaTrie) SearchLongestIP(ip ipaddress.IPaddress, refbits int) (string, Item) {
-	hitted, hoge := routingtable.SearchIP(ip, refbits) //hogeはdatas
+func (routingtable *RoutingTablePatriciaTrie) SearchLongestIP(ip ipaddress.IPaddress, refbits int, hitIpList *[]string, hitItemList *[]Item) (string, Item) {
+	hitted, hoge := routingtable.SearchIP(ip, refbits, hitIpList, hitItemList) //hogeはdatas
 	return hitted[len(hitted)-1], hoge[len(hoge)-1]
 }
 

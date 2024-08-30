@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"test-module/ipaddress"
 	"test-module/routingtable"
+
+	. "github.com/tchap/go-patricia/patricia"
 )
 
 // MultiLayerCacheExclusive は、複数のキャッシュ層を持ち、それぞれのキャッシュ層に独自のキャッシュポリシーを設定できるキャッシュシステムです。
@@ -13,14 +15,13 @@ type MultiLayerCacheExclusive struct {
 	CacheReferedByLayer  []uint
 	CacheReplacedByLayer []uint
 	CacheHitByLayer      []uint
-
-	CacheRefBits    []uint
-	CacheInserted   []uint
-	RoutingTable    routingtable.RoutingTablePatriciaTrie
-	DepthSum        uint64
-	LongestMatchMap [33]int
-	MatchMap        [33]int
-	DebugMode       bool
+	CacheRefBits         []uint
+	CacheInserted        []uint
+	RoutingTable         routingtable.RoutingTablePatriciaTrie
+	DepthSum             uint64
+	LongestMatchMap      [33]int
+	MatchMap             [33]int
+	DebugMode            bool
 }
 
 // StatString は、キャッシュの統計情報をJSON形式の文字列として返します。
@@ -168,16 +169,16 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 	}
 
 	// 少なくともL1キャッシュミスの場合
-	if update && hit {
-		if *hitLayerIdx > 1 {
-			// 上位層にキャッシュ
-			if c.CachePolicies[*hitLayerIdx-1] == WriteBackExclusive {
-				// 下位層を無効化
-				c.CacheLayers[*hitLayerIdx].InvalidateFiveTuple(f)
-			}
-			c.CacheFiveTuple(f)
-		}
-	}
+	// if update && hit {
+	// 	if *hitLayerIdx > 1 {
+	// 		// 上位層にキャッシュ
+	// 		if c.CachePolicies[*hitLayerIdx-1] == WriteBackExclusive {
+	// 			// 下位層を無効化
+	// 			c.CacheLayers[*hitLayerIdx].InvalidateFiveTuple(f)
+	// 		}
+	// 		c.CacheFiveTuple(f)
+	// 	}
+	// }
 
 	return hit, hitLayerIdx
 }
@@ -199,10 +200,20 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
 	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
 
-	// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
-	// prefix には二進数のプレフィックス(ex."1011011")が格納される
-	// prefix_item にはNext hopとDepthが格納される
-	prefix, prefix_item := c.RoutingTable.SearchIP(fivetupleDstIP, 32)
+	var prefix []string
+	var items []Item
+	if f.HitIPList == nil {
+		// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
+		// prefix には二進数のプレフィックス(ex."1011011")が格納される
+		// prefix_item にはNext hopとDepthが格納される
+		prefix, items = c.RoutingTable.SearchIP(fivetupleDstIP, 32, f.HitIPList, nil)
+		f.HitIPList = &prefix
+		f.HitItemList = &items
+	} else {
+		prefix = *f.HitIPList
+		items = *f.HitItemList
+	}
+
 	// 最長一致するプレフィックスのインデックスを取得
 	prefix_size := len(prefix) - 1
 
@@ -210,11 +221,12 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	for _, p := range prefix {
 		c.MatchMap[len(p)] += 1
 	}
+
 	// 最長一致するプレフィックスのカウントを更新
 	c.LongestMatchMap[len(prefix[prefix_size])] += 1
 
 	// プレフィックスの深さの合計を更新
-	c.DepthSum += prefix_item[prefix_size].(routingtable.Data).Depth
+	// c.DepthSum += prefix_item[prefix_size].(routingtable.Data).Depth
 
 	// キャッシュ挿入の条件をチェック
 	// 最長一致したIPアドレスのプレフィックスがキャッシュ参照ビット以下である場合 + 葉ノードである場合
@@ -223,7 +235,7 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	hitLayer := 0
 	//最終的にはレイヤ0であるのでk=0は確認していない。
 	for k := len(c.CacheLayers) - 1; k > 0; k-- {
-		if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[k])) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[k])) {
+		if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[k]), f.HitIPList, f.HitItemList) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[k]), f.HitIPList, f.HitItemList) {
 			// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
 			hitLayer = k
 

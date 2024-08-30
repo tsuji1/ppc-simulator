@@ -3,6 +3,8 @@ package cache
 import (
 	"fmt"
 	"net"
+
+	. "github.com/tchap/go-patricia/patricia"
 )
 
 type Packet struct {
@@ -11,6 +13,10 @@ type Packet struct {
 	Proto            string
 	SrcIP, DstIP     net.IP
 	SrcPort, DstPort uint16
+	DstIPMasked      *net.IP
+	IsDstIPLeaf      *bool
+	HitIPList        *[]string
+	HitItemList      *[]Item
 	// IcmpType, IcmpCode uint16
 }
 
