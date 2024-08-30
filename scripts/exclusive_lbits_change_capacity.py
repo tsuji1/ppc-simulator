@@ -3,11 +3,31 @@ import subprocess
 import copy
 import concurrent.futures
 import json
+import time
+import logging
+from datetime import datetime
+
+# 現在の日付と時刻を取得
+now = datetime.now()
+date_str = now.strftime("%Y%m%d")  # 年月日を YYYYMMDD 形式で取得
+time_str = now.strftime("%H%M")    # 時間と分を HHMM 形式で取得
+# ログファイル名を指定された形式で作成
+
+# 保存先のディレクトリを指定
+log_dir = "logs"
+os.makedirs(log_dir, exist_ok=True)  # ディレクトリが存在しない場合は作成する
+
+log_filename = f"exclusive_ch_cap{date_str}-{time_str}.log"
+
+log_file_path = os.path.join(log_dir, log_filename)
+
+# ロギングの設定
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s', filename=log_file_path, filemode='w')
 
 # JSONファイルのパス
 src_file_path = '../simulator-settings/MultiLayerCacheExclusive.json'
 first = 1
-last = 1
+last = 32
 
 cap_first = 64 * 2
 cap_last = int(4096 /2)
@@ -51,7 +71,7 @@ def calc_hit_rate(cache_settings,refbits, cache_32bit_cap, cache_nbit_cap):
     partial_result_file = os.path.join(tmp_dir_refbits, f'tmp_result_{cache_32bit_cap}_{cache_nbit_cap}.json')
     if(os.path.exists(partial_result_file) == True):
         print(f"Refbits: {refbits}, Cache 32bit cap: {cache_32bit_cap}, Cache nbit cap: {cache_nbit_cap}, Skipped")
-        return 0
+        return 2
 
     print(f"Refbits: {refbits}, Cache 32bit cap: {cache_32bit_cap}, Cache nbit cap: {cache_nbit_cap}, Start")
     # シミュレータを実行する
@@ -65,15 +85,15 @@ def calc_hit_rate(cache_settings,refbits, cache_32bit_cap, cache_nbit_cap):
     return 0
 
 # refbitsごとにまとめよう
-def aggregate_result(refbits,cache_32bit_cap, cache_nbit_cap):
+def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
     result_data = {}
     tmp_dir = '../result/tmp_results'
     tmp_dir_refbits = os.path.join(tmp_dir, f'{refbits}')
 
     result_data[refbits] = {}
-    for cache_32bit_cap in capacity:
+    for cache_32bit_cap in cache_32bit_capacity:
         result_data[refbits][cache_32bit_cap] = {}
-        for cache_nbit_cap in capacity:
+        for cache_nbit_cap in cache_nbit_capacity:
             partial_result_file = os.path.join(tmp_dir_refbits, f'tmp_result_{cache_32bit_cap}_{cache_nbit_cap}.json')
             with open(partial_result_file, 'r') as file:
                 _json_data = json.load(file)
@@ -90,24 +110,50 @@ def aggregate_result(refbits,cache_32bit_cap, cache_nbit_cap):
 
 def process_cache_settings(refbits, cache_nbit_cap, cache_32bit_cap, cache_settings):
     copy_cache_settings = copy.deepcopy(cache_settings)
-    calc_hit_rate(copy_cache_settings, refbits, cache_32bit_cap, cache_nbit_cap)
-    return cache_32bit_cap, cache_nbit_cap, refbits
+    v = calc_hit_rate(copy_cache_settings, refbits, cache_32bit_cap, cache_nbit_cap)
+    return cache_32bit_cap, cache_nbit_cap, refbits,v
 
 with concurrent.futures.ThreadPoolExecutor() as executor:
-    futures = []
     for refbits in range(first, last + 1):
+        start_time = time.time()
+        print(f"Refbits: {refbits} Start")
+        logging.info(f"Refbits: {refbits} Start")
+        futures = []
+        total = len(capacity) * len(capacity)
+        completed = 0
+        not_skipped_completed = 0
+        # 現在のrefbitsに対するキャッシュ設定の組み合わせを非同期に処理
         for cache_nbit_cap in capacity:
             for cache_32bit_cap in capacity:
                 futures.append(
                     executor.submit(process_cache_settings, refbits, cache_nbit_cap, cache_32bit_cap, cache_settings)
                 )
 
-    for future in concurrent.futures.as_completed(futures):
-        cache_32bit_cap, cache_nbit_cap, refbits = future.result()
+        # 現在のrefbitsに対するすべての処理が完了するまで待機
+        for future in concurrent.futures.as_completed(futures):
+            try:
+                cache_32bit_cap, cache_nbit_cap, refbits ,v= future.result()
+    
+                completed += 1
+                percentage = (completed / total) * 100  # 完了割合を計算
+                
+                print(f"Refbits: {refbits} Completed: {completed}/{total} ({percentage:.1f}%)")
+                logging.info(f"Refbits: {refbits} Completed: {completed}/{total} ({percentage:.1f}%)")
+                if(v == 0):
+                    not_skipped_completed += 1
+                    now = time.time()
+                    avg_time = (now - start_time) / not_skipped_completed
+                    print(f"Average time to deal with one simulation: {avg_time} second")
+                    logging.info(f"Average time to deal with one simulation {avg_time} second")
+            except Exception as e:
+                print(f"An error occurred: {e}")
+                logging.error(f"An error occurred: {e}")
+        end_time = time.time()
+        elapsed_time = end_time - start_time;
+        # すべての処理が完了した時点で次のrefbitsに進む
+        print(f"All tasks for refbits={refbits} completed.")
+        print(f"Elapsed time: {elapsed_time:.2f} seconds")
+        logging.info(f"All tasks for refbits={refbits} completed.")
+        logging.info(f"Elapsed time: {elapsed_time:.2f} seconds")
+        aggregate_result(refbits,capacity, capacity)
 
-
-result_data = {}
-for refbits in range(first, last+1):
-    aggregate_result(refbits,cache_32bit_cap, cache_nbit_cap)
-else:
-    print("Done")
