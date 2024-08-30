@@ -2,19 +2,24 @@ package main
 
 import (
 	"encoding/csv"
+	"flag"
 	"fmt"
 	"io"
+	"log"
 	"net"
+	_ "net/http/pprof"
 	"os"
 	"reflect"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"sync"
 	"test-module/cache"
 	"test-module/simulator"
 	"time"
-	"github.com/koron/go-dproxy"
 
+	"github.com/koron/go-dproxy"
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
 
@@ -264,16 +269,37 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var memprofile = flag.String("memprofile", "", "write memory profile to this file")
+var cacheparam = flag.String("cacheparam", "", "cache parameter file")
+var trace = flag.String("trace", "", "network trace file")
+
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
 func main() {
-
-	if len(os.Args) != 2 && len(os.Args) != 3 {
-		fmt.Printf("%s cacheparam [tsv]\n", os.Args[0])
+	flag.Parse()
+	if *trace == "" {
+		fmt.Printf("You must specify the trace file\n")
 		os.Exit(1)
 	}
+	if *cacheparam == "" {
+		fmt.Printf("You must specify the cache parameter file\n")
+		os.Exit(1)
+	}
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		defer f.Close()
 
-	simulaterDefinitionBytes, err := os.ReadFile(os.Args[1])
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
+	}
+
+	simulaterDefinitionBytes, err := os.ReadFile(*cacheparam)
 	if err != nil {
 		panic(err)
 	}
@@ -284,33 +310,27 @@ func main() {
 		panic(err)
 	}
 	p := dproxy.New(simlatorDefinition)
-	interval,err := p.M("Interval").Int64()
-	if err!=nil{
+	interval, err := p.M("Interval").Int64()
+	if err != nil {
 		interval = 100000 // interval回ごとに出力
 	}
-	
 
 	cacheSim, err := simulator.BuildSimpleCacheSimulator(simlatorDefinition)
-	
+
 	if err != nil {
 		panic(err)
 	}
 
 	var fpCSV *os.File
 
-	if len(os.Args) == 2 {
-		fpCSV = os.Stdin
-	} else {
-		var err error
-		fpCSV, err = os.Open(os.Args[2])
+	fpCSV, err = os.Open(*trace)
 
-		if err != nil {
-			panic(err)
-		}
-		defer fpCSV.Close()
+	if err != nil {
+		panic(err)
 	}
+	defer fpCSV.Close()
 
-	useSync := false   // 今のところgoroutineを使う方が遅いので、基本はfalse
+	useSync := false // 今のところgoroutineを使う方が遅いので、基本はfalse
 
 	if useSync {
 		runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval))
@@ -320,4 +340,16 @@ func main() {
 	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 
 	fmt.Printf("%v\n", cacheSim.GetStatString())
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close() // error handling omitted for example
+		runtime.GC()    // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatal("could not write memory profile: ", err)
+		}
+	}
 }
