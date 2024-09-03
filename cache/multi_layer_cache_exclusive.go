@@ -99,6 +99,7 @@ func (c *MultiLayerCacheExclusive) StatString() string {
 	}
 
 	str += "]}"
+	// c.RoutingTable.StatDetail()
 
 	return str
 }
@@ -128,10 +129,6 @@ func (c *MultiLayerCacheExclusive) IsCached(p *Packet, update bool) (bool, *int)
 //
 //	パケットがキャッシュされているかどうかを示すブール値と、キャッシュされている層のインデックスへのポインタ。
 
-func IsLeafExecuted() bool {
-	fmt.Println("IsLeafExecuted")
-	return true
-}
 func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
 	hit := false
 	var hitLayerIdx *int // ヒットした場合に nil ではない
@@ -152,21 +149,21 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 		}
 	}
 
-	// 下位層の更新
-	if update && hit {
-		for offset_i, cache := range c.CacheLayers[*hitLayerIdx+1:] {
-			isCached, _ := cache.IsCachedWithFiveTuple(f, true)
+	// // 下位層の更新
+	// if update && hit {
+	// 	for offset_i, cache := range c.CacheLayers[*hitLayerIdx+1:] {
+	// 		isCached, _ := cache.IsCachedWithFiveTuple(f, true)
 
-			if !isCached {
-				break
-			}
+	// 		if !isCached {
+	// 			break
+	// 		}
 
-			i := (*hitLayerIdx + 1) + offset_i
-			if i != (len(c.CacheLayers)-1) && c.CachePolicies[i] == WriteBackExclusive {
-				break
-			}
-		}
-	}
+	// 		i := (*hitLayerIdx + 1) + offset_i
+	// 		if i != (len(c.CacheLayers)-1) && c.CachePolicies[i] == WriteBackExclusive {
+	// 			break
+	// 		}
+	// 	}
+	// }
 
 	// 少なくともL1キャッシュミスの場合
 	// if update && hit {

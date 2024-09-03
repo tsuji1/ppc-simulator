@@ -23,7 +23,7 @@ type FiveTuple struct {
 	Proto            IPProtocol
 	SrcIP, DstIP     uint32
 	SrcPort, DstPort uint16
-	DstIPMasked      *net.IP
+	DstIPMasked      *string
 	IsDstIPLeaf      *bool
 	HitIPList        *[]string
 	HitItemList      *[]Item

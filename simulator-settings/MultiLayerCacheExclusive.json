@@ -11,16 +11,10 @@
 			{
 				"Type": "FullAssociativeDstipNbitLRUCache",
 				"Size": 128,
-				"Refbits": 24
-			},
-			{
-				"Type": "FullAssociativeDstipNbitLRUCache",
-				"Size": 128,
 				"Refbits": 16
 			}
 		],
 		"CachePolicies": [
-			"WriteThrough",
 			"WriteThrough"
 		],
 		"OnceCacheLimit": 64

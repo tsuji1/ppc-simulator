@@ -70,6 +70,7 @@ require (
 	github.com/googleapis/google-cloud-go-testing v0.0.0-20200911160855-bcd43fbb19e8 // indirect
 	github.com/gookit/color v1.4.2 // indirect
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/hpcloud/tail v1.0.0 // indirect
 	github.com/iancoleman/orderedmap v0.3.0 // indirect
 	github.com/ianlancetaylor/demangle v0.0.0-20200824232613-28f6c0f3b639 // indirect

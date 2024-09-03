@@ -13,7 +13,7 @@ type Packet struct {
 	Proto            string
 	SrcIP, DstIP     net.IP
 	SrcPort, DstPort uint16
-	DstIPMasked      *net.IP
+	DstIPMasked      *string
 	IsDstIPLeaf      *bool
 	HitIPList        *[]string
 	HitItemList      *[]Item

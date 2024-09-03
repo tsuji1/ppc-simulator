@@ -10,6 +10,7 @@ import (
 	"test-module/ipaddress"
 	"time"
 
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/tchap/go-patricia/patricia"
 	. "github.com/tchap/go-patricia/patricia"
 )
@@ -17,12 +18,23 @@ import (
 // RoutingTablePatriciaTrie は、ルーティングテーブルのためのPatricia Trieを保持する構造体です。
 type RoutingTablePatriciaTrie struct {
 	RoutingTablePatriciaTrie *Trie
+	IsLeafCache              *lru.Cache[string, bool]
+	IsLeafCacheHit           int
+	IsLeafCacheTotal         int
+	SearchIpCache            *lru.Cache[string, Result]
+	SearchIpCacheHit         int
+	SearchIpCacheTotal       int
 }
 
 // Data は、ルーティング情報を深さとネクストホップで保持するデータ構造です。
 type Data struct {
 	Depth   uint64
 	NextHop string
+}
+
+type Result struct {
+	hitted []string
+	items  []Item
 }
 
 // PrintMatchRulesInfo は、指定されたIPアドレスと参照ビットに一致するルールの情報を出力します。
@@ -124,22 +136,19 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInChildrenRule(ip ipaddres
 func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, refbits int, hitIpList *[]string, hitItemList *[]Item) bool {
 	// 指定されたIPアドレスと参照ビットに一致する最長一致を検索します
 	var hitted string
+	var maskip = ip.MaskedBitString(refbits)
+	routingtable.IsLeafCacheTotal++
+	s, ok := routingtable.IsLeafCache.Get(maskip)
+	if ok {
+		routingtable.IsLeafCacheHit++
+		return s
+	}
+
 	if hitIpList == nil {
 		hitted, _ = routingtable.SearchLongestIP(ip, refbits, hitIpList, hitItemList)
 	}
-	// if len(hitted) == 0 {
-	// 	return false
-	// }
-	// 子ノードの数をカウントするための変数を初期化します
-	// children := -1
-	hasChildren := false
 
-	// サブツリーを訪問する際に呼び出される関数
-	// countchild := func(prefix Prefix, item Item) error {
-	// 	children += 1
-	// 	// println("counted : ", string(prefix))
-	// 	return nil
-	// }
+	hasChildren := false
 
 	// 検索結果の長さが参照ビットと一致する場合
 	if len(hitted) == refbits {
@@ -147,7 +156,6 @@ func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, ref
 		// println("hitted : ", hitted)
 		hitted_0 := hitted + "0"
 		hitted_1 := hitted + "1"
-		// routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(hitted), countchild)
 		hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(hitted_0))
 		hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(hitted_1)) || hasChildren
 	} else {
@@ -156,42 +164,21 @@ func (routingtable *RoutingTablePatriciaTrie) IsLeaf(ip ipaddress.IPaddress, ref
 		test_node_ip := ip.MaskedBitString(refbits)
 		test_node_ip_0 := test_node_ip + "0" // MatchSubtreeは自身もマッチしてしまうので、子ノードを探すために+1したIPを作成
 		test_node_ip_1 := test_node_ip + "1"
-		// test_node_ip_str := ipaddress.BitStringToIP(test_node_ip) // for debug
-		// fmt.Println("test_node_ip:", test_node_ip_str)
-		// println("test_node_ip:", test_node_ip)
 		var temp Data
 		if !routingtable.RoutingTablePatriciaTrie.Match(Prefix(test_node_ip)) {
 			routingtable.RoutingTablePatriciaTrie.Insert(Prefix(test_node_ip), temp)
 			// サブツリーを訪問し、子ノードの数をカウントします
 			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_0))
 			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_1)) || hasChildren
-			// routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(test_node_ip), countchild)
 
 			// 一時的に挿入したデータを削除します
 			routingtable.RoutingTablePatriciaTrie.Delete(Prefix(test_node_ip))
 		} else {
-			// routingtable.RoutingTablePatriciaTrie.VisitSubtree(Prefix(test_node_ip), countchild)
 			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_0))
 			hasChildren = routingtable.RoutingTablePatriciaTrie.MatchSubtree(Prefix(test_node_ip_1)) || hasChildren
 		}
 	}
-
-	// 子ノードの数に応じてリーフノードかどうかを判定します
-	// if children == 0 {
-	// 	// println("children == 0", !hasChildren)
-	// 	if hasChildren {
-	// 		panic("Isleaf")
-	// 	}
-	// 	return true
-	// }
-	// if 1 <= children {
-	// 	if !hasChildren {
-	// 		panic("Isleaf")
-	// 	}
-	// 	// println("1 <= ", children, !hasChildren)
-	// 	return false
-	// }
-
+	routingtable.IsLeafCache.Add(maskip, !hasChildren)
 	return !hasChildren // childrenがないということはリーフノード
 }
 
@@ -210,6 +197,14 @@ func (routingtable *RoutingTablePatriciaTrie) IsShorter(ip ipaddress.IPaddress, 
 
 // SearchIP は、指定されたIPアドレスと参照ビットに一致するすべてのプレフィックスとアイテムを検索します。
 func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, refbits int, hitIpList *[]string, hitItemList *[]Item) ([]string, []Item) {
+	var maskip = ip.MaskedBitString(refbits)
+	// fmt.Println(ipaddress.BitStringToIP(maskip))
+	routingtable.SearchIpCacheTotal++
+	s, ok := routingtable.SearchIpCache.Get(maskip)
+	if ok {
+		routingtable.SearchIpCacheHit++
+		return s.hitted, s.items
+	}
 
 	var hitted []string // ヒットしたプレフィックスを格納 "101110"など
 	var items []Item    // nexthop とdepth を格納
@@ -220,6 +215,10 @@ func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, r
 			return nil
 		}
 		routingtable.RoutingTablePatriciaTrie.VisitPrefixes(Prefix(ip.MaskedBitString(refbits)), storeans)
+		var temp Result
+		temp.hitted = hitted
+		temp.items = items
+		routingtable.SearchIpCache.Add(maskip, temp)
 	} else {
 		hitted = *hitIpList
 		items = *hitItemList
@@ -275,9 +274,17 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 // NewRoutingTablePatriciaTrie は、Patricia Trieを用いた新しいルーティングテーブルを初期化します。
 func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 	trie := NewTrie(MaxPrefixPerNode(33), MaxChildrenPerSparseNode(257))
+	l, _ := lru.New[string, bool](1024)
+	s, _ := lru.New[string, Result](1024)
 
 	return &RoutingTablePatriciaTrie{
 		RoutingTablePatriciaTrie: trie,
+		IsLeafCache:              l,
+		IsLeafCacheHit:           0,
+		IsLeafCacheTotal:         0,
+		SearchIpCache:            s,
+		SearchIpCacheHit:         0,
+		SearchIpCacheTotal:       0,
 	}
 }
 
@@ -309,8 +316,13 @@ func GetRandomDstIP() ipaddress.IPaddress {
 		}
 	}
 	ip := ipaddress.NewIPaddress(strIP)
-
 	return ip
+}
+
+func (routingtable *RoutingTablePatriciaTrie) StatDetail() {
+	fmt.Println("IsLeafCacheHit : ", float64(routingtable.IsLeafCacheHit)/float64(routingtable.IsLeafCacheTotal))
+	fmt.Println("SearchIpCacheHit : ", float64(routingtable.SearchIpCacheHit)/float64(routingtable.SearchIpCacheTotal))
+
 }
 
 /*func (routingtable *RoutingTablePatriciaTrie) CalTreeDepth() {
