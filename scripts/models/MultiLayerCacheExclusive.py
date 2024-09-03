@@ -299,24 +299,27 @@ class AnalysisResults:
 
         # 3Dグラフを4つの異なる視点で描画
         fig = plt.figure(figsize=(12, 12))
-        place = 221
-        for r in rotate:
-            if(type=="heatmap"):
-                ax = fig.add_subplot(place)
-                plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
-                plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
-                ax.set_xlabel('refbits_layer2')
-                ax.set_ylabel('refbits_layer3')
+      
+        if(type=="heatmap"):
+            ax = fig.add_subplot(111)
+            plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
+            plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
+            ax.set_xlabel('refbits_layer2')
+            ax.set_ylabel('refbits_layer3')
+        
+
                 # ax.set_title(f'refbits:{refbits}',fontname ='Noto Sans CJK JP')
-            else:
+        else:
+            place = 221
+            for r in rotate:
                 ax = fig.add_subplot(place, projection='3d')
                 ax.plot_wireframe(X, Y, Z)
                 ax.set_xlabel('refbits_layer2')
                 ax.set_ylabel('refbits_layer3')
                 ax.set_zlabel('hitrate')
                 ax.view_init(elev=30, azim=r)  # 視点設定
-                ax.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-            place+=1
+                ax.set_title(f'{r}度',fontname ='Noto Sans CJK JP')
+                place+=1
         
         top_d = self.find_top_n_hitrate(1)
         top_d= top_d[0]
@@ -376,23 +379,24 @@ class AnalysisResults:
             # 3Dグラフを4つの異なる視点で描画
             
             
-            for r in rotate:
-                if(type=="heatmap"):
-                    # ヒートマップ用のデータを作成
-                    ax = fig.add_subplot(place)
-                    plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
-                    plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
-                    ax.set_xlabel('refbits_layer1 size')
-                    ax.set_ylabel('refbits_layer2 size')
+     
+            if(type=="heatmap"):
+                # ヒートマップ用のデータを作成
+                ax = fig.add_subplot(place)
+                plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
+                plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
+                ax.set_xlabel('refbits_layer1 size')
+                ax.set_ylabel('refbits_layer2 size')
                     
-                else:
+            else:
+                for r in rotate:
                     ax = fig.add_subplot(place, projection='3d')
                     ax.plot_wireframe(X, Y, Z)
                     ax.set_xlabel('refbits_layer1 size')
                     ax.set_ylabel('refbits_layer2 seize')
                     ax.set_zlabel('hitrate')
                     ax.view_init(elev=30, azim=r)  # 視点設定
-                    ax.set_title(f'{rotate}度回転',fontname ='Noto Sans CJK JP')
+                    ax.set_title(f'{r}度回転',fontname ='Noto Sans CJK JP')
                 
                 place+=1
             # 使用例
