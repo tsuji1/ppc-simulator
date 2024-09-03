@@ -29,10 +29,11 @@ src_file_path = '../simulator-settings/MultiLayerCacheExclusive.json'
 first = 1
 last = 32
 
-cap_first = 64 * 2
+cap_first = 64 * 2 
 cap_last = int(4096 /2)
-interval =64 * 2
+interval =64 * 2 
 capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
+
 
 
 # JSONファイルを読み込む
@@ -75,7 +76,7 @@ def calc_hit_rate(cache_settings,refbits, cache_32bit_cap, cache_nbit_cap):
 
     print(f"Refbits: {refbits}, Cache 32bit cap: {cache_32bit_cap}, Cache nbit cap: {cache_nbit_cap}, Start")
     # シミュレータを実行する
-    cmd = f'./main {tmp_setting_file_path} ../parsed-pcap/202406251400.p7'
+    cmd = f'./main -cacheparam {tmp_setting_file_path} -trace ../parsed-pcap/202406251400.p7'
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     print(result.stdout)
     _json_data = json.loads(result.stdout)
@@ -105,6 +106,7 @@ def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
         json.dump(result_data, file, indent=4)
 
     return 0
+
 
 
 
@@ -155,5 +157,5 @@ with concurrent.futures.ThreadPoolExecutor() as executor:
         print(f"Elapsed time: {elapsed_time:.2f} seconds")
         logging.info(f"All tasks for refbits={refbits} completed.")
         logging.info(f"Elapsed time: {elapsed_time:.2f} seconds")
-        aggregate_result(refbits,capacity, capacity)
+        # aggregate_result(refbits,capacity, capacity)
 

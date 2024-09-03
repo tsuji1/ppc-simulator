@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -97,7 +98,7 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 	default:
 		return nil, fmt.Errorf("unknown packet proto: %s", packet.Proto)
 	}
-	packet.DstIPMasked = nil
+	
 	packet.DstIPMasked = nil
 	packet.HitIPList = nil
 	packet.IsDstIPLeaf = nil
@@ -105,8 +106,7 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 	return packet, nil
 }
 
-// getProperCSVReader は、ファイルポインタから適切な区切り文字を見つけて CSVリーダーを生成します。
-func getProperCSVReader(fp *os.File) *csv.Reader {
+func deprecatedGetProperCSVReader(fp *os.File) *csv.Reader {
 	newReader := func(fp *os.File, comma rune) *csv.Reader {
 		fp.Seek(0, 0)
 		reader := csv.NewReader(fp)
@@ -132,6 +132,44 @@ func getProperCSVReader(fp *os.File) *csv.Reader {
 	for _, comma := range []rune{',', '\t', ' '} {
 		if ok, _ := tryRead(newReader(fp, comma)); ok {
 			return newReader(fp, comma)
+		}
+	}
+
+	return nil
+}
+
+// getProperCSVReader は、ファイルポインタから適切な区切り文字を見つけて CSVリーダーを生成します。
+func getProperCSVReader(fp *os.File) *csv.Reader {
+	// ファイル全体をメモリに読み込む
+	content, err := io.ReadAll(fp)
+	if err != nil {
+		return nil
+	}
+
+	newReader := func(content []byte, comma rune) *csv.Reader {
+		reader := csv.NewReader(bytes.NewReader(content))
+		reader.Comma = comma
+		return reader
+	}
+
+	tryRead := func(reader *csv.Reader) (bool, error) {
+		record, err := reader.Read()
+
+		if err == io.EOF {
+			return true, nil
+		}
+
+		if err != nil {
+			return false, err
+		}
+
+		return len(record) != 1, nil
+	}
+
+	for _, comma := range []rune{',', '\t', ' '} {
+		reader := newReader(content, comma)
+		if ok, err := tryRead(reader); ok || err != nil {
+			return reader
 		}
 	}
 
