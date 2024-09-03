@@ -26,6 +26,6 @@
 		"OnceCacheLimit": 64
 	},
 	"Rule": "rules/wide.rib.20240625.1400.unique.rule",
-	"DebugMode": false,
+	"DebugMode": true,
 	"Interval": 10000000
 }
