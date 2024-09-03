@@ -1,71 +1,45 @@
 import os
 import json
-import matplotlib.pyplot as plt
-from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive
+from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive,AnalysisResults
 
-src_file_name = '16-24bits_cap4-cap12_exclusive.json'
-src_file_path = os.path.join('../result', src_file_name)
-# result_data[refbits][cache_32bit_cap][cache_nbit_cap]
-with open(src_file_path, 'r') as file:
-    data = json.load(file)
+# refbitsごとにまとめよう
+first = 1
+last = 32
 
-refbits_list = ['16', '20', '24']
-cap_first = 4
-cap_last = 12
-capacity = [str(2**i) for i in range(cap_first, cap_last+1)]
-
-hitrate_dict = {refbits: [] for refbits in refbits_list}
-
-for refbits in refbits_list:
-    for cache_32bit_cap in capacity:
-        for cache_nbit_cap in capacity:
-            d = data[refbits][cache_32bit_cap][cache_nbit_cap]
-            parsed_d = MultiLayerCacheExclusive(d)
-            hitrate = parsed_d.HitRate
-            hitrate_dict[refbits].append((cache_32bit_cap, cache_nbit_cap, hitrate))
+cap_first = 64 * 2 
+cap_last = int(4096 /2)
+interval =64 * 2 
+capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
 
 
+def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
+    result_data = {}
+    tmp_dir = '../result/tmp_results'
+    tmp_dir_refbits = os.path.join(tmp_dir, f'{refbits}')
 
-def show_hitrate(hitrate_d):
-    # max hitrate
-    max_hitrate:float= 0
-    max_hitrate_refbits:int = 0
-    max_hitrate_c32:int = 0
-    max_hitrate_cn = 0
-    max_hitrate_with_restrict =[0,0,0,0]
-    k = 1024/3
-    for refbits, hitrate_data in hitrate_d.items():
-        for c32, cn, h in hitrate_data:
-            if h > max_hitrate:
-                max_hitrate = float(h)
-                max_hitrate_refbits = int(refbits)
-                max_hitrate_c32 = int(c32)
-                max_hitrate_cn = int(cn)
-            if max_hitrate_with_restrict[0] < float(h) and int(c32)+int(cn) <= k:
-                max_hitrate_with_restrict = [float(h), int(refbits), int(c32), int(cn)]
-            if(int(c32)==16 and 1024 == int(cn) and refbits == '24'):
-                print(f"refbits={refbits}, c32={c32}, cn={cn}, hitrate={h}")
-                
-    print(f"Max HitRate: {max_hitrate} (refbits={max_hitrate_refbits}, c32={max_hitrate_c32}, cn={max_hitrate_cn})")
-    print(f"Max HitRate with restriction: {max_hitrate_with_restrict[0]} (refbits={max_hitrate_with_restrict[1]}, c32={max_hitrate_with_restrict[2]}, cn={max_hitrate_with_restrict[3]})")
-    return max_hitrate
+    result_data[refbits] = {}
+    for cache_32bit_cap in cache_32bit_capacity:
+        result_data[refbits][cache_32bit_cap] = {}
+        for cache_nbit_cap in cache_nbit_capacity:
+            partial_result_file = os.path.join(tmp_dir_refbits, f'tmp_result_{cache_32bit_cap}_{cache_nbit_cap}.json')
+            with open(partial_result_file, 'r') as file:
+                _json_data = json.load(file)
+                result_data[refbits][cache_32bit_cap][cache_nbit_cap] = _json_data
+    dst_file_path = f'../result/{refbits}bits_cap{cap_first}-cap{cap_last}-interval{interval}-exclusive.json'
+
+    # 最終的な結果を一つの大きなファイルに書き込む
+    with open(dst_file_path, 'w') as file:
+        json.dump(result_data, file, indent=4)
+
+    return 0
+anly = AnalysisResults(None)
+for refbits in range(first, last + 1):
+    # aggregate_result(refbits,capacity,capacity) jsonを作成
+    data_file_path = f'../result/{refbits}bits_cap{cap_first}-cap{cap_last}-interval{interval}-exclusive.json'
+    with open(data_file_path, 'r') as file:
+        json_data = json.load(file)
+    anly.add_result(json_data)
     
-
-
-# グラフ描画
-def plot_graph_all(hitrate_d):
-    for refbits, hitrate_data in hitrate_d.items():
-        labels = [f"{c32}-{cn}" for c32, cn, _ in hitrate_data]
-        hitrates = [h for _, _, h in hitrate_data]
-
-        plt.figure(figsize=(20, 8))
-        plt.bar(labels, hitrates, color='blue')
-        plt.xlabel('Configurations (/32キャッシュサイズ-/nビットキャッシュサイズ)',fontname ='Noto Sans CJK JP')
-        plt.ylabel('HitRate')
-        plt.title(f'HitRate for Different Cache Configurations (refbits={refbits})')
-        plt.ylim(0.6, 1.0)
-        plt.xticks(rotation=45, ha='right', fontsize=8,position=(0.5, 0))  # ラベルを45度回転させ、フォントサイズを小さくする
-        plt.tight_layout()
-        plt.savefig(f'../result/{src_file_name[:-5]}_refbits{refbits}_hitrate.png')
-# plot_graph_all(hitrate_dict)
-max_hitrate = show_hitrate(hitrate_dict)
+# anly.hitrate_3dplot_2layer(type="heatmap")
+anly.find_top_n_hitrate(10,capacity_limit=1024)
+anly.print_results()

@@ -98,7 +98,7 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 	default:
 		return nil, fmt.Errorf("unknown packet proto: %s", packet.Proto)
 	}
-	
+
 	packet.DstIPMasked = nil
 	packet.HitIPList = nil
 	packet.IsDstIPLeaf = nil
@@ -261,7 +261,7 @@ func runSimpleCacheSimulatorWithCSVSync(fp *os.File, sim *simulator.SimpleCacheS
 // runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
 // printInterval ごとにシミュレーションの統計情報を出力します。
 func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) {
-	reader := getProperCSVReader(fp)
+	reader := deprecatedGetProperCSVReader(fp)
 
 	if reader == nil {
 		panic("Can't read input as valid tsv/csv file")

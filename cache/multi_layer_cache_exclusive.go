@@ -99,7 +99,7 @@ func (c *MultiLayerCacheExclusive) StatString() string {
 	}
 
 	str += "]}"
-	// c.RoutingTable.StatDetail()
+
 
 	return str
 }

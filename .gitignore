@@ -19,3 +19,7 @@ venv
 *.log
 __pycache__
 *.prof
+
+*/myenv
+*/__pycache__
+*/myenv

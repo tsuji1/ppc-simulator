@@ -118,13 +118,15 @@ class AnalysisResults:
     
     results:List[MultiLayerCacheExclusive] = []
     _tmp_results:List[MultiLayerCacheExclusive] = []
-    
-    def __init__(self,res:List[MultiLayerCacheExclusive]) -> None:
-        self.results = res
+    def __init__(self) -> None:
+        self.results = []
+        self._tmp_results = []
         
-    def __init__(self, data: Dict):
-        self.__explore_and_parse(data)
-        
+    def __init__(self, data: any):
+        self.results: List[MultiLayerCacheExclusive] = []
+        self._tmp_results: List[MultiLayerCacheExclusive] = []
+        if(data is not None):
+            self.__explore_and_parse(data)
   
     def __explore_and_parse(self, data:any) -> None:
         if isinstance(data, dict):
@@ -141,7 +143,8 @@ class AnalysisResults:
             else:
                 for key, value in data.items():
                     self.__explore_and_parse(value)
-                    
+    def add_result(self, data: MultiLayerCacheExclusive) -> None:
+        self.__explore_and_parse(data)
 
     def find_top_n_hitrate(self, top=3,capacity_limit=float('inf'))->List[MultiLayerCacheExclusive]:
         '''  
@@ -199,10 +202,10 @@ class AnalysisResults:
             y = []
             z = []
             
-            for d in self.results:
-                x.append(d.Parameter.CacheLayers.CacheLayers[0].Size)
-                y.append(d.Parameter.CacheLayers.CacheLayers[1].Size)
-                z.append(d.HitRate)
+            for k in self.results:
+                x.append(k.Parameter.CacheLayers.CacheLayers[0].Size)
+                y.append(k.Parameter.CacheLayers.CacheLayers[1].Size)
+                z.append(k.HitRate)
             xnp = np.array(x)
             ynp = np.array(y)
             znp = np.array(z)
@@ -284,99 +287,90 @@ class AnalysisResults:
             src_file_name = f'hitrate_3dplot_3layer_refbits{refbits}_mincap{min_cap}_maxcap{max_cap}'
             fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
             plt.savefig(f"../result/hitrate_3dplot_3layer/{type}/{src_file_name}.png")
-    
-    def hitrate_3dplot_3layer(self, type="mesh",rotate=[0,100,200,300]):
+    def hitrate_3dplot_2layer(self, type="wire",rotate=[0,100,200,300]):
         # データを格納するリストの
         # データを格納するリスト
-        x = []
-        y = []
-        z = []
-        
-        for data in self.results:
-            x.append(data.Parameter.CacheLayers.CacheLayers[0].Size)
-            y.append(data.Parameter.CacheLayers.CacheLayers[1].Size)
-            z.append(data.HitRate)
-        xnp = np.array(x)
-        ynp = np.array(y)
-        znp = np.array(z)
-
-        # データの整形
-        unique_x = np.unique(xnp)
-        unique_y = np.unique(ynp)
-        print(xnp)
-
-        X, Y = np.meshgrid(unique_x, unique_y)
-        Z = np.full_like(X,np.nan, dtype=float)
-        print(Z)
-        # 各x, yに対応するzをセット
-        for i in range(len(znp)):
-            xi = np.where(unique_x == xnp[i])[0][0]
-            yi = np.where(unique_y == ynp[i])[0][0]
-            Z[yi, xi] = znp[i]
-
-        # 3Dグラフの描画
-
-        # カラーマップを使いたい場合は以下を使用
-        # ax.plot_surface(X, Y, Z, cmap='bwr')
-
-        # 3Dグラフを4つの異なる視点で描画
-        fig = plt.figure(figsize=(12, 12))
-
-        # View 1
-        r = rotate[0]
-        ax1 = fig.add_subplot(221, projection='3d')
-        ax1.plot_wireframe(X, Y, Z)
-        ax1.set_xlabel('refbits_layer2')
-        ax1.set_ylabel('refbits_layer3')
-        ax1.set_zlabel('hitrate')
-        ax1.view_init(elev=30, azim=r)  # 視点設定
-        ax1.set_title(f'{rotate}度回転',fontname ='Noto Sans CJK JP')
-
-        # View 2
-        r = rotate[1]
-        ax2 = fig.add_subplot(222, projection='3d')
-        ax2.plot_wireframe(X, Y, Z)
-        ax2.set_xlabel('refbits_layer2')
-        ax2.set_ylabel('refbits_layer3')
-        ax2.set_zlabel('hitrate')
-        ax2.view_init(elev=30, azim=r)  # 視点設定
-        ax2.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-        # View 3
-        
-        r = rotate[2]
-        ax3 = fig.add_subplot(223, projection='3d')
-        ax3.plot_wireframe(X, Y, Z)
-        ax3.set_xlabel('refbits_layer2')
-        ax3.set_ylabel('refbits_layer3')
-        ax3.set_zlabel('hitrate')
-        ax3.view_init(elev=30, azim=r)  # 視点設定
-        ax3.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-        # View 4
-        
-        r = rotate[3]
-        ax4 = fig.add_subplot(224, projection='3d')
-        ax4.plot_wireframe(X, Y, Z)
-        ax4.set_xlabel('refbits_layer2')
-        ax4.set_ylabel('refbits_layer3')
-        ax4.set_zlabel('hitrate')
-        ax4.view_init(elev=30, azim=r)  # 視点設定
-        ax4.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-        # 使用例
-        top_d = self.find_top_n_hitrate(1)
-        max_hitrate, max_refbits_layer2, max_refbits_layer3 =top_d, top_d.Parameter.CacheLayers.CacheLayers[0].Size,top_d.Parameter.CacheLayers.CacheLayers[1].Size 
-        
-        
-        fig.text(0.1,0.06,f"Layer1は/32キャッシュで他のLayer2(/mキャッシュ)とLayer3(/nキャッシュ)の参照bitを変えている。32>m>nとなる。",fontsize=12,fontname ='Noto Sans CJK JP')
-
-        fig.text(0.1,0.04,f"最大のヒット率: {max_hitrate:.5f} (refbits_layer2: {max_refbits_layer2}, refbits_layer3: {max_refbits_layer3})",fontsize=12,fontname ='Noto Sans CJK JP')
-        
-        parameter_description = ""
-        for i,p in enumerate(top_d.Parameter.CacheLayers):
-            parameter_description += f"Layer{i+1}, Size: {p.Size}    "
+        data = self.query_results_with_refbits_all()
+        print(data.keys())
+        for i,d in data.items():
+            print(f"refbits: {i} のデータを処理中")
+            refbits = i
+            x = []
+            y = []
+            z = []
             
+            for k in self.results:
+                x.append(k.Parameter.CacheLayers.CacheLayers[0].Size)
+                y.append(k.Parameter.CacheLayers.CacheLayers[1].Size)
+                z.append(k.HitRate)
+            xnp = np.array(x)
+            ynp = np.array(y)
+            znp = np.array(z)
+
+            # データの整形
+            unique_x = np.unique(xnp)
+            unique_y = np.unique(ynp)
+            X, Y = np.meshgrid(unique_x, unique_y)
+            Z = np.full_like(X, np.nan, dtype=float)
+            # 各x, yに対応するzをセット
+            for i in range(len(znp)):
+                xi = np.where(unique_x == xnp[i])[0][0]
+                yi = np.where(unique_y == ynp[i])[0][0]
+                Z[yi, xi] = znp[i]
+            fig = plt.figure(figsize=(12, 12))
+            place = 221
+
+            # 3Dグラフの描画
+
+            # カラーマップを使いたい場合は以下を使用
+            # ax.plot_surface(X, Y, Z, cmap='bwr')
+
+            # 3Dグラフを4つの異なる視点で描画
+            
+            
+            for r in rotate:
+               
+                if(type=="heatmap"):
+                    # ヒートマップ用のデータを作成
+                    ax = fig.add_subplot(place)
+                    plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
+                    plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
+                    ax.set_xlabel('refbits_layer1 size')
+                    ax.set_ylabel('refbits_layer2 size')
+                    ax.set_title(f'refbits:{refbits}',fontname ='Noto Sans CJK JP')
+                else:
+                    ax = fig.add_subplot(place, projection='3d')
+                    ax.plot_wireframe(X, Y, Z)
+                    ax.set_xlabel('refbits_layer1 size')
+                    ax.set_ylabel('refbits_layer2 seize')
+                    ax.set_zlabel('hitrate')
+                    ax.view_init(elev=30, azim=r)  # 視点設定
+                    ax.set_title(f'{rotate}度回転',fontname ='Noto Sans CJK JP')
                 
-        fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
-        plt.savefig("../result/multilayer_exclusive.png")
+                place+=1
+            # 使用例
+            top_d = self.find_top_n_hitrate(1)
+            top_d= top_d[0]
+            max_hitrate, max_32ref_size, max_nref_size =top_d.HitRate,top_d.Parameter.CacheLayers.CacheLayers[0].Size,top_d.Parameter.CacheLayers.CacheLayers[1].Size 
+            
+            
+            # fig.text(0.1,0.06,f"Layer1は/32キャッシュで他のLayer2(/mキャッシュ)とLayer3(/nキャッシュ)の参照bitを変えている。32>m>nとなる。",fontsize=12,fontname ='Noto Sans CJK JP')
+
+            fig.text(0.1,0.04,f"最大のヒット率: {max_hitrate:.5f} (refbits_layer1_size: {max_32ref_size}, refbits_layer2_size: {max_nref_size})",fontsize=12,fontname ='Noto Sans CJK JP')
+            
+            parameter_description = ""
+            for i,p in enumerate(top_d.Parameter.CacheLayers.CacheLayers):
+                parameter_description += f"Layer{i+1}, Size: {p.Size}    "
+            min_cap,max_cap = self.get_capacity_range(d)    
+            src_file_name = f'hitrate_3dplot_2layer_refbits{refbits}_mincap{min_cap}_maxcap{max_cap}'
+            fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
+            
+            # directory を作成する
+ 
+            os.makedirs(f"../result/hitrate_3dplot_2layer/{type}",exist_ok=True)
+            
+            
+            plt.savefig(f"../result/hitrate_3dplot_2layer/{type}/{src_file_name}.png")
     def query_results_with_refbits_all(self)->dict[int,list[MultiLayerCacheExclusive]]:
         res :dict[int,list[MultiLayerCacheExclusive]] = {}
         for data in self.results:

@@ -49,7 +49,7 @@ func (routingtable *RoutingTablePatriciaTrie) PrintMatchRulesInfo(ip ipaddress.I
 	ans += strconv.Itoa(int(routingtable.CountIPsInChildrenRule(ip, len(hitted[len(hitted)-1])))) // 最長一致ルールの子ノード数
 	ans += ","
 	ans += strconv.Itoa(int(routingtable.CountIPsInChildrenRule(ip, 24))) // /24にキャッシュするのに必要なIP数
-	fmt.Println(ans)
+	// fmt.Println(ans)
 }
 
 // ReturnIPsInRule は、指定されたプレフィックスに含まれるすべてのIPアドレスを返します。

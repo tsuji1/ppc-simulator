@@ -158,6 +158,7 @@ def make_hitrate_plot(res):
             
     fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
     plt.savefig("../result/multilayer_exclusive.png")
+    plt.close()
 def find_max_hitrate(res):
     max_hitrate = float('-inf')  # 初期値として非常に小さい値を設定
     max_refbits_layer2 = None
