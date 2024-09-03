@@ -146,10 +146,11 @@ class AnalysisResults:
     def add_result(self, data: MultiLayerCacheExclusive) -> None:
         self.__explore_and_parse(data)
 
-    def find_top_n_hitrate(self, top=3,capacity_limit=float('inf'))->List[MultiLayerCacheExclusive]:
+    def find_top_n_hitrate(self, top=3,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1))->List[MultiLayerCacheExclusive]:
         '''  
         セットされた結果から上位topのヒット率を持つデータを取得。
         capacity_limitでキャッシュの容量制限を設定することができます。
+        また、hitrate_limitでヒット率の上限を設定することができます。
         内部のtmp_resultsに結果を保持しておくため、print_results()を呼び出すことで表示できます。
         '''
         
@@ -158,7 +159,7 @@ class AnalysisResults:
         top_hitrate_heap = []
         
         for data in self.results:
-            if data.Parameter.CacheLayers.capacity_sum() <= capacity_limit:
+            if data.Parameter.CacheLayers.capacity_sum() <= capacity_maximum_limit and data.HitRate <= hit_rate_maximum_limit:
                 hitrate = data.HitRate
                 
                 # ヒット率とそのデータをヒープに追加
