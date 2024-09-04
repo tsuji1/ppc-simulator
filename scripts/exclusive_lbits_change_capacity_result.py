@@ -4,7 +4,7 @@ from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive,AnalysisRes
 
 # refbitsごとにまとめよう
 first = 1
-last = 32
+last = 25
 
 cap_first = 64 * 2 
 cap_last = int(4096 /2)
@@ -32,14 +32,18 @@ def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
         json.dump(result_data, file, indent=4)
 
     return 0
+
+
 anly = AnalysisResults(None)
 for refbits in range(first, last + 1):
-    # aggregate_result(refbits,capacity,capacity) jsonを作成
+    
+    aggregate_result(refbits,capacity,capacity) # jsonを作成
     data_file_path = f'../result/{refbits}bits_cap{cap_first}-cap{cap_last}-interval{interval}-exclusive.json'
     with open(data_file_path, 'r') as file:
         json_data = json.load(file)
     anly.add_result(json_data)
     
 # anly.hitrate_3dplot_2layer(type="heatmap")
-anly.find_top_n_hitrate(10,capacity_maximum_limit=1024)
+anly.find_top_n_hitrate(10,capacity_maximum_limit=256*3)
 anly.print_results()
+

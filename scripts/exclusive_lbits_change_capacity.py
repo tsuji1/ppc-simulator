@@ -27,7 +27,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # JSONファイルのパス
 src_file_path = '../simulator-settings/template_2layer_capacity.json'
-first = 23
+first = 26
 last = 32
 
 cap_first = 64 * 2 
