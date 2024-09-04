@@ -194,10 +194,13 @@ last = 32
 j,p = aggregate_result(1,32,[256,256,256])
 
 analy = AnalysisResults(p)
-analy.find_top_n_hitrate(10)
+a=analy.find_top_n_hitrate(10)
 analy.print_results()
-
-# a = res.find_top_n_hitrate(10)
+analy.display_stat_detail(a)
+analy.stat_detail_plot(3)
+# analy.hitrate_3dplot_3layer()
+# analy.hitrate_3dplot_3layer(type="heatmap")
+# # a = res.find_top_n_hitrate(10)
 # print(a)
 # res.print_results(a)
 
