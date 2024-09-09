@@ -5,7 +5,7 @@ import (
 	"test-module/ipaddress"
 	"test-module/routingtable"
 
-	. "github.com/tchap/go-patricia/patricia"
+	"github.com/tchap/go-patricia/patricia"
 )
 
 // MultiLayerCacheExclusive は、複数のキャッシュ層を持ち、それぞれのキャッシュ層に独自のキャッシュポリシーを設定できるキャッシュシステムです。
@@ -100,7 +100,6 @@ func (c *MultiLayerCacheExclusive) StatString() string {
 
 	str += "]}"
 
-
 	return str
 }
 
@@ -180,6 +179,41 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 	return hit, hitLayerIdx
 }
 
+func searchIP(f *FiveTuple, rt *routingtable.RoutingTablePatriciaTrie, refbits int) ([]string, []patricia.Item) {
+	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
+
+	if f.HitItemList != nil {
+		return f.HitIPList[refbits], *f.HitItemList
+	}
+	var prefix []string
+	var items []patricia.Item
+
+	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
+
+	// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
+	// prefix には二進数のプレフィックス(ex."1011011")が格納される
+	// prefix_item にはNext hopとDepthが格納される
+	prefix, items = rt.SearchIP(fivetupleDstIP, 32)
+
+	return prefix, items
+}
+
+func isLeaf(f *FiveTuple, rt *routingtable.RoutingTablePatriciaTrie, refbits int) bool {
+	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
+
+	if f.IsDstIPLeaf != nil {
+		return f.IsDstIPLeaf[refbits]
+	}
+	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
+	isleaf := rt.IsLeaf(fivetupleDstIP, refbits)
+
+	// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
+	// prefix には二進数のプレフィックス(ex."1011011")が格納される
+	// prefix_item にはNext hopとDepthが格納される
+
+	return isleaf
+}
+
 // CacheFiveTuple は、FiveTuple をキャッシュに挿入し、必要に応じてエントリを置換します。
 //
 // 引数:
@@ -198,18 +232,12 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
 
 	var prefix []string
-	var items []Item
-	if f.HitIPList == nil {
-		// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
-		// prefix には二進数のプレフィックス(ex."1011011")が格納される
-		// prefix_item にはNext hopとDepthが格納される
-		prefix, items = c.RoutingTable.SearchIP(fivetupleDstIP, 32, f.HitIPList, nil)
-		f.HitIPList = &prefix
-		f.HitItemList = &items
-	} else {
-		prefix = *f.HitIPList
-		items = *f.HitItemList
-	}
+	// var items []Item
+
+	// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
+	// prefix には二進数のプレフィックス(ex."1011011")が格納される
+	// prefix_item にはNext hopとDepthが格納される
+	prefix, _ = searchIP(f, &c.RoutingTable, 32)
 
 	// 最長一致するプレフィックスのインデックスを取得
 	prefix_size := len(prefix) - 1
@@ -232,7 +260,7 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	hitLayer := 0
 	//最終的にはレイヤ0であるのでk=0は確認していない。
 	for k := len(c.CacheLayers) - 1; k > 0; k-- {
-		if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[k]), f.HitIPList, f.HitItemList) && c.RoutingTable.IsLeaf(fivetupleDstIP, int(c.CacheRefBits[k]), f.HitIPList, f.HitItemList) {
+		if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[k])) && isLeaf(f, &c.RoutingTable, int(c.CacheRefBits[k])) {
 			// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
 			hitLayer = k
 
