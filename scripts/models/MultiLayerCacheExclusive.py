@@ -334,7 +334,7 @@ class AnalysisResults:
         for i,p in enumerate(top_d.Parameter.CacheLayers.CacheLayers):
             parameter_description += f"Layer{i+1}, Size: {p.Size}    "
         min_cap,max_cap = self.get_capacity_range(d)    
-        src_file_name = f'hitrate_3dplot_3layer_refbits_mincap{min_cap}_maxcap{max_cap}'
+        src_file_name = f'hitrate_3dplot_3layer_refbits_mincap{min_cap}_maxcap{max_cap}_{type}'
         fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
         os.makedirs(f"../result/hitrate_3dplot_3layer/{type}",exist_ok=True)
         plt.savefig(f"../result/hitrate_3dplot_3layer/{type}/{src_file_name}.png")
@@ -413,7 +413,7 @@ class AnalysisResults:
             for i,p in enumerate(top_d.Parameter.CacheLayers.CacheLayers):
                 parameter_description += f"Layer{i+1}, Size: {p.Size}    "
             min_cap,max_cap = self.get_capacity_range(d)    
-            src_file_name = f'hitrate_3dplot_2layer_refbits{refbits}_mincap{min_cap}_maxcap{max_cap}'
+            src_file_name = f'hitrate_3dplot_2layer_refbits{refbits}_mincap{min_cap}_maxcap{max_cap}_{type}'
             fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
             
             # directory を作成する

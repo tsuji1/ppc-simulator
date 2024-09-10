@@ -13,9 +13,9 @@ type Packet struct {
 	Proto            string
 	SrcIP, DstIP     net.IP
 	SrcPort, DstPort uint16
-	DstIPMasked      *string
-	IsDstIPLeaf      *bool
-	HitIPList        *[]string
+	DstIPMasked      *[33]string
+	IsDstIPLeaf      *[33]bool
+	HitIPList        *[33][]string
 	HitItemList      *[]Item
 	// IcmpType, IcmpCode uint16
 }

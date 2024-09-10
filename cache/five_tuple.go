@@ -23,20 +23,20 @@ type FiveTuple struct {
 	Proto            IPProtocol
 	SrcIP, DstIP     uint32
 	SrcPort, DstPort uint16
-	DstIPMasked      *string
-	IsDstIPLeaf      *bool
-	HitIPList        *[]string
+	DstIPMasked      *[33]string
+	IsDstIPLeaf      *[33]bool
+	HitIPList        *[33][]string
 	HitItemList      *[]Item
 }
 
-func ipToUInt32(ip net.IP) uint32 {
+func IpToUInt32(ip net.IP) uint32 {
 	if len(ip) == 16 {
 		return binary.BigEndian.Uint32(ip[12:16])
 	}
 	return binary.BigEndian.Uint32(ip)
 }
 
-func uint32ToIP(nn uint32) net.IP {
+func Uint32ToIP(nn uint32) net.IP {
 	ip := make(net.IP, 4)
 	binary.BigEndian.PutUint32(ip, nn)
 	return ip
@@ -72,10 +72,13 @@ func (p *Packet) FiveTuple() *FiveTuple {
 	case IP_TCP, IP_UDP:
 		return &FiveTuple{
 			proto,
-			ipToUInt32(p.SrcIP),
-			ipToUInt32(p.DstIP),
+			IpToUInt32(p.SrcIP),
+			IpToUInt32(p.DstIP),
 			p.SrcPort, p.DstPort,
-			p.DstIPMasked, p.IsDstIPLeaf, p.HitIPList, p.HitItemList,
+			p.DstIPMasked, 
+			p.IsDstIPLeaf,
+			 p.HitIPList,
+			  p.HitItemList,
 		}
 	// case "icmp":
 	// 	return FiveTuple{p.Proto, p.SrcIP, p.DstIP, 0, 0}
@@ -100,5 +103,5 @@ func (f FiveTuple) SwapSrcAndDst() FiveTuple {
 }
 
 func (f FiveTuple) String() string {
-	return fmt.Sprintf("FiveTuple{%v, %v, %v, %v, %v}", f.Proto, uint32ToIP(f.SrcIP), uint32ToIP(f.DstIP), f.SrcPort, f.DstPort)
+	return fmt.Sprintf("FiveTuple{%v, %v, %v, %v, %v}", f.Proto, Uint32ToIP(f.SrcIP), Uint32ToIP(f.DstIP), f.SrcPort, f.DstPort)
 }

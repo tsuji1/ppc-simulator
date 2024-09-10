@@ -74,7 +74,7 @@ func (cache *FullAssociativeDstipNbitLRUCache) IsCachedWithFiveTuple(f *FiveTupl
 		}
 		if cache.debugMode {
 			dstIpAddress := ipaddress.NewIPaddress(dstIP)
-			hitIP, item := cache.routingTable.SearchLongestIP(dstIpAddress, 32, f.HitIPList, f.HitItemList)
+			hitIP, item := cache.routingTable.SearchLongestIP(dstIpAddress, 32)
 
 			if item.(routingtable.Data).NextHop != hitElem.Value.(fullAssociativeLRUCacheEntry).NextHop {
 				println("hitIP: ", ipaddress.BitStringToIP(hitIP), "dstIP: ", dstIpAddress.String())
@@ -117,7 +117,7 @@ func (cache *FullAssociativeDstipNbitLRUCache) CacheFiveTuple(f *FiveTuple) []*F
 
 		// デバッグモードの場合、ルーティングテーブルを参照してエントリを作成する
 		maskDstIP := cache.ReturnMaskedIP(f.DstIP)
-		_, item := cache.routingTable.SearchLongestIP(ipaddress.NewIPaddress(maskDstIP), int(cache.Refbits), f.HitIPList,f.HitItemList)
+		_, item := cache.routingTable.SearchLongestIP(ipaddress.NewIPaddress(maskDstIP), int(cache.Refbits))
 
 		newEntry = fullAssociativeLRUCacheEntry{
 			FiveTuple: *f,

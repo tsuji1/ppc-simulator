@@ -198,10 +198,9 @@ a=analy.find_top_n_hitrate(10)
 analy.print_results()
 analy.display_stat_detail(a)
 analy.stat_detail_plot(3)
-# analy.hitrate_3dplot_3layer()
-# analy.hitrate_3dplot_3layer(type="heatmap")
-# # a = res.find_top_n_hitrate(10)
-# print(a)
+analy.hitrate_3dplot_3layer()
+analy.hitrate_3dplot_3layer(type="heatmap")
+
 # res.print_results(a)
 
 # make_hitrate_plot(res)
