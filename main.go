@@ -12,6 +12,7 @@ import (
 	"os"
 	"reflect"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -33,6 +34,7 @@ import (
 
 func init() {
 	// routingtable.Data 型の登録
+	debug.SetGCPercent(800)
 	gob.Register(routingtable.Data{})
 }
 
