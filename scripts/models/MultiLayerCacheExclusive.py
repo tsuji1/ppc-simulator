@@ -382,7 +382,7 @@ class AnalysisResults:
      
             if(type=="heatmap"):
                 # ヒートマップ用のデータを作成
-                ax = fig.add_subplot(place)
+                ax = fig.add_subplot(111)
                 plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
                 plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
                 ax.set_xlabel('refbits_layer1 size')
@@ -393,7 +393,7 @@ class AnalysisResults:
                     ax = fig.add_subplot(place, projection='3d')
                     ax.plot_wireframe(X, Y, Z)
                     ax.set_xlabel('refbits_layer1 size')
-                    ax.set_ylabel('refbits_layer2 seize')
+                    ax.set_ylabel('refbits_layer2 size')
                     ax.set_zlabel('hitrate')
                     ax.view_init(elev=30, azim=r)  # 視点設定
                     ax.set_title(f'{r}度回転',fontname ='Noto Sans CJK JP')

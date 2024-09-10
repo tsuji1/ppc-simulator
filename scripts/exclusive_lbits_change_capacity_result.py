@@ -44,6 +44,6 @@ for refbits in range(first, last + 1):
     anly.add_result(json_data)
     
 # anly.hitrate_3dplot_2layer(type="heatmap")
-anly.find_top_n_hitrate(10,capacity_maximum_limit=256*3)
+anly.find_top_n_hitrate(10)
 anly.print_results()
 
