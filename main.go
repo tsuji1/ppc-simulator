@@ -10,8 +10,6 @@ import (
 	"net"
 	_ "net/http/pprof"
 	"os"
-	"path"
-	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -435,161 +433,6 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
-// runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
-// printInterval ごとにシミュレーションの統計情報を出力します。
-func runSimpleCacheSimulatorWithGob(sim *simulator.SimpleCacheSimulator, basename string,interval int,gobInterval int) {
-	basepath := path.Join("gob-packet", basename)
-	var packets []Packet
-	settingfile, err := path.Join(basepath, "setting.json")
-		gobsettingsByte, err := os.ReadFile(settingfile)
-		if err != nil {
-			panic(err)
-		}
-
-		var gobSettings interface{}
-		err = json5.Unmarshal(gobsettingsByte, &gobSettings)
-		if err != nil {
-			panic(err)
-		}
-		p := dproxy.New(gobSettings)
-		count, err := p.M("Count")
-
-
-		gobFilePath := path.Join(basepath, fmt.Sprintf("%v-packet%v-%v.gob", basename, 1, count))
-		packets = decodeGobFile(gobFilePath)
-		for i := 0;;{
-
-		for _, packet := range packets {	
-		
-		start := time.Now()
-		sim.Process(packet)
-		elapsed := time.Since(start)
-		i+=1
-		}
-	
-
-			fmt.Printf("sim process time: %s\n", elapsed)
-			fmt.Printf("%v\n", sim.GetStatString())
-			if bench {
-				os.Exit(0)
-			}
-			if i+count > interval {
-				gobFilePath = path.Join(basepath, fmt.Sprintf("%v-packet%v-%v.gob", basename, i+1, count))
-			}else{
-			gobFilePath = path.Join(basepath, fmt.Sprintf("%v-packet%v-%v.gob", basename, i+1, i+count))	
-			}
-			packets = decodeGobFile(gobFilePath)
-
-	}
-}
-func makePacketObjectFileWithCSV(fp *os.File, json interface{}, interval int, tracefile string, basename string,update bool) (basename string, err error) {
-	reader := deprecatedGetProperCSVReader(fp)
-	// ルールファイルを開く
-	p := dproxy.New(json)
-
-	rulefile, _ := p.M("Rule").String()
-	fp, err := os.Open(rulefile)
-	if err != nil {
-		panic(err)
-	}
-	defer fp.Close()
-
-	routingtable := routingtable.NewRoutingTablePatriciaTrie()
-	routingtable.ReadRule(fp)
-	// 拡張子を除いたファイル名を取得
-
-
-	basepath := path.Join("gob-packet", basename)
-	// dir := filepath.Dir(basepath)
-	if err := os.MkdirAll(basepath, os.ModePerm); err != nil {
-		fmt.Println("ディレクトリの作成に失敗しました:", err)
-		return
-	}
-
-	var target []Packet
-
-	target = make([]Packet, 0, interval)
-	if reader == nil {
-		panic("Can't read input as valid tsv/csv file")
-	}
-
-	var filename string
-	var firsti int
-	var lasti int
-
-	firsti = 1
-
-	for i := firsti; ; i += 1 {
-		record, err := reader.Read()
-
-		if err != nil {
-			if err == io.EOF {
-				lasti = i
-				filename = fmt.Sprintf("%v-packet%v-%v.gob", basename, firsti, lasti)
-				filepath := path.Join(basepath, filename)
-
-				firsti = i + 1
-				file, err := os.Create(filepath)
-				fmt.Printf("ファイル名: %v\n", filepath)
-				if err != nil {
-					log.Fatal("ファイル作成エラー:", err)
-				}
-				encoder := gob.NewEncoder(file)
-				if err := encoder.Encode(target); err != nil {
-					log.Fatal("エンコードエラー:", err)
-				}
-				file.Close()
-
-				target = make([]Packet, 0, interval)
-			}
-
-			switch err.(type) {
-			case *csv.ParseError:
-				continue
-			default:
-				fmt.Println(reflect.TypeOf(err))
-				continue
-			}
-		}
-
-		packet, err := parseCSVRecordWithRoutingTable(record, routingtable)
-
-		if err != nil {
-			fmt.Println("Error:", err)
-			continue
-			// panic(err)
-		}
-
-		if packet.FiveTuple() == nil {
-			continue
-		}
-		target = append(target, *packet)
-
-		if i%interval == 0 {
-			lasti = i
-			filename = fmt.Sprintf("%v-packet%v-%v.gob", basename, firsti, lasti)
-			filepath := path.Join(basepath, filename)
-
-			firsti = i + 1
-			file, err := os.Create(filepath)
-			fmt.Printf("ファイル名: %v\n", filepath)
-			if err != nil {
-				log.Fatal("ファイル作成エラー:", err)
-			}
-			encoder := gob.NewEncoder(file)
-			if err := encoder.Encode(target); err != nil {
-				log.Fatal("エンコードエラー:", err)
-			}
-			file.Close()
-
-			target = make([]Packet, 0, interval)
-
-		}
-
-	}
-
-}
-
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 var cacheparam = flag.String("cacheparam", "", "cache parameter file")
@@ -653,27 +496,11 @@ func main() {
 	defer fpCSV.Close()
 
 	useSync := false // 今のところgoroutineを使う方が遅いので、基本はfalse
-	makeGob := true
-	useGob := true
-	gobinterval := 100000
 
-	rulefile, _ := p.M("Rule").String()
-	tracefile := *trace
-
-	tracefileWithoutExtension := strings.TrimSuffix(filepath.Base(tracefile), filepath.Ext(tracefile))
-	rulefileWithoutExtension := strings.TrimSuffix(filepath.Base(rulefile), filepath.Ext(rulefile))
-	basename := fmt.Sprintf("%v-%v", tracefileWithoutExtension, rulefileWithoutExtension)
-	if makeGob {
-		makePacketObjectFileWithCSV(fpCSV, simulatorDefinition, gobinterval,basename, false)
+	if useSync {
+		runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval), *bench)
 	} else {
-		if useSync {
-			runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval), *bench)
-		} else if useGob {
-			runSimpleCacheSimulatorWithGob(cacheSim,basename,gobinterval)
-		} 
-		else{
-			runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, int(interval), *bench)
-		}
+		runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, int(interval), *bench)
 	}
 	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 
