@@ -27,12 +27,12 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # JSONファイルのパス
 src_file_path = '../simulator-settings/template_2layer_capacity.json'
-first = 1
+first = 16
 last = 24
 
-cap_first = 64 * 2 
-cap_last = int(4096 /2)
-interval =64 * 2 
+cap_first = 64 
+cap_last = int(4096 /4)
+interval =64 
 capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
 capacity_nbits = copy.copy(capacity)
 capacity_32bits = copy.copy(capacity)

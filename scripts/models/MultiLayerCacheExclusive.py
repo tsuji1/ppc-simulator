@@ -225,6 +225,7 @@ class AnalysisResults:
         capacity_limitでキャッシュの容量制限を設定することができます。
         また、hitrate_limitでヒット率の上限を設定することができます。
         内部のtmp_resultsに結果を保持しておくため、print_results()を呼び出すことで表示できます。
+        refbits_limitでrefbitsの制限を設定することができます。[[layer2_refbits_minimum,layer2_refbits_maximum],...]
         '''
         
         
@@ -239,6 +240,15 @@ class AnalysisResults:
         
         for data in result:
             if data.Parameter.CacheLayers.capacity_sum() <= capacity_maximum_limit and data.HitRate <= hit_rate_maximum_limit:
+                skip = False
+                if(refbits_limit is not None):
+                    for l,restrict in enumerate(refbits_limit):
+                        layer = l+1 #  1ayer1は必ず32より、 layer2をみるため
+                        ref = data.Parameter.CacheLayers.CacheLayers[layer].Refbits
+                        if ref < restrict[0] or ref > restrict[1]:
+                            skip = True 
+                if(skip):
+                    continue
                 hitrate = data.HitRate
                 
                 # ヒット率とそのデータをヒープに追加
