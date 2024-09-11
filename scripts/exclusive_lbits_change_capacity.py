@@ -27,14 +27,16 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # JSONファイルのパス
 src_file_path = '../simulator-settings/template_2layer_capacity.json'
-first = 24
+first = 1
 last = 24
 
 cap_first = 64 * 2 
 cap_last = int(4096 /2)
 interval =64 * 2 
 capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
-capacity.append(1)
+capacity_nbits = copy.copy(capacity)
+capacity_32bits = copy.copy(capacity)
+capacity_32bits.append(1)
 
 
 # JSONファイルを読み込む
@@ -104,8 +106,8 @@ try:
             not_skipped_completed = 0
             update = True
             # 現在のrefbitsに対するキャッシュ設定の組み合わせを非同期に処理
-            for cache_nbit_cap in capacity:
-                for cache_32bit_cap in capacity:
+            for cache_nbit_cap in capacity_nbits:
+                for cache_32bit_cap in capacity_32bits:
                     futures.append(
                         executor.submit(process_cache_settings, refbits, cache_nbit_cap, cache_32bit_cap, cache_settings,update=False)
                     )
