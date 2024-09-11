@@ -18,17 +18,19 @@ def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
     result_data = {}
     tmp_dir = '../result/tmp_results'
     tmp_dir_refbits = os.path.join(tmp_dir, f'{refbits}')
-
-    result_data[refbits] = {}
-    for cache_32bit_cap in cache_32bit_capacity:
-        result_data[refbits][cache_32bit_cap] = {}
-        for cache_nbit_cap in cache_nbit_capacity:
-            partial_result_file = os.path.join(tmp_dir_refbits, f'tmp_result_{cache_32bit_cap}_{cache_nbit_cap}.json')
-            with open(partial_result_file, 'r') as file:
-                _json_data = json.load(file)
-                result_data[refbits][cache_32bit_cap][cache_nbit_cap] = _json_data
-    dst_file_path = f'../result/{refbits}bits_cap{cap_first}-cap{cap_last}-interval{interval}-exclusive.json'
-
+    
+    try:
+        result_data[refbits] = {}
+        for cache_32bit_cap in cache_32bit_capacity:
+            result_data[refbits][cache_32bit_cap] = {}
+            for cache_nbit_cap in cache_nbit_capacity:
+                partial_result_file = os.path.join(tmp_dir_refbits, f'tmp_result_{cache_32bit_cap}_{cache_nbit_cap}.json')
+                with open(partial_result_file, 'r') as file:
+                    _json_data = json.load(file)
+                    result_data[refbits][cache_32bit_cap][cache_nbit_cap] = _json_data
+        dst_file_path = f'../result/{refbits}bits_cap{cap_first}-cap{cap_last}-interval{interval}-exclusive.json'
+    except Exception as e:
+        print(e)
     # 最終的な結果を一つの大きなファイルに書き込む
     with open(dst_file_path, 'w') as file:
         json.dump(result_data, file, indent=4)
@@ -46,6 +48,6 @@ for refbits in range(first, last + 1):
     anly.add_result(json_data)
     
 # anly.hitrate_3dplot_2layer(type="heatmap")
-anly.find_top_n_hitrate(10)
+anly.find_top_n_hitrate(10, capacity_maximum_limit=1025)
 anly.print_results()
 
