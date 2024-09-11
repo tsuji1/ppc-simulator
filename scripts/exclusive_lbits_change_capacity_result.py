@@ -24,6 +24,8 @@ def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
         for cache_32bit_cap in cache_32bit_capacity:
             result_data[refbits][cache_32bit_cap] = {}
             for cache_nbit_cap in cache_nbit_capacity:
+                if(cache_32bit_cap == 1 and refbits!=24):
+                    continue
                 partial_result_file = os.path.join(tmp_dir_refbits, f'tmp_result_{cache_32bit_cap}_{cache_nbit_cap}.json')
                 with open(partial_result_file, 'r') as file:
                     _json_data = json.load(file)
@@ -41,13 +43,13 @@ def aggregate_result(refbits,cache_32bit_capacity, cache_nbit_capacity):
 anly = AnalysisResults(None)
 for refbits in range(first, last + 1):
     
-    aggregate_result(refbits,capacity,capacity) # jsonを作成
+    aggregate_result(refbits,capacity_32bits,capacity_nbits) # jsonを作成
     data_file_path = f'../result/{refbits}bits_cap{cap_first}-cap{cap_last}-interval{interval}-exclusive.json'
     with open(data_file_path, 'r') as file:
         json_data = json.load(file)
     anly.add_result(json_data)
     
 # anly.hitrate_3dplot_2layer(type="heatmap")
-anly.find_top_n_hitrate(10, capacity_maximum_limit=1025)
+anly.find_top_n_hitrate(0,capacity_maximum_limit=1024)
 anly.print_results()
-
+anly.check_results()

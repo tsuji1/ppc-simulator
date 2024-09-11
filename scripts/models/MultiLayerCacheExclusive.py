@@ -218,12 +218,13 @@ class AnalysisResults:
             res.append(hitrate_sorted_results[i])
         res.append(hitrate_sorted_results[-1])
         return res
-    def find_top_n_hitrate(self, top=3,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),reverse=False)->List[MultiLayerCacheExclusive]:
+    def find_top_n_hitrate(self, top=3,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),refbits_limit=None,reverse=False)->List[MultiLayerCacheExclusive]:
         '''  
         セットされた結果から上位topのヒット率を持つデータを取得。0だとすべて取ってきます。
         capacity_limitでキャッシュの容量制限を設定することができます。
         また、hitrate_limitでヒット率の上限を設定することができます。
         内部のtmp_resultsに結果を保持しておくため、print_results()を呼び出すことで表示できます。
+        refbits_limitでrefbitsの制限を設定することができます。[[layer2_refbits_minimum,layer2_refbits_maximum],...]
         '''
         
         if(top == 0):
@@ -233,6 +234,15 @@ class AnalysisResults:
         
         for data in self.results:
             if data.Parameter.CacheLayers.capacity_sum() <= capacity_maximum_limit and data.HitRate <= hit_rate_maximum_limit:
+                skip = False
+                if(refbits_limit is not None):
+                    for l,restrict in enumerate(refbits_limit):
+                        layer = l+1 #  1ayer1は必ず32より、 layer2をみるため
+                        ref = data.Parameter.CacheLayers.CacheLayers[layer].Refbits
+                        if ref < restrict[0] or ref > restrict[1]:
+                            skip = True 
+                if(skip):
+                    continue
                 hitrate = data.HitRate
                 
                 # ヒット率とそのデータをヒープに追加
