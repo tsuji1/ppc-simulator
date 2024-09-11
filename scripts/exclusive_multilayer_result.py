@@ -97,6 +97,29 @@ layer1_capacity.append(1)
 first = 16
 last = 24
 
+# for l1c in layer1_capacity:
+#     for l2c in layer2_capacity:
+        
+#         for l3c in layer3_capacity:
+            
+#             cache_capacity = [l1c,l2c,l3c]
+#             if(sum(cache_capacity) == 1024 or  sum(cache_capacity) == 1025):
+#                 if(l1c == 1 ):
+#                     print(f"l1c == 1 added {cache_capacity}") 
+#                 j,p = aggregate_result(first,last,cache_capacity,True)
+#                 for s in p:
+                    
+#                     analy.add_result(s)
+cap_first = 64 * 2
+cap_last = 64 * 20
+interval =64 * 2
+capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
+layer1_capacity = copy.copy(capacity)
+layer2_capacity = copy.copy(capacity)
+layer3_capacity = copy.copy(capacity)
+layer1_capacity.append(1)
+first = 16
+last = 24
 for l1c in layer1_capacity:
     for l2c in layer2_capacity:
         
@@ -110,8 +133,7 @@ for l1c in layer1_capacity:
                 for s in p:
                     
                     analy.add_result(s)
-
-a=analy.find_top_n_hitrate(0)
+a=analy.find_top_n_hitrate(10)
 analy.print_results()
 analy.check_results()
 # analy.display_stat_detail(a)

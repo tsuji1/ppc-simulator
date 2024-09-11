@@ -95,7 +95,8 @@ class MultiLayerCacheExclusive:
         print(f"Replaced(Sum):{sum(self.StatDetail.Replaced)}",end=" ")
         print(f"Replaced(Std):{int(np.std(self.StatDetail.Replaced))}",end=" ")
         print(f"Replaced(MAE):{int(np.mean(np.abs(self.StatDetail.Replaced - np.mean(self.StatDetail.Replaced))))}",end=" ")
-        
+        print("")
+        print("Hit:",self.StatDetail.Hit)
         print("")
         print("")
         
@@ -218,7 +219,7 @@ class AnalysisResults:
             res.append(hitrate_sorted_results[i])
         res.append(hitrate_sorted_results[-1])
         return res
-    def find_top_n_hitrate(self, top=3,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),reverse=False)->List[MultiLayerCacheExclusive]:
+    def find_top_n_hitrate(self, top=3,res=None,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),reverse=False)->List[MultiLayerCacheExclusive]:
         '''  
         セットされた結果から上位topのヒット率を持つデータを取得。0だとすべて取ってきます。
         capacity_limitでキャッシュの容量制限を設定することができます。
@@ -226,12 +227,17 @@ class AnalysisResults:
         内部のtmp_resultsに結果を保持しておくため、print_results()を呼び出すことで表示できます。
         '''
         
+        
+        if res is None:
+            result = self.results
+        else:
+            result = res
         if(top == 0):
             top = float('inf')
         # 上位topヒット率を保持するための最小ヒープを利用
         top_hitrate_heap = []
         
-        for data in self.results:
+        for data in result:
             if data.Parameter.CacheLayers.capacity_sum() <= capacity_maximum_limit and data.HitRate <= hit_rate_maximum_limit:
                 hitrate = data.HitRate
                 

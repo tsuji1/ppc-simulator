@@ -29,9 +29,9 @@ src_file_path = '../simulator-settings/template_3layer_capacity.json'
 first = 16
 last = 24
 
-cap_first = 64 * 2
+cap_first = 64 
 cap_last = 64 * 20
-interval =64 * 2
+interval =64 
 
 # cap_first = 64 * 4
 # cap_last = 64 * 20
