@@ -89,9 +89,14 @@ class MultiLayerCacheExclusive:
             
     def shortly_display(self):
         print(f"HitRate:{self.HitRate:.5f}",end=" ")
-        print(f"Replaced:{sum(self.StatDetail.Replaced)}",end=" ")
-        print(f"Replaced:{sum(self.StatDetail.Replaced)}",end=" ")
         self.Parameter.CacheLayers.shortly_display()
+        print("")
+        print(f"Replaced:{self.StatDetail.Replaced}",end=" ")
+        print(f"Replaced(Sum):{sum(self.StatDetail.Replaced)}",end=" ")
+        print(f"Replaced(Std):{int(np.std(self.StatDetail.Replaced))}",end=" ")
+        print(f"Replaced(MAE):{int(np.mean(np.abs(self.StatDetail.Replaced - np.mean(self.StatDetail.Replaced))))}",end=" ")
+        
+        print("")
         print("")
         
         
@@ -189,6 +194,12 @@ class AnalysisResults:
             else:
                 for key, value in data.items():
                     self.__explore_and_parse(value)
+        elif isinstance(data, list):
+            for item in data:
+                print(item)
+                self.__explore_and_parse(item)
+        elif isinstance(data, MultiLayerCacheExclusive):
+            self.results.append(data)
     def add_result(self, data: MultiLayerCacheExclusive) -> None:
         self.__explore_and_parse(data)
     
@@ -209,13 +220,14 @@ class AnalysisResults:
         return res
     def find_top_n_hitrate(self, top=3,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),reverse=False)->List[MultiLayerCacheExclusive]:
         '''  
-        セットされた結果から上位topのヒット率を持つデータを取得。
+        セットされた結果から上位topのヒット率を持つデータを取得。0だとすべて取ってきます。
         capacity_limitでキャッシュの容量制限を設定することができます。
         また、hitrate_limitでヒット率の上限を設定することができます。
         内部のtmp_resultsに結果を保持しておくため、print_results()を呼び出すことで表示できます。
         '''
         
-        
+        if(top == 0):
+            top = float('inf')
         # 上位topヒット率を保持するための最小ヒープを利用
         top_hitrate_heap = []
         
@@ -248,9 +260,35 @@ class AnalysisResults:
         res:List[MultiLayerCacheExclusive] = [] 
         if(result is None):
             res = self._tmp_results
+        else:
+            res = result
         for i, data in enumerate(res, 1):
             print(f"Result {i}: ", end=" ")
             data.shortly_display()
+            
+            
+            
+    def check_results(self,result:List[MultiLayerCacheExclusive]|None=None):
+        res:List[MultiLayerCacheExclusive] = [] 
+        if(result is None):
+            res = self._tmp_results
+        else:
+            res = result
+        print("check unimodal for hitrate and replace(Sum)")
+        for r in range(1,len(res)-1):
+            prevReplaceSum = sum(res[r-1].StatDetail.Replaced)
+            currentReplaceSum = sum(res[r].StatDetail.Replaced)
+            nextReplaceSum = sum(res[r+1].StatDetail.Replaced)
+            if currentReplaceSum >= prevReplaceSum and currentReplaceSum <= nextReplaceSum:
+                pass
+            else:
+                print(f"Unimodal is not satisfied at {r}th data")
+                print(f"prev:{prevReplaceSum}, current:{currentReplaceSum}, next:{nextReplaceSum}")
+                break
+        else:
+            print(f"Unimodal is satisfied in {r+1}data")
+            
+        
     def display(self):
         for data in self.results:
             data.shortly_display()

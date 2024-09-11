@@ -32,6 +32,10 @@ last = 24
 cap_first = 64 * 2
 cap_last = 64 * 20
 interval =64 * 2
+
+# cap_first = 64 * 4
+# cap_last = 64 * 20
+# interval =64 * 4
 capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
 layer1_capacity = copy.copy(capacity)
 layer2_capacity = copy.copy(capacity)

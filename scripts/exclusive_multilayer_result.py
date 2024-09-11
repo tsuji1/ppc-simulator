@@ -25,154 +25,41 @@ def make_tmp_file_path(base_dir, refbits, cache_capacity):
 
 def aggregate_result(first_refbits,last_refbits,cache_capacity,force_update=False):
     
-    json_result_data = {}
-    parsed_result_data = {} 
+    json_result_data = []
+    parsed_result_data = [] 
     tmp_dir = '../result/tmp_results'
     
     cache_num = len(cache_capacity)
     cache_capacity_string = "-".join([str(i) for i in cache_capacity])
     dst_file_path = f'../result/multilayer_{cache_num}layer_{cache_capacity_string}.json'
-    
+
     if (not os.path.exists(dst_file_path) or force_update):
         for refbits_layer2 in range(first_refbits,last_refbits+1): # layer 2
-            json_result_data[refbits_layer2] = {}
-            for refbits_layer3 in range(first, refbits_layer2):
+            if(cache_capacity[0] == 1 and refbits_layer2 != 24):
+                # 1bitのキャッシュは24bitのrefbitsの時だけ
+                continue
+                
+            for refbits_layer3 in range(first_refbits, refbits_layer2):
                 refbits = [32,refbits_layer2,refbits_layer3]
                 refbits_string = "-".join([str(i) for i in refbits])
                 tmp_dir_refbits = os.path.join(tmp_dir, f'{refbits_string}')
                 partial_result_file = make_tmp_file_path(tmp_dir_refbits,refbits,cache_capacity)
                 with open(partial_result_file, 'r') as file:
                     _json_data = json.load(file)
-                    json_result_data[str(refbits_layer2)][str(refbits_layer3)] = _json_data
+                    json_result_data.append(_json_data)
+                if(l1c==1):
+                    print(_json_data["HitRate"])
                 
         with open(dst_file_path, 'w') as file:
             json.dump(json_result_data, file, indent=4)
     else:
         with open(dst_file_path,'r') as file:
             json_result_data = json.load(file)
-            
-    print(json_result_data.keys())
-    for refbits_layer2 in range(first_refbits,last_refbits+1): # layer 2
-        parsed_result_data[refbits_layer2] = {}
-        for refbits_layer3 in range(first, refbits_layer2):
-            parsed_result_data[refbits_layer2][refbits_layer3] = MultiLayerCacheExclusive(json_result_data[str(refbits_layer2)][str(refbits_layer3)])
-    return json_result_data,parsed_result_data
-    
 
-
-
-def make_hitrate_plot(res):
-    refbits_layer2:int
-    
-    # データを格納するリスト
-    x = []
-    y = []
-    z = []
-
-    # データの取得
-    for refbits_layer2, v in res.items():
-        for refbits_layer3, data in v.items():
-            x.append(refbits_layer2)
-            y.append(refbits_layer3)
-            z.append(data.HitRate)
-    else:
-        d:MultiLayerCacheExclusive = data
-    # numpy配列に変換
-    xnp = np.array(x)
-    ynp = np.array(y)
-    znp = np.array(z)
-
-    # データの整形
-    unique_x = np.unique(xnp)
-    unique_y = np.unique(ynp)
-    print(xnp)
-
-    X, Y = np.meshgrid(unique_x, unique_y)
-    Z = np.full_like(X,np.nan, dtype=float)
-    print(Z)
-    # 各x, yに対応するzをセット
-    for i in range(len(znp)):
-        xi = np.where(unique_x == xnp[i])[0][0]
-        yi = np.where(unique_y == ynp[i])[0][0]
-        Z[yi, xi] = znp[i]
-
-    # 3Dグラフの描画
-
-    # カラーマップを使いたい場合は以下を使用
-    # ax.plot_surface(X, Y, Z, cmap='bwr')
-
-    # 3Dグラフを4つの異なる視点で描画
-    fig = plt.figure(figsize=(12, 12))
-
-    # View 1
-    rotate = 0
-    ax1 = fig.add_subplot(221, projection='3d')
-    ax1.plot_wireframe(X, Y, Z)
-    ax1.set_xlabel('refbits_layer2')
-    ax1.set_ylabel('refbits_layer3')
-    ax1.set_zlabel('hitrate')
-    ax1.view_init(elev=30, azim=rotate)  # 視点設定
-    ax1.set_title(f'{rotate}度回転',fontname ='Noto Sans CJK JP')
-
-    # View 2
-    rotate += 60
-    ax2 = fig.add_subplot(222, projection='3d')
-    ax2.plot_wireframe(X, Y, Z)
-    ax2.set_xlabel('refbits_layer2')
-    ax2.set_ylabel('refbits_layer3')
-    ax2.set_zlabel('hitrate')
-    ax2.view_init(elev=30, azim=rotate)  # 視点設定
-    ax2.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-    # View 3
-    
-    rotate += 60
-    ax3 = fig.add_subplot(223, projection='3d')
-    ax3.plot_wireframe(X, Y, Z)
-    ax3.set_xlabel('refbits_layer2')
-    ax3.set_ylabel('refbits_layer3')
-    ax3.set_zlabel('hitrate')
-    ax3.view_init(elev=30, azim=rotate)  # 視点設定
-    ax3.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-    # View 4
-    
-    rotate+=60
-    ax4 = fig.add_subplot(224, projection='3d')
-    ax4.plot_wireframe(X, Y, Z)
-    ax4.set_xlabel('refbits_layer2')
-    ax4.set_ylabel('refbits_layer3')
-    ax4.set_zlabel('hitrate')
-    ax4.view_init(elev=30, azim=rotate)  # 視点設定
-    ax4.set_title(f'{rotate}度',fontname ='Noto Sans CJK JP')
-    # 使用例
-    max_hitrate, max_refbits_layer2, max_refbits_layer3 = find_max_hitrate(res)
-    
-    
-    fig.text(0.1,0.06,f"Layer1は/32キャッシュで他のLayer2(/mキャッシュ)とLayer3(/nキャッシュ)の参照bitを変えている。32>m>nとなる。",fontsize=12,fontname ='Noto Sans CJK JP')
-
-    fig.text(0.1,0.04,f"最大のヒット率: {max_hitrate:.5f} (refbits_layer2: {max_refbits_layer2}, refbits_layer3: {max_refbits_layer3})",fontsize=12,fontname ='Noto Sans CJK JP')
-    
-    parameter_description = ""
-    for i,p in enumerate(d.Parameter.CacheLayers):
-        parameter_description += f"Layer{i+1}, Size: {p.Size}    "
         
-            
-    fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
-    plt.savefig("../result/multilayer_exclusive.png")
-    plt.close()
-def find_max_hitrate(res):
-    max_hitrate = float('-inf')  # 初期値として非常に小さい値を設定
-    max_refbits_layer2 = None
-    max_refbits_layer3 = None
-
-    for refbits_layer2, v in res.items():
-        for refbits_layer3, data in v.items():
-            hitrate = data.HitRate
-            if hitrate > max_hitrate:
-                max_hitrate = hitrate
-                max_refbits_layer2 = refbits_layer2
-                max_refbits_layer3 = refbits_layer3
-
-    return max_hitrate, max_refbits_layer2, max_refbits_layer3
+    for i in range(len(json_result_data)):        
+        parsed_result_data.append(MultiLayerCacheExclusive(json_result_data[i]))
+    return json_result_data,parsed_result_data
 
 
 def find_top_n_hitrate(res, n=3):
@@ -191,11 +78,42 @@ def find_top_n_hitrate(res, n=3):
     return top_n
 first = 1
 last = 32
-j,p = aggregate_result(1,32,[256,256,256])
+# j,p = aggregate_result(1,32,[256,256,256])
 
-analy = AnalysisResults(p)
-a=analy.find_top_n_hitrate(10)
+analy = AnalysisResults(None)
+# analy.add_result(p)
+
+
+cap_first = 64 * 4
+cap_last = 64 * 20
+interval =64 * 4
+capacity = [i for i in range(cap_first,cap_last+1,interval)] # 64から4096
+layer1_capacity = copy.copy(capacity)
+layer2_capacity = copy.copy(capacity)
+layer3_capacity = copy.copy(capacity)
+layer1_capacity.append(1)
+
+
+first = 16
+last = 24
+
+for l1c in layer1_capacity:
+    for l2c in layer2_capacity:
+        
+        for l3c in layer3_capacity:
+            
+            cache_capacity = [l1c,l2c,l3c]
+            if(sum(cache_capacity) == 1024 or  sum(cache_capacity) == 1025):
+                if(l1c == 1 ):
+                    print(f"l1c == 1 added {cache_capacity}") 
+                j,p = aggregate_result(first,last,cache_capacity,True)
+                for s in p:
+                    
+                    analy.add_result(s)
+
+a=analy.find_top_n_hitrate(0)
 analy.print_results()
+analy.check_results()
 # analy.display_stat_detail(a)
 # analy.stat_detail_plot(3)
 # analy.hitrate_3dplot_3layer()
