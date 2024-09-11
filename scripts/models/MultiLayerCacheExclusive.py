@@ -89,6 +89,8 @@ class MultiLayerCacheExclusive:
             
     def shortly_display(self):
         print(f"HitRate:{self.HitRate:.5f}",end=" ")
+        print(f"Replaced:{sum(self.StatDetail.Replaced)}",end=" ")
+        print(f"Replaced:{sum(self.StatDetail.Replaced)}",end=" ")
         self.Parameter.CacheLayers.shortly_display()
         print("")
         
