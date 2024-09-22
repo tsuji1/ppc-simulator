@@ -1,10 +1,7 @@
 package cache
 
 import (
-	"bytes"
-	"encoding/binary"
 	"fmt"
-	"hash/crc32"
 	"os"
 	"test-module/ipaddress"
 	"test-module/routingtable"
@@ -18,12 +15,6 @@ type NWaySetAssociativeLRUCache struct {
 	RoutingTable routingtable.RoutingTablePatriciaTrie
 }
 
-func fiveTupleToBigEndianByteArray(f *FiveTuple) []byte {
-	var buf bytes.Buffer
-	binary.Write(&buf, binary.BigEndian, *f)
-	return buf.Bytes()
-}
-
 func (cache *NWaySetAssociativeLRUCache) StatString() string {
 	return fmt.Sprintf("%v", cache.DepthSum)
 }
@@ -32,13 +23,15 @@ func (cache *NWaySetAssociativeLRUCache) IsCached(p *Packet, update bool) (bool,
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
 
+// func fiveTupleToBigEndianByteArray(f *FiveTuple) []byte {  無視できないくらい遅いのでコメントアウト
+//
+//		var buf bytes.Buffer
+//		binary.Write(&buf, binary.BigEndian, *f)
+//		return buf.Bytes()
+//	}
 func (cache *NWaySetAssociativeLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
-	crc := crc32.ChecksumIEEE(fiveTupleToBigEndianByteArray(f))
-	idx := uint(crc) % maxSetIdx
-
-	// idx := (f.SrcPort + f.DstPort ) % maxSetIdx;
-
+	idx := (uint(f.SrcIP) ^ uint(f.DstIP)) % maxSetIdx
 	return uint(idx)
 }
 

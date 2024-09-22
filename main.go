@@ -10,6 +10,8 @@ import (
 	"net"
 	_ "net/http/pprof"
 	"os"
+	"os/signal"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"runtime/debug"
@@ -17,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"test-module/cache"
 	. "test-module/cache"
 	"test-module/ipaddress"
@@ -24,18 +27,155 @@ import (
 	"test-module/simulator"
 	"time"
 
-	. "github.com/tchap/go-patricia/patricia"
-
 	"encoding/gob"
 
-	"github.com/koron/go-dproxy"
+	"github.com/google/uuid"
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
 
+// グローバル変数でパケットを保存するスライス
+var packets []MinPacket
+
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var memprofile = flag.String("memprofile", "", "write memory profile to this file")
+var cacheparam = flag.String("cacheparam", "", "cache parameter file")
+var cachenum = flag.Int("cachenum", 2, "cache number")
+var trace = flag.String("trace", "", "network trace file")
+var bench = flag.Bool("bench", false, "to benchmark")
+var baseSimulatorDefinition = simulator.NewSimulatorDefinition()
+var rulefile = baseSimulatorDefinition.Rule
+
 func init() {
 	// routingtable.Data 型の登録
-	debug.SetGCPercent(800)
+	flag.Parse()
+	debug.SetGCPercent(50)
 	gob.Register(routingtable.Data{})
+
+	// ファイル名から拡張子を外して取得する
+	base := filepath.Base(*trace)
+	filename := strings.TrimSuffix(base, filepath.Ext(base))
+
+	// 新しいパスを生成する
+	gobPath := filepath.Join("gob-packet", filename+".gob")
+	gobdebugmode := false
+	// gobPathファイルが存在するか確認
+	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
+		// gobファイルが存在する場合、デコードする
+		fmt.Println("gobファイルが見つかりました。デコード中...")
+		packets = decodeGobFile(gobPath)
+	} else if os.IsNotExist(err) || gobdebugmode {
+		// gobファイルが存在しない場合、通常の処理を行う
+		if !gobdebugmode {
+			fmt.Println("gobファイルが見つかりません。新しいファイルを生成中...")
+		} else {
+			fmt.Println("debugmode で実行中")
+		}
+		fpCSV, err := os.Open(*trace)
+		if err != nil {
+			panic(err)
+		}
+		defer fpCSV.Close()
+
+		// パケットスライスを初期化
+		packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
+		reader := deprecatedGetProperCSVReader(fpCSV)
+
+		if reader == nil {
+			panic("Can't read input as valid tsv/csv file")
+		}
+
+		fp, err := os.Open(rulefile)
+		if err != nil {
+			panic(err)
+		}
+		defer fp.Close()
+		r := routingtable.NewRoutingTablePatriciaTrie()
+		r.ReadRule(fp)
+
+		for i := 0; ; i += 1 {
+			record, err := reader.Read()
+
+			if err != nil {
+				if err == io.EOF {
+					break
+				}
+
+				switch err.(type) {
+				case *csv.ParseError:
+					continue
+				default:
+					fmt.Println(reflect.TypeOf(err))
+					continue
+				}
+			}
+
+			packet, err := parseCSVRecordToMinPacket(record, r)
+
+			if err != nil {
+				fmt.Println("Error:", err)
+				continue
+			}
+
+			if packet.FiveTuple() == nil {
+				continue
+			}
+			packets = append(packets, *packet)
+			if i%100000 == 0 {
+				if i != 0 {
+					fmt.Printf("i: %d\n", i)
+					if gobdebugmode {
+						break
+					}
+				}
+			}
+		}
+
+		// gobファイルに書き込む処理
+		if !gobdebugmode {
+			err = savePacketsToGob(gobPath, packets)
+			if err != nil {
+				fmt.Println("gobファイルへの保存に失敗しました:", err)
+			} else {
+				fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
+			}
+		}
+
+		runtime.GC()
+	} else {
+		// その他のエラー
+		panic(err)
+	}
+}
+
+// gobファイルをデコードしてパケットデータを取得
+func decodeGobFile(filepath string) []MinPacket {
+	var packets []MinPacket
+	file, err := os.Open(filepath)
+	if err != nil {
+		log.Fatal("ファイルオープンエラー:", err)
+	}
+	defer file.Close()
+
+	decoder := gob.NewDecoder(file)
+	if err := decoder.Decode(&packets); err != nil {
+		log.Fatal("デコードエラー:", err)
+	}
+	return packets
+}
+
+// パケットデータをgobファイルに保存する関数
+func savePacketsToGob(filepath string, packets []MinPacket) error {
+	file, err := os.Create(filepath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	encoder := gob.NewEncoder(file)
+	if err := encoder.Encode(packets); err != nil {
+		return err
+	}
+	return nil
 }
 
 // parseCSVRecord は、CSVレコードを解析して cache.Packet オブジェクトを生成します。
@@ -81,8 +221,8 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 	}
 	packet.Len = uint32(packetLen)
 
-	packet.SrcIP = net.ParseIP(recordSrcIPStr)
-	packet.DstIP = net.ParseIP(recordDstIPStr)
+	packet.SrcIP = IpToUInt32(net.ParseIP(recordSrcIPStr))
+	packet.DstIP = IpToUInt32(net.ParseIP(recordDstIPStr))
 	packet.Proto = strings.ToLower(recordProtoStr)
 
 	switch packet.Proto {
@@ -113,95 +253,73 @@ func parseCSVRecord(record []string) (*cache.Packet, error) {
 		return nil, fmt.Errorf("unknown packet proto: %s", packet.Proto)
 	}
 
-	packet.DstIPMasked = nil
-	packet.HitIPList = nil
-	packet.IsDstIPLeaf = nil
-	packet.HitItemList = nil
 	return packet, nil
 }
-func parseCSVRecordWithRoutingTable(record []string, r *routingtable.RoutingTablePatriciaTrie) (*cache.Packet, error) {
-	packet := new(cache.Packet)
-	var err error
+func parseCSVRecordToMinPacket(record []string, r *routingtable.RoutingTablePatriciaTrie) (*cache.MinPacket, error) {
+	packet := new(cache.MinPacket)
 
-	var recordTimeStr, recordPacketLenStr, recordProtoStr, recordSrcIPStr, recordSrcPortStr, recordDstIPStr, recordDstPortStr string
+	var recordProtoStr, recordSrcIPStr, recordDstIPStr string
 
 	switch len(record) {
 	case 8:
-		recordTimeStr = record[0]
 		recordSrcIPStr = record[1]
-		recordSrcPortStr = record[2]
+
 		recordDstIPStr = record[3]
-		recordDstPortStr = record[4]
+
 		recordProtoStr = record[5]
-		recordPacketLenStr = record[7]
 	case 7:
-		recordTimeStr = record[0]
-		recordPacketLenStr = record[1]
 		recordSrcIPStr = record[2]
 		recordDstIPStr = record[3]
 		recordProtoStr = record[4]
-		recordSrcPortStr = record[5]
-		recordDstPortStr = record[6]
+
 	default:
 		return nil, fmt.Errorf("expected record have 7 or 8 fields, but not: %d", len(record))
 	}
 
-	packet.Time, err = strconv.ParseFloat(recordTimeStr, 64)
-	if err != nil {
-		return nil, err
-	}
-	packetLen, err := strconv.ParseUint(recordPacketLenStr, 10, 32)
-	if err != nil {
-		return nil, err
-	}
-	packet.Len = uint32(packetLen)
-
-	packet.SrcIP = net.ParseIP(recordSrcIPStr)
-	packet.DstIP = net.ParseIP(recordDstIPStr)
+	packet.SrcIP = IpToUInt32(net.ParseIP(recordSrcIPStr))
+	packet.DstIP = IpToUInt32(net.ParseIP(recordDstIPStr))
 	packet.Proto = strings.ToLower(recordProtoStr)
 
-	switch packet.Proto {
-	case "tcp", "udp", "UDP", "TCP":
-		srcPort, err := strconv.ParseUint(recordSrcPortStr, 10, 16)
-		if err != nil {
-			return nil, err
+	dstIP := ipaddress.NewIPaddress(packet.DstIP)
+	for i := 0; i < 33; i++ {
+		b := r.IsLeaf(dstIP, i)
+		if b {
+			packet.IsLeafIndex = int8(i)
+			break
 		}
-		packet.SrcPort = uint16(srcPort)
+	}
 
-		dstPort, err := strconv.ParseUint(recordDstPortStr, 10, 16)
-		if err != nil {
-			return nil, err
-		}
-		packet.DstPort = uint16(dstPort)
-	case "icmp":
-		// icmpType, err := strconv.ParseUint(record[5], 10, 16)
-		// if err != nil {
-		// 	return nil, err
-		// }
-		// packet.IcmpType = uint16(icmpType)
-		// icmpCode, err := strconv.ParseUint(record[6], 10, 16)
-		// if err != nil {
-		// 	return nil, err
-		// }
-		// packet.IcmpCode = uint16(icmpCode)
-	default:
-		return nil, fmt.Errorf("unknown packet proto: %s", packet.Proto)
-	}
-	packet.DstIPMasked = new([33]string)
-	packet.IsDstIPLeaf = new([33]bool)
-	packet.HitIPList = new([33][]string)
-	packet.HitItemList = new([]Item)
-	dstIP := ipaddress.NewIPaddress(IpToUInt32(packet.DstIP))
-	for ref := 0; ref < 33; ref++ {
-		hitip, prefix_item := r.SearchIP(dstIP, ref)
-		packet.DstIPMasked[ref] = dstIP.MaskedBitString(ref)
-		packet.IsDstIPLeaf[ref] = r.IsLeaf(dstIP, ref)
-		packet.HitIPList[ref] = hitip
-		packet.HitItemList = &prefix_item
-	}
+	// switch packet.Proto {
+	// case "tcp", "udp", "UDP", "TCP":
+	// 	srcPort, err := strconv.ParseUint(recordSrcPortStr, 10, 16)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+	// 	packet.SrcPort = uint16(srcPort)
+
+	// 	dstPort, err := strconv.ParseUint(recordDstPortStr, 10, 16)
+	// 	if err != nil {
+	// 		return nil, err
+	// }
+	// packet.DstPort = uint16(dstPort)
+	// case "icmp":
+	// icmpType, err := strconv.ParseUint(record[5], 10, 16)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// packet.IcmpType = uint16(icmpType)
+	// icmpCode, err := strconv.ParseUint(record[6], 10, 16)
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// packet.IcmpCode = uint16(icmpCode)
+	// default:
+	// return nil, fmt.Errorf("unknown packet proto: %s", packet.Proto)
+	// }
 
 	return packet, nil
 }
+
 func deprecatedGetProperCSVReader(fp *os.File) *csv.Reader {
 	newReader := func(fp *os.File, comma rune) *csv.Reader {
 		fp.Seek(0, 0)
@@ -232,30 +350,6 @@ func deprecatedGetProperCSVReader(fp *os.File) *csv.Reader {
 	}
 
 	return nil
-}
-
-func decodeGobFile(filepath string) []Packet {
-	var packets []Packet
-	file, err := os.Open(filepath)
-	if err != nil {
-		log.Fatal("ファイルオープンエラー:", err)
-	}
-	defer file.Close()
-
-	decoder := gob.NewDecoder(file)
-	if err := decoder.Decode(&packets); err != nil {
-		log.Fatal("デコードエラー:", err)
-	}
-	// for _, packet := range packets {
-	// 	fmt.Printf("packet: %v\n", packet)
-	// 	fmt.Printf("packet.DstIPMasked: %v\n", packet.DstIPMasked)
-	// 	fmt.Printf("packet.IsDstIPLeaf: %v\n", packet.IsDstIPLeaf)
-	// 	fmt.Printf("packet.HitIPList: %v\n", packet.HitIPList)
-	// 	fmt.Printf("packet.HitItemList: %v\n", packet.HitItemList)
-
-	// }
-
-	return packets
 }
 
 // getProperCSVReader は、ファイルポインタから適切な区切り文字を見つけて CSVリーダーを生成します。
@@ -296,86 +390,134 @@ func getProperCSVReader(fp *os.File) *csv.Reader {
 	return nil
 }
 
-// runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
-// printInterval ごとにシミュレーションの統計情報を出力します。
-func runSimpleCacheSimulatorWithCSVSync(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) {
-	reader := getProperCSVReader(fp)
+// func runSimpleCacheSimulatorWithGoRoutine() {
+// 	reader := getProperCSVReader(fp)
+
+// 	if reader == nil {
+// 		panic("Can't read input as valid tsv/csv file")
+// 	}
+// 	var wg sync.WaitGroup
+// 	// var mu sync.Mutex
+// 	var start time.Time
+// 	var elapsed time.Duration
+// 	var isEnd bool
+// 	isEnd = false
+
+// 	resultChan := make(chan bool)
+// 	limit := make(chan struct{}, 1000)
+// 	for i := 0; !isEnd; i += 1 {
+
+// 		wg.Add(1)
+// 		go func(resultChan chan bool) {
+// 			limit <- struct{}{} // バッファ付きのchanがバッファを超える要素を送信しようとしたときにブロックする。
+// 			defer wg.Done()
+
+// 			record, err := reader.Read()
+
+// 			if err != nil {
+// 				if err == io.EOF {
+// 					resultChan <- true
+// 				} else {
+
+// 					switch err.(type) {
+// 					case *csv.ParseError:
+// 						fmt.Println("ParseError:", err)
+// 						panic(err)
+// 					default:
+// 						fmt.Println(reflect.TypeOf(err))
+// 						panic(err)
+// 					}
+// 				}
+// 			} else {
+
+// 				packet, err := parseCSVRecord(record)
+
+// 				if err != nil {
+// 					fmt.Println("Error:", err)
+// 					panic(err)
+// 					// panic(err)
+// 				}
+
+// 				// if packet.Proto == "icmp" {
+// 				// 	// ICMPパケットは無視
+// 				// 	continue
+// 				// }
+
+// 				if packet.FiveTuple() == nil {
+// 					panic("FiveTuple is nil")
+// 				}
+// 				start = time.Now()
+// 				sim.Process(packet)
+// 				elapsed = time.Since(start)
+// 				if sim.GetStat().Processed%printInterval == 0 {
+// 					fmt.Printf("sim process time: %s\n", elapsed)
+// 					fmt.Printf("%v\n", sim.GetStatString())
+// 				}
+// 				resultChan <- false
+// 			}
+// 			<-limit
+// 		}(resultChan)
+// 		isEnd = <-resultChan
+
+// 		// go func() {
+
+// 		// 	mu.Lock()
+
+// 		// 	mu.Unlock()
+// 		// }()
+// 	}
+// 	wg.Wait()
+
+// }
+
+func runSimpleCacheSimulatorWithGoRoutine(fp *os.File, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) {
+	reader := deprecatedGetProperCSVReader(fp)
 
 	if reader == nil {
 		panic("Can't read input as valid tsv/csv file")
 	}
-	var wg sync.WaitGroup
-	// var mu sync.Mutex
-	var start time.Time
-	var elapsed time.Duration
-	var isEnd bool
-	isEnd = false
 
-	resultChan := make(chan bool)
-	limit := make(chan struct{}, 1000)
-	for i := 0; !isEnd; i += 1 {
+	for i := 0; ; i += 1 {
+		record, err := reader.Read()
 
-		wg.Add(1)
-		go func(resultChan chan bool) {
-			limit <- struct{}{} // バッファ付きのchanがバッファを超える要素を送信しようとしたときにブロックする。
-			defer wg.Done()
-
-			record, err := reader.Read()
-
-			if err != nil {
-				if err == io.EOF {
-					resultChan <- true
-				} else {
-
-					switch err.(type) {
-					case *csv.ParseError:
-						fmt.Println("ParseError:", err)
-						panic(err)
-					default:
-						fmt.Println(reflect.TypeOf(err))
-						panic(err)
-					}
-				}
-			} else {
-
-				packet, err := parseCSVRecord(record)
-
-				if err != nil {
-					fmt.Println("Error:", err)
-					panic(err)
-					// panic(err)
-				}
-
-				// if packet.Proto == "icmp" {
-				// 	// ICMPパケットは無視
-				// 	continue
-				// }
-
-				if packet.FiveTuple() == nil {
-					panic("FiveTuple is nil")
-				}
-				start = time.Now()
-				sim.Process(packet)
-				elapsed = time.Since(start)
-				if sim.GetStat().Processed%printInterval == 0 {
-					fmt.Printf("sim process time: %s\n", elapsed)
-					fmt.Printf("%v\n", sim.GetStatString())
-				}
-				resultChan <- false
+		if err != nil {
+			if err == io.EOF {
+				break
 			}
-			<-limit
-		}(resultChan)
-		isEnd = <-resultChan
 
-		// go func() {
+			switch err.(type) {
+			case *csv.ParseError:
+				continue
+			default:
+				fmt.Println(reflect.TypeOf(err))
+				continue
+			}
+		}
 
-		// 	mu.Lock()
+		packet, err := parseCSVRecord(record)
 
-		// 	mu.Unlock()
-		// }()
+		if err != nil {
+			fmt.Println("Error:", err)
+			continue
+			// panic(err)
+		}
+
+		if packet.FiveTuple() == nil {
+			continue
+		}
+		start := time.Now()
+		sim.Process(packet)
+		elapsed := time.Since(start)
+
+		if sim.GetStat().Processed%printInterval == 0 {
+
+			fmt.Printf("sim process time: %s\n", elapsed)
+			fmt.Printf("%v\n", sim.GetStatString())
+			if bench {
+				os.Exit(0)
+			}
+		}
 	}
-	wg.Wait()
-
 }
 
 // runSimpleCacheSimulatorWithCSV は、指定された CSV ファイルとキャッシュシミュレータを使用してシミュレーションを実行します。
@@ -412,11 +554,6 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 			// panic(err)
 		}
 
-		// if packet.Proto == "icmp" {
-		// 	// ICMPパケットは無視
-		// 	continue
-		// }
-
 		if packet.FiveTuple() == nil {
 			continue
 		}
@@ -435,87 +572,294 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
-var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
-var memprofile = flag.String("memprofile", "", "write memory profile to this file")
-var cacheparam = flag.String("cacheparam", "", "cache parameter file")
-var trace = flag.String("trace", "", "network trace file")
-var bench = flag.Bool("bench", false, "to benchmark")
+func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) string {
+
+	for _, p := range *packetList {
+
+		start := time.Now()
+		sim.Process(&p)
+		elapsed := time.Since(start)
+
+		if sim.GetStat().Processed%printInterval == 0 {
+
+			fmt.Printf("sim process time: %s\n", elapsed)
+			fmt.Printf("%v\n", sim.GetStatString())
+			if bench {
+				os.Exit(0)
+			}
+		}
+	}
+	stat := sim.GetStatString()
+	fmt.Printf("%v\n", stat)
+
+	return stat
+
+}
+
+// ファイルに追記する関数
+func appendToFile(filepath string, data string) error {
+	// ファイルを追記モードで開く
+	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// データに改行を追加して書き込み
+	_, err = file.WriteString(data + "\n")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// ファイルに書き込む関数
+func writeToFile(filepath string, data string) error {
+	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// 文字列を直接書き込み
+	_, err = file.WriteString(data)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
 func main() {
-	flag.Parse()
+
 	if *trace == "" {
 		fmt.Printf("You must specify the trace file\n")
 		os.Exit(1)
 	}
-	if *cacheparam == "" {
-		fmt.Printf("You must specify the cache parameter file\n")
-		os.Exit(1)
-	}
+
+	var f *os.File
+	var err error
+
 	if *cpuprofile != "" {
-		f, err := os.Create(*cpuprofile)
+		f, err = os.Create(*cpuprofile)
 		if err != nil {
 			log.Fatal("could not create CPU profile: ", err)
 		}
-		defer f.Close()
 
 		if err := pprof.StartCPUProfile(f); err != nil {
 			log.Fatal("could not start CPU profile: ", err)
 		}
-		defer pprof.StopCPUProfile()
 	}
 
-	simulaterDefinitionBytes, err := os.ReadFile(*cacheparam)
+	var uuuid = uuid.New()
+	var resultFile = "result" + uuuid.String() + ".json"
+	var resultFilePath = filepath.Join("result", resultFile)
+	// ディレクトリが存在しない場合、"result"ディレクトリを作成
+	err = os.MkdirAll(filepath.Dir(resultFilePath), 0755)
 	if err != nil {
-		panic(err)
+		fmt.Println("ディレクトリの作成に失敗しました:", err)
+		return
 	}
 
-	var simulatorDefinition interface{}
-	err = json5.Unmarshal(simulaterDefinitionBytes, &simulatorDefinition)
+	// ファイルを作成する。存在すれば上書きされる。
+	file, err := os.Create(resultFilePath)
 	if err != nil {
-		panic(err)
+		fmt.Println("ファイル作成に失敗しました:", err)
+		return
 	}
-	p := dproxy.New(simulatorDefinition)
-	interval, err := p.M("Interval").Int64()
-	if err != nil {
-		interval = 100000 // interval回ごとに出力
+	defer file.Close()
+
+	// ファイルが空の場合は、最初に "[" を書き込む
+	if _, err := os.Stat(resultFilePath); os.IsNotExist(err) {
+		err = writeToFile(resultFilePath, "[\n")
+		if err != nil {
+			fmt.Println("ファイル書き込みエラー:", err)
+			return
+		}
 	}
 
-	cacheSim, err := simulator.BuildSimpleCacheSimulator(simulatorDefinition)
+	// シグナルを受け取るチャネルを設定
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
-	if err != nil {
-		panic(err)
-	}
+	// プロファイルの停止処理をシグナル受信時に行う
+	go func() {
+		sig := <-sigChan
+		fmt.Printf("Received signal: %v, stopping CPU profile...\n", sig)
 
-	var fpCSV *os.File
+		if *cpuprofile != "" {
+			pprof.StopCPUProfile()
+			if f != nil {
+				f.Close()
+			}
+		}
 
-	fpCSV, err = os.Open(*trace)
+		if *memprofile != "" {
+			mf, err := os.Create(*memprofile)
+			if err != nil {
+				log.Fatal("could not create memory profile: ", err)
+			}
+			defer mf.Close()
+			runtime.GC() // get up-to-date statistics
+			if err := pprof.WriteHeapProfile(mf); err != nil {
+				log.Fatal("could not write memory profile: ", err)
+			}
+		}
+		os.Exit(0)
+	}()
 
-	if err != nil {
-		panic(err)
-	}
-	defer fpCSV.Close()
+	if *cacheparam != "" {
 
-	useSync := false // 今のところgoroutineを使う方が遅いので、基本はfalse
+		simulaterDefinitionBytes, _ := os.ReadFile(*cacheparam)
 
-	if useSync {
-		runSimpleCacheSimulatorWithCSVSync(fpCSV, cacheSim, int(interval), *bench)
+		var simulatorDefinition interface{}
+		var err = json5.Unmarshal(simulaterDefinitionBytes, &simulatorDefinition)
+		if err != nil {
+			panic(err)
+		}
+		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
+		interval := simDef.Interval
+		rulefile := simDef.Rule
+		fp, _ := os.Open(rulefile)
+
+		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, rulefile)
+
+		if err != nil {
+			panic(err)
+		}
+
+		runSimpleCacheSimulatorWithCSV(fp, cacheSim, int(interval), *bench)
+		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
-		runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, int(interval), *bench)
-	}
-	// runSimpleCacheSimulatorWithCSV(fpCSV, cacheSim, 1)
 
-	fmt.Printf("%v\n", cacheSim.GetStatString())
+		capacity := make([]int, 0, 10)
+		for i := 1; i <= 8; i++ {
+			capacity = append(capacity, 1<<uint(i+3))
+		}
+
+		// print capacity
+		fmt.Print("capacity: ")
+		for _, c := range capacity {
+			fmt.Print(c, ",")
+		}
+		fmt.Println()
+
+		// cachenumを反映
+		for i := 2; i < *cachenum; i++ {
+			baseSimulatorDefinition.AddCacheLayer(nil)
+		}
+
+		// 1 から 32 までの refbits 値のリストを生成
+
+		refbitsRange := make([]int, 0, 32)
+		fmt.Print("refbitsRange: ")
+		for i := 16; i <= 24; i++ {
+			refbitsRange = append(refbitsRange, i)
+			fmt.Print("%d,", i)
+		}
+		refbitsRange = append(refbitsRange, 32)
+
+		// タスクの総数に基づいてWaitGroupを設定
+		wg := new(sync.WaitGroup)
+		queue := make(chan simulator.SimpleCacheSimulator, 4)
+
+		var completedTasks int
+		var totalDuration time.Duration
+		var mu sync.Mutex // 進捗状況を守るためのMutex
+
+		// シミュレーション設定を生成
+		settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
+		debugmode := true
+		totalTask := len(settngs)
+		fmt.Println("Total tasks:", totalTask)
+
+		// ワーカーゴルーチンを生成
+		for i := 0; i < runtime.NumCPU()-5; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for sim := range queue {
+					startTime := time.Now()
+
+					// 実際のシミュレーション処理
+					stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, 1000000000, *bench)
+					duration := time.Since(startTime)
+
+					if err != nil {
+						log.Fatalf("JSONのマーシャリングに失敗しました: %v", err)
+					}
+
+					stat = stat + ","
+
+					// ファイルに追記
+
+					// タスクが完了したので進捗を更新
+
+					// Mutexで保護しつつ進捗を更新
+					mu.Lock()
+					err = appendToFile(resultFilePath, stat)
+					if err != nil {
+						fmt.Println("ファイルへの書き込みエラー:", err)
+						continue
+					}
+					fmt.Printf("result written to file filename:%v, duration: %v\n", resultFilePath, duration)
+
+					completedTasks++
+					totalDuration += duration
+					avgDuration := totalDuration / time.Duration(completedTasks)
+					fmt.Printf("Task %d / %dcompleted, Average time per task: %v\n", completedTasks, totalTask, avgDuration)
+					mu.Unlock()
+				}
+			}()
+		}
+
+		// 各タスクに対してWaitGroupを増加させ、キューに送信
+		for _, setting := range settngs {
+			newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
+			newSim.DebugMode = debugmode
+
+
+			newSim.Interval = 100000000
+			cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, rulefile)
+
+			if err != nil {
+				panic(err)
+			}
+			queue <- *cacheSim
+		}
+
+		// 全タスクの終了を待つ
+		close(queue)
+		wg.Wait()
+
+		// 全ての処理が終わったら、"]" を書き込む
+		err = appendToFile(resultFilePath, "\n]")
+		if err != nil {
+			fmt.Println("ファイルへの書き込みエラー:", err)
+		}
+
+		fmt.Printf("All tasks completed, total tasks: %d, average time per task: %v\n", completedTasks, totalDuration/time.Duration(completedTasks))
+	}
+
+	// シミュレーションの後にプロファイル停止（通常終了時）
+	if *cpuprofile != "" {
+		pprof.StopCPUProfile()
+		if f != nil {
+			f.Close()
+		}
+	}
 
 	if *memprofile != "" {
-		f, err := os.Create(*memprofile)
+		mf, err := os.Create(*memprofile)
 		if err != nil {
 			log.Fatal("could not create memory profile: ", err)
 		}
-		defer f.Close() // error handling omitted for example
-		runtime.GC()    // get up-to-date statistics
-		if err := pprof.WriteHeapProfile(f); err != nil {
+		defer mf.Close()
+		runtime.GC() // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(mf); err != nil {
 			log.Fatal("could not write memory profile: ", err)
 		}
 	}

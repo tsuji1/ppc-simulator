@@ -50,6 +50,16 @@ cache_settings["Interval"]  = 10000000000000
 # Refbitsを変更する
 cmd = "go build ../main.go"
 result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+	// 末尾の '}' を削除
+	stat = stat[0 : len(stat)-1]
+
+	statDetail := sim.Cache.StatString()
+
+	if statDetail == "" {
+		stat += ", \"StatDetail\": null}"
+	} else {
+		stat += ", \"StatDetail\": " + statDetail + "}"
+	}
 
 
 def make_tmp_setting_file(cache_settings,refbits, cache_32bit_cap, cache_nbit_cap):

@@ -4,8 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-
-	. "github.com/tchap/go-patricia/patricia"
 )
 
 type IPProtocol uint8
@@ -23,10 +21,7 @@ type FiveTuple struct {
 	Proto            IPProtocol
 	SrcIP, DstIP     uint32
 	SrcPort, DstPort uint16
-	DstIPMasked      *[33]string
-	IsDstIPLeaf      *[33]bool
-	HitIPList        *[33][]string
-	HitItemList      *[]Item
+	IsLeafIndex      int8
 }
 
 func IpToUInt32(ip net.IP) uint32 {
@@ -72,13 +67,36 @@ func (p *Packet) FiveTuple() *FiveTuple {
 	case IP_TCP, IP_UDP:
 		return &FiveTuple{
 			proto,
-			IpToUInt32(p.SrcIP),
-			IpToUInt32(p.DstIP),
+			p.SrcIP,
+			p.DstIP,
 			p.SrcPort, p.DstPort,
-			p.DstIPMasked, 
-			p.IsDstIPLeaf,
-			 p.HitIPList,
-			  p.HitItemList,
+			p.IsLeafIndex,
+		}
+	// case "icmp":
+	// 	return FiveTuple{p.Proto, p.SrcIP, p.DstIP, 0, 0}
+	default:
+		return nil
+		// return FiveTuple{proto64, srcIp64, dstIp64, 0, 0}
+	}
+}
+
+// {Proto, SrcIP, DstIP, SrcPort or 0, DstPort or 0}
+func (p *MinPacket) FiveTuple() *FiveTuple {
+	var proto64 uint64
+	for i := 0; i < len(p.Proto) && i < 5; i++ {
+		proto64 = proto64 << 8
+		proto64 = proto64 | uint64(p.Proto[i])
+	}
+
+	proto := StrToIPProtocol(p.Proto)
+	switch proto {
+	case IP_TCP, IP_UDP:
+		return &FiveTuple{
+			proto,
+			p.SrcIP,
+			p.DstIP,
+			0, 0,
+			p.IsLeafIndex,
 		}
 	// case "icmp":
 	// 	return FiveTuple{p.Proto, p.SrcIP, p.DstIP, 0, 0}
@@ -90,15 +108,11 @@ func (p *Packet) FiveTuple() *FiveTuple {
 
 func (f FiveTuple) SwapSrcAndDst() FiveTuple {
 	return FiveTuple{
-		Proto:       f.Proto,
-		SrcIP:       f.DstIP,
-		DstIP:       f.SrcIP,
-		SrcPort:     f.DstPort,
-		DstPort:     f.SrcPort,
-		DstIPMasked: f.DstIPMasked,
-		IsDstIPLeaf: f.IsDstIPLeaf,
-		HitIPList:   f.HitIPList,
-		HitItemList: f.HitItemList,
+		Proto:   f.Proto,
+		SrcIP:   f.DstIP,
+		DstIP:   f.SrcIP,
+		SrcPort: f.DstPort,
+		DstPort: f.SrcPort,
 	}
 }
 

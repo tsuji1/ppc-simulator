@@ -219,7 +219,7 @@ class AnalysisResults:
             res.append(hitrate_sorted_results[i])
         res.append(hitrate_sorted_results[-1])
         return res
-    def find_top_n_hitrate(self, top=3,res=None,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),reverse=False)->List[MultiLayerCacheExclusive]:
+    def find_top_n_hitrate(self, top=3,res=None,refbits_limit=None,capacity_maximum_limit=float('inf'),hit_rate_maximum_limit=float(1),reverse=False)->List[MultiLayerCacheExclusive]:
         '''  
         セットされた結果から上位topのヒット率を持つデータを取得。0だとすべて取ってきます。
         capacity_limitでキャッシュの容量制限を設定することができます。
@@ -360,8 +360,8 @@ class AnalysisResults:
             ax = fig.add_subplot(111)
             plt.pcolormesh(X, Y, Z, shading='auto', cmap='viridis')  # cmapでカラーマップを指定
             plt.colorbar(label='hitrate')  # カラーバーを追加して強度を表示
-            ax.set_xlabel('refbits_layer2')
-            ax.set_ylabel('refbits_layer3')
+            ax.set_xlabel('refbits_layer2',fontsize=18)
+            ax.set_ylabel('refbits_layer3',fontsize=18)
         
 
                 # ax.set_title(f'refbits:{refbits}',fontname ='Noto Sans CJK JP')
@@ -382,16 +382,21 @@ class AnalysisResults:
         max_hitrate, max_refbits_layer2, max_refbits_layer3 =top_d.HitRate, top_d.Parameter.CacheLayers.CacheLayers[1].Refbits,top_d.Parameter.CacheLayers.CacheLayers[2].Refbits 
         
         
-        fig.text(0.1,0.06,f"Layer1は/32キャッシュで他のLayer2(/mキャッシュ)とLayer3(/nキャッシュ)の参照bitを変えている。32>m>nとなる。",fontsize=12,fontname ='Noto Sans CJK JP')
+        # fig.text(0.1,0.06,f"Layer1は/32キャッシュで他のLayer2(/mキャッシュ)とLayer3(/nキャッシュ)の参照bitを変えている。32>m>nとなる。",fontsize=12,fontname ='Noto Sans CJK JP')
 
-        fig.text(0.1,0.04,f"最大のヒット率: {max_hitrate:.5f} (refbits_layer2: {max_refbits_layer2}, refbits_layer3: {max_refbits_layer3})",fontsize=12,fontname ='Noto Sans CJK JP')
-        
+        # fig.text(0.1,0.04,f"最大のヒット率: {max_hitrate:.5f} (refbits_layer2: {max_refbits_layer2}, refbits_layer3: {max_refbits_layer3})",fontsize=12,fontname ='Noto Sans CJK JP')
+        # 横軸のラベルを回転して表示（長いラベルの場合に有効）
+        plt.xticks(fontsize=18)  # フォントサイズを14に設定
+        plt.yticks(fontsize=18)  # y軸の目盛りもフォントサイズを14に設定
+
+        # グラフのレイアウト調整
+        plt.tight_layout()
         parameter_description = ""
         for i,p in enumerate(top_d.Parameter.CacheLayers.CacheLayers):
             parameter_description += f"Layer{i+1}, Size: {p.Size}    "
         min_cap,max_cap = self.get_capacity_range(d)    
         src_file_name = f'hitrate_3dplot_3layer_refbits_mincap{min_cap}_maxcap{max_cap}_{type}'
-        fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
+        # fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
         os.makedirs(f"../result/hitrate_3dplot_3layer/{type}",exist_ok=True)
         plt.savefig(f"../result/hitrate_3dplot_3layer/{type}/{src_file_name}.png")
     def hitrate_3dplot_2layer(self, type="wire",rotate=[0,100,200,300]):

@@ -182,9 +182,9 @@ func (c *MultiLayerCacheExclusive) IsCachedWithFiveTuple(f *FiveTuple, update bo
 func searchIP(f *FiveTuple, rt *routingtable.RoutingTablePatriciaTrie, refbits int) ([]string, []patricia.Item) {
 	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
 
-	if f.HitItemList != nil {
-		return f.HitIPList[refbits], *f.HitItemList
-	}
+	// if f.HitItemList != nil {
+	// 	return f.HitIPList[refbits], *f.HitItemList
+	// }
 	var prefix []string
 	var items []patricia.Item
 
@@ -201,17 +201,19 @@ func searchIP(f *FiveTuple, rt *routingtable.RoutingTablePatriciaTrie, refbits i
 func isLeaf(f *FiveTuple, rt *routingtable.RoutingTablePatriciaTrie, refbits int) bool {
 	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
 
-	if f.IsDstIPLeaf != nil {
-		return f.IsDstIPLeaf[refbits]
+	if f.IsLeafIndex == 0 {
+		fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
+
+		isleaf := rt.IsLeaf(fivetupleDstIP, refbits)
+
+		// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
+		// prefix には二進数のプレフィックス(ex."1011011")が格納される
+		// prefix_item にはNext hopとDepthが格納される
+
+		return isleaf
+	} else {
+		return f.IsLeafIndex <= int8(refbits)
 	}
-	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
-	isleaf := rt.IsLeaf(fivetupleDstIP, refbits)
-
-	// ルーティングテーブルから宛先 IP にマッチするプレフィックスを検索
-	// prefix には二進数のプレフィックス(ex."1011011")が格納される
-	// prefix_item にはNext hopとDepthが格納される
-
-	return isleaf
 }
 
 // CacheFiveTuple は、FiveTuple をキャッシュに挿入し、必要に応じてエントリを置換します。
@@ -229,7 +231,7 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	// 置換された FiveTuple を格納するスライス
 	evictedFiveTuples := []*FiveTuple{}
 	// FiveTuple の宛先 IP アドレスを IPaddress 型に変換
-	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
+	// fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
 
 	var prefix []string
 	// var items []Item
@@ -259,15 +261,17 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 
 	hitLayer := 0
 	//最終的にはレイヤ0であるのでk=0は確認していない。
-	for k := len(c.CacheLayers) - 1; k > 0; k-- {
-		if c.RoutingTable.IsShorter(fivetupleDstIP, 32, int(c.CacheRefBits[k])) && isLeaf(f, &c.RoutingTable, int(c.CacheRefBits[k])) {
+	for k := len(c.CacheLayers) - 1; k > -2; k-- {
+		if k == -1 {
+			return make([]*FiveTuple, 0)
+		}
+		if isLeaf(f, &c.RoutingTable, int(c.CacheRefBits[k])) {
 			// 条件を満たさない場合、キャッシュ未挿入のカウントを更新
 			hitLayer = k
 
 			break
-		} else {
-			continue
 		}
+
 	}
 	c.CacheInserted[hitLayer] += 1
 	// 	// 条件を満たす場合、キャッシュ未挿入の別のカウントを更新し、キャッシュに挿入

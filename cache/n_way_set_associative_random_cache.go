@@ -2,8 +2,6 @@ package cache
 
 import (
 	"fmt"
-
-	"hash/crc32"
 )
 
 type NWaySetAssociativeRandomCache struct {
@@ -28,8 +26,8 @@ func (cache *NWaySetAssociativeRandomCache) IsCached(p *Packet, update bool) (bo
 
 func (cache *NWaySetAssociativeRandomCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
-	crc := crc32.ChecksumIEEE(fiveTupleToBigEndianByteArray(f))
-	return uint(crc) % maxSetIdx
+	idx := (uint(f.SrcIP) ^ uint(f.DstIP)) % maxSetIdx
+	return uint(idx)
 }
 
 func (cache *NWaySetAssociativeRandomCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {

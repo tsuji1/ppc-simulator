@@ -2,8 +2,6 @@ package cache
 
 import (
 	"fmt"
-
-	"hash/crc32"
 )
 
 type NWaySetAssociativeTreePLRUCache struct {
@@ -28,8 +26,8 @@ func (cache *NWaySetAssociativeTreePLRUCache) IsCached(p *Packet, update bool) (
 
 func (cache *NWaySetAssociativeTreePLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
-	crc := crc32.ChecksumIEEE(fiveTupleToBigEndianByteArray(f))
-	return uint(crc) % maxSetIdx
+	idx := (uint(f.SrcIP) ^ uint(f.DstIP)) % maxSetIdx
+	return uint(idx)
 }
 
 func (cache *NWaySetAssociativeTreePLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
