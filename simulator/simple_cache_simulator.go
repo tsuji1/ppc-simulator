@@ -5,8 +5,6 @@ import (
 	"os"
 	"test-module/cache"
 
-	"github.com/koron/go-dproxy"
-
 	"test-module/routingtable"
 )
 
@@ -19,20 +17,47 @@ type SimpleCacheSimulator struct {
 
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
 // パケットがキャッシュにヒットしたかどうかを返します。
-func (sim *SimpleCacheSimulator) Process(p *cache.Packet) bool {
-	// キャッシュを検索
-	cached := cache.AccessCache(sim.Cache, p)
+func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
+	switch pkt := p.(type) {
+	case *cache.Packet:
+		// キャッシュを検索
+		cached := cache.AccessCache(sim.Cache, pkt)
 
-	if cached {
-		// キャッシュヒットの場合
-		sim.Stat.Hit += 1
-	} else {
-		sim.Cache.CacheFiveTuple(p.FiveTuple()) //平均20nsでキャッシュに追加される。
+		if cached {
+			// キャッシュヒットの場合
+			sim.Stat.Hit += 1
+			fmt.Printf("sim stat hit: %d\n", sim.Stat.Hit)
+		} else {
+			sim.Cache.CacheFiveTuple(pkt.FiveTuple()) //平均20nsでキャッシュに追加される。
+			
+		}
+
+		sim.Stat.Processed += 1
+
+		return cached
+
+	case *cache.MinPacket:
+		pac := pkt.Packet()
+		// キャッシュを検索
+		cached := cache.AccessCache(sim.Cache, pac)
+
+		if cached {
+			// キャッシュヒットの場合
+			sim.Stat.Hit += 1
+		} else {
+			sim.Cache.CacheFiveTuple(pkt.FiveTuple()) //平均20nsでキャッシュに追加される。
+		}
+
+		sim.Stat.Processed += 1
+
+		return cached
+
+	default:
+		// サポートされていない型の場合
+		fmt.Println("Unsupported packet type")
+		return false
 	}
 
-	sim.Stat.Processed += 1
-
-	return cached
 }
 
 // GetStat は、シミュレータの統計情報を返します。
@@ -69,20 +94,16 @@ func NewCacheSimulatorStat(description, parameter string) CacheSimulatorStat {
 }
 
 // buildCache は、キャッシュ設定に基づいて適切なキャッシュを構築します。
-func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) (cache.Cache, error) {
+func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) (cache.Cache, error) {
 	// キャッシュタイプを取得
-	cache_type, err := p.M("Type").String()
-
-	if err != nil {
-		return nil, err
-	}
+	cache_type := definitionCache.Type
 
 	var c cache.Cache
 
 	// キャッシュタイプに応じてキャッシュを生成
 	switch cache_type {
 	case "CacheWithLookAhead":
-		innerCache, err := buildCache(p.M("InnerCache"), routingTable, debugMode)
+		innerCache, err := buildCache(*definitionCache.InnerCache, routingTable, debugMode)
 		if err != nil {
 			return c, err
 		}
@@ -91,106 +112,55 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 			InnerCache: innerCache,
 		}
 	case "FullAssociativeLRUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
 		c = cache.NewFullAssociativeLRUCache(uint(size))
 	case "FullAssociativeTreePLRUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		size := definitionCache.Size
 		c = cache.NewFullAssociativeTreePLRUCache(uint(size))
 	case "FullAssociativeLFUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
 		c = cache.NewFullAssociativeLFUCache(uint(size))
 	case "FullAssociativeRandomCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
 		c = cache.NewFullAssociativeRandomCache(uint(size))
 	case "FullAssociativeFIFOCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
 		c = cache.NewFullAssociativeFIFOCache(uint(size))
 	case "NWaySetAssociativeLRUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		way, err := p.M("Way").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		way := definitionCache.Way
 		c = cache.NewNWaySetAssociativeLRUCache(uint(size), uint(way))
 	case "NWaySetAssociativeTreePLRUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		way, err := p.M("Way").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		way := definitionCache.Way
 		c = cache.NewNWaySetAssociativeTreePLRUCache(uint(size), uint(way))
 	case "NWaySetAssociativeLFUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		way, err := p.M("Way").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		way := definitionCache.Way
 		c = cache.NewNWaySetAssociativeLFUCache(uint(size), uint(way))
 	case "NWaySetAssociativeRandomCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		way, err := p.M("Way").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		way := definitionCache.Way
 		c = cache.NewNWaySetAssociativeRandomCache(uint(size), uint(way))
 	case "NWaySetAssociativeFIFOCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		way, err := p.M("Way").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		way := definitionCache.Way
 		c = cache.NewNWaySetAssociativeFIFOCache(uint(size), uint(way))
 	case "MultiLayerCache":
 		// MultiLayerCache の設定を取得
-		cacheLayersPS := p.M("CacheLayers").ProxySet()
-		cachePoliciesPS := p.M("CachePolicies").ProxySet()
-		cacheLayersLen := cacheLayersPS.Len()
-		cachePoliciesLen := cachePoliciesPS.Len()
+		cacheLayersPS := definitionCache.CacheLayers
+		cachePoliciesPS := definitionCache.CachePolicies
+		cacheLayersLen := len(cacheLayersPS)
+		cachePoliciesLen := len(cachePoliciesPS)
 
 		// CachePoliciesの数はCacheLayersの数-1でなければならない
 		// CachePoliciesはCacheLayersの間のポリシーを表す
@@ -200,7 +170,7 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 
 		cacheLayers := make([]cache.Cache, cacheLayersLen)
 		for i := 0; i < cacheLayersLen; i++ {
-			cacheLayer, err := buildCache(cacheLayersPS.A(i), routingTable, debugMode)
+			cacheLayer, err := buildCache(cacheLayersPS[i], routingTable, debugMode)
 			if err != nil {
 				return c, err
 			}
@@ -209,10 +179,7 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 
 		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
 		for i := 0; i < cachePoliciesLen; i++ {
-			cachePolicyStr, err := cachePoliciesPS.A(i).String()
-			if err != nil {
-				return c, err
-			}
+			cachePolicyStr := cachePoliciesPS[i]
 
 			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
 		}
@@ -225,40 +192,22 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 			CacheHitByLayer:      make([]uint, cacheLayersLen),
 		}
 	case "FullAssociativeDstipNbitLRUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		refbits, err := p.M("Refbits").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		refbits := definitionCache.Refbits
 		c = cache.NewFullAssociativeDstipNbitLRUCache(uint(refbits), uint(size), routingTable, debugMode)
 	case "NWaySetAssociativeDstipNbitLRUCache":
-		size, err := p.M("Size").Int64()
-		if err != nil {
-			return c, err
-		}
+		size := definitionCache.Size
 
-		way, err := p.M("Way").Int64()
-		if err != nil {
-			return c, err
-		}
-
-		refbits, err := p.M("Refbits").Int64()
-		if err != nil {
-			return c, err
-		}
-
+		way := definitionCache.Way
+		refbits := definitionCache.Refbits
 		c = cache.NewNWaySetAssociativeDstipNbitLRUCache(uint(refbits), uint(size), uint(way), routingTable, debugMode)
 	case "MultiLayerCacheExclusive":
 		// MultiLayerCacheExclusive の設定を取得
-		cacheLayersPS := p.M("CacheLayers").ProxySet()
-		cachePoliciesPS := p.M("CachePolicies").ProxySet()
-		cacheLayersLen := cacheLayersPS.Len()
-		cachePoliciesLen := cachePoliciesPS.Len()
+		cacheLayersPS := definitionCache.CacheLayers
+		cachePoliciesPS := definitionCache.CachePolicies
+		cacheLayersLen := len(cacheLayersPS)
+		cachePoliciesLen := len(cachePoliciesPS)
 
 		cacheRefbits := make([]uint, cacheLayersLen)
 
@@ -269,23 +218,19 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 		// CacheLayersの設定を取得して、キャッシュを構築
 		cacheLayers := make([]cache.Cache, cacheLayersLen)
 		for i := 0; i < cacheLayersLen; i++ {
-			cacheLayer, err := buildCache(cacheLayersPS.A(i), routingTable, debugMode)
+			cacheLayer, err := buildCache(cacheLayersPS[i], routingTable, debugMode)
 			if err != nil {
 				return c, err
 			}
 			cacheLayers[i] = cacheLayer
-			refbit, _ := cacheLayersPS.A(i).M("Refbits").Int64()
+			refbit := cacheLayersPS[i].Refbits
 			cacheRefbits[i] = uint(refbit)
 		}
 
 		//ポリシーを構築して
 		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
 		for i := 0; i < cachePoliciesLen; i++ {
-			cachePolicyStr, err := cachePoliciesPS.A(i).String()
-			if err != nil {
-				return c, err
-			}
-
+			cachePolicyStr := cachePoliciesPS[i]
 			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
 		}
 
@@ -357,39 +302,23 @@ func buildCache(p dproxy.Proxy, routingTable *routingtable.RoutingTablePatriciaT
 }
 
 // BuildSimpleCacheSimulator は、JSON 設定に基づいてシンプルなキャッシュシミュレータを構築します。
-func BuildSimpleCacheSimulator(json interface{}) (*SimpleCacheSimulator, error) {
-	p := dproxy.New(json)
+func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile string) (*SimpleCacheSimulator, error) {
 
 	// シミュレータタイプを取得
-	simType, err := p.M("Type").String()
-
-	if err != nil {
-		return nil, err
-	}
+	simType := simulatorDefinition.Type
 
 	if simType != "SimpleCacheSimulator" {
 		return nil, fmt.Errorf("unsupported simulator type: %s", simType)
 	}
-
-	// ルールファイルを開く
-	rulefile, _ := p.M("Rule").String()
 	fp, err := os.Open(rulefile)
 	if err != nil {
 		panic(err)
 	}
 	defer fp.Close()
-
-	routingtable := routingtable.NewRoutingTablePatriciaTrie()
-	routingtable.ReadRule(fp)
-
-	cacheProxy := p.M("Cache")
-	debugMode, err := p.M("DebugMode").Bool()
-	if err != nil {
-		debugMode = false
-	}
-
+	r := routingtable.NewRoutingTablePatriciaTrie()
+	r.ReadRule(fp)
 	// キャッシュを構築
-	cache, err := buildCache(cacheProxy, routingtable, debugMode)
+	cache, err := buildCache(simulatorDefinition.Cache, r, simulatorDefinition.DebugMode)
 
 	if err != nil {
 		return nil, err

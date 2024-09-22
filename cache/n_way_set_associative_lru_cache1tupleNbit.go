@@ -5,23 +5,21 @@ import (
 	"encoding/binary"
 	"fmt"
 	"test-module/routingtable"
-
-	"hash/crc32"
 )
 
 type NWaySetAssociativeDstipNbitLRUCache struct {
-	Sets []FullAssociativeDstipNbitLRUCache // len(Sets) = Size / Way, each size == Way
-	Way  uint
-	Size uint
-	Refbits uint
-	routingTable *routingtable.RoutingTablePatriciaTrie 
-	debugMode bool	
+	Sets         []FullAssociativeDstipNbitLRUCache // len(Sets) = Size / Way, each size == Way
+	Way          uint
+	Size         uint
+	Refbits      uint
+	routingTable *routingtable.RoutingTablePatriciaTrie
+	debugMode    bool
 }
 
 func returnMaskedIP(IP uint32, refbits uint) uint32 {
 	temp := IP
-	temp = temp>>(32-refbits)
-	temp = temp<<(32-refbits)
+	temp = temp >> (32 - refbits)
+	temp = temp << (32 - refbits)
 	return temp
 }
 
@@ -41,8 +39,8 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCached(p *Packet, update boo
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
-	crc := crc32.ChecksumIEEE(fiveTupleDstipNbitToBigEndianByteArray(f, cache.Refbits))
-	return uint(crc) % maxSetIdx
+	idx := (uint(f.SrcIP) ^ uint(f.DstIP)) % maxSetIdx
+	return uint(idx)
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
@@ -69,10 +67,10 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) Description() string {
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) ParameterString() string {
-	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d}", cache.Description(), cache.Way, cache.Size)
+	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d , \"Ref\": %d}", cache.Description(), cache.Way, cache.Size, cache.Refbits)
 }
 
-func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint,routingTable *routingtable.RoutingTablePatriciaTrie,debugMode bool) *NWaySetAssociativeDstipNbitLRUCache {
+func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) *NWaySetAssociativeDstipNbitLRUCache {
 	if size%way != 0 {
 		panic("Size must be multiplier of way")
 	}
@@ -85,11 +83,11 @@ func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint,routingTable
 	}
 
 	return &NWaySetAssociativeDstipNbitLRUCache{
-		Sets: sets,
-		Way:  way,
-		Size: size,
-		Refbits: refbits,
+		Sets:         sets,
+		Way:          way,
+		Size:         size,
+		Refbits:      refbits,
 		routingTable: routingTable,
-		debugMode: debugMode,
+		debugMode:    debugMode,
 	}
 }

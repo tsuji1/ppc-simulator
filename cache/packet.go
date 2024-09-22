@@ -2,22 +2,31 @@ package cache
 
 import (
 	"fmt"
-	"net"
-
-	. "github.com/tchap/go-patricia/patricia"
 )
 
 type Packet struct {
 	Time             float64
 	Len              uint32
 	Proto            string
-	SrcIP, DstIP     net.IP
+	SrcIP, DstIP     uint32
 	SrcPort, DstPort uint16
-	DstIPMasked      *[33]string
-	IsDstIPLeaf      *[33]bool
-	HitIPList        *[33][]string
-	HitItemList      *[]Item
+	IsLeafIndex      int8
 	// IcmpType, IcmpCode uint16
+}
+
+type MinPacket struct {
+	Proto        string
+	SrcIP, DstIP uint32
+	IsLeafIndex  int8
+}
+
+func (p *MinPacket) Packet() *Packet {
+	return &Packet{
+		Proto:       p.Proto,
+		SrcIP:       p.SrcIP,
+		DstIP:       p.DstIP,
+		IsLeafIndex: p.IsLeafIndex,
+	}
 }
 
 func (p *Packet) String() string {

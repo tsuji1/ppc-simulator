@@ -36,7 +36,6 @@ type Result struct {
 	items  []patricia.Item
 }
 
-
 // PrintMatchRulesInfo は、指定されたIPアドレスと参照ビットに一致するルールの情報を出力します。
 func (routingtable *RoutingTablePatriciaTrie) PrintMatchRulesInfo(ip ipaddress.IPaddress, refbits int) {
 	hitted, _ := routingtable.SearchIP(ip, refbits)
@@ -204,8 +203,8 @@ func (routingtable *RoutingTablePatriciaTrie) SearchIP(ip ipaddress.IPaddress, r
 		return s.hitted, s.items
 	}
 
-	var hitted []string // ヒットしたプレフィックスを格納 "101110"など
-	var items []patricia.Item    // nexthop とdepth を格納
+	var hitted []string       // ヒットしたプレフィックスを格納 "101110"など
+	var items []patricia.Item // nexthop とdepth を格納
 
 	storeans := func(prefix patricia.Prefix, item patricia.Item) error {
 		hitted = append(hitted, string(prefix))
@@ -266,8 +265,8 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 // NewRoutingTablePatriciaTrie は、Patricia Trieを用いた新しいルーティングテーブルを初期化します。
 func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 	trie := patricia.NewTrie(patricia.MaxPrefixPerNode(33), patricia.MaxChildrenPerSparseNode(257))
-	l, _ := lru.New[string, bool](1024)
-	s, _ := lru.New[string, Result](1024)
+	l, _ := lru.New[string, bool](2048)
+	s, _ := lru.New[string, Result](2048)
 
 	return &RoutingTablePatriciaTrie{
 		RoutingTablePatriciaTrie: trie,
@@ -315,6 +314,30 @@ func (routingtable *RoutingTablePatriciaTrie) StatDetail() {
 	fmt.Println("IsLeafCacheHit : ", float64(routingtable.IsLeafCacheHit)/float64(routingtable.IsLeafCacheTotal))
 	fmt.Println("SearchIpCacheHit : ", float64(routingtable.SearchIpCacheHit)/float64(routingtable.SearchIpCacheTotal))
 
+}
+
+func Clone(routingtable *RoutingTablePatriciaTrie) *RoutingTablePatriciaTrie {
+	// 新しい Trie を初期化
+
+	newTrie := routingtable.RoutingTablePatriciaTrie.Clone()
+
+	if newTrie == nil {
+		panic("Failed to clone Patricia Trie")
+	}
+	fmt.Println(newTrie)
+	l, _ := lru.New[string, bool](256)
+	s, _ := lru.New[string, Result](256)
+
+	// 新しい RoutingTablePatriciaTrie を返す
+	return &RoutingTablePatriciaTrie{
+		RoutingTablePatriciaTrie: newTrie,
+		IsLeafCache:              l,
+		IsLeafCacheHit:           0, // キャッシュヒット数はリセット
+		IsLeafCacheTotal:         0,
+		SearchIpCache:            s,
+		SearchIpCacheHit:         0,
+		SearchIpCacheTotal:       0,
+	}
 }
 
 /*func (routingtable *RoutingTablePatriciaTrie) CalTreeDepth() {

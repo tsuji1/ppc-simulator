@@ -65,7 +65,7 @@ require (
 	github.com/google/martian/v3 v3.1.0 // indirect
 	github.com/google/pprof v0.0.0-20201218002935-b9804c9f04c2 // indirect
 	github.com/google/renameio v0.1.0 // indirect
-	github.com/google/uuid v1.1.2 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.0.5 // indirect
 	github.com/googleapis/google-cloud-go-testing v0.0.0-20200911160855-bcd43fbb19e8 // indirect
 	github.com/gookit/color v1.4.2 // indirect
