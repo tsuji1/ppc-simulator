@@ -772,12 +772,12 @@ func main() {
 
 		// シミュレーション設定を生成
 		settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
-		debugmode := true
+		debugmode := false
 		totalTask := len(settngs)
 		fmt.Println("Total tasks:", totalTask)
 
 		// ワーカーゴルーチンを生成
-		for i := 0; i < runtime.NumCPU()-5; i++ {
+		for i := 0; i < runtime.NumCPU(); i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -820,7 +820,6 @@ func main() {
 		for _, setting := range settngs {
 			newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
 			newSim.DebugMode = debugmode
-
 
 			newSim.Interval = 100000000
 			cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, rulefile)
