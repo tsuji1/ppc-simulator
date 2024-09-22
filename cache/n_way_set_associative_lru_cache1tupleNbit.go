@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"hash/crc32"
 	"test-module/routingtable"
 )
 
@@ -29,6 +30,15 @@ func fiveTupleDstipNbitToBigEndianByteArray(f *FiveTuple, refbits uint) []byte {
 	return buf.Bytes()
 }
 
+func uint32ToBytes(ip uint32) []byte {
+	return []byte{
+		byte(ip >> 24),
+		byte(ip >> 16),
+		byte(ip >> 8),
+		byte(ip),
+	}
+}
+
 func (cache *NWaySetAssociativeDstipNbitLRUCache) StatString() string {
 	return ""
 }
@@ -39,8 +49,10 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCached(p *Packet, update boo
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
-	idx := (uint(f.SrcIP) ^ uint(f.DstIP)) % maxSetIdx
-	return uint(idx)
+	dstIP := returnMaskedIP(f.DstIP, cache.Refbits)
+
+	crc := crc32.ChecksumIEEE(uint32ToBytes(dstIP))
+	return uint(crc) % maxSetIdx
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {

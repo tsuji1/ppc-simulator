@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"test-module/ipaddress"
 	"test-module/routingtable"
+	
 )
 
 // FullAssociativeDstipNbitLRUCache は、Nビットの参照ビットを使用してフルアソシエイティブLRUキャッシュを管理する構造体です。
