@@ -149,7 +149,8 @@ func init() {
 
 // gobファイルをデコードしてパケットデータを取得
 func decodeGobFile(filepath string) []MinPacket {
-	var packets []MinPacket
+
+	// packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
 	file, err := os.Open(filepath)
 	if err != nil {
 		log.Fatal("ファイルオープンエラー:", err)
@@ -735,9 +736,9 @@ func main() {
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
 
-		capacity := make([]int, 0, 10)
-		for i := 1; i <= 8; i++ {
-			capacity = append(capacity, 1<<uint(i+3))
+		capacity := make([]int, 0, 30)
+		for i := 1; i <= 9; i++ {
+			capacity = append(capacity, 1<<uint(i+12))
 		}
 
 		// print capacity
@@ -777,7 +778,7 @@ func main() {
 		fmt.Println("Total tasks:", totalTask)
 
 		// ワーカーゴルーチンを生成
-		for i := 0; i < runtime.NumCPU(); i++ {
+		for i := 0; i < runtime.NumCPU()-3; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()

@@ -6,15 +6,21 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 import heapq
 import os
+import datetime
 import numpy as np
 
+from matplotlib import rcParams
+
+# デフォルトのフォントを 'Noto Sans CJK JP' に設定
+rcParams['font.family'] = 'sans-serif'
+rcParams['font.sans-serif'] = ['Noto Sans CJK JP']
 
 MultiLayerCacheExclusiveType =Literal['MultiLayerCacheExclusive']
 class CacheLayer:
     def __init__(self,data:Dict):
         self.Type:str=str(data['Type'])
         self.Size:int =int(data['Size'])
-        self.Refbits:int = int(data['Refbits'])
+        self.Refbits: int = int(data.get('Refbits', data.get('Ref')))
 class CacheLayers:
     def __init__(self,data:List[CacheLayer]|None=None):
         if data is not None:
@@ -27,7 +33,13 @@ class CacheLayers:
     def shortly_display(self):
         for i,c in enumerate(self.CacheLayers):
             print(f"Layer{i+1}(Size: {c.Size}, Refbits: {c.Refbits})",end=" ")
-    
+    def check_capacity_match(self, capacity: List[int]) -> bool:
+        """
+        キャッシュレイヤーのサイズと与えられた capacity リストが一致するかどうかをチェックする。
+        """
+        cache_sizes = [c.Size for c in self.CacheLayers]
+        res = cache_sizes == capacity
+        return res
 class MultiLayerCacheParameter:
     
     @deprecated("削除予定")
@@ -399,6 +411,154 @@ class AnalysisResults:
         # fig.text(0.1, 0.02, parameter_description, fontsize=12,fontname ='Noto Sans CJK JP')
         os.makedirs(f"../result/hitrate_3dplot_3layer/{type}",exist_ok=True)
         plt.savefig(f"../result/hitrate_3dplot_3layer/{type}/{src_file_name}.png")
+
+    def hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(self, capacity_32bit=16, refbits_range=list(range(1, 32)), capacity_range=[2**i for i in range(4, 10)]):
+        if (isinstance(capacity_32bit,int)):
+            data = self.query_results_with_refbits_all()
+            num_refbits = len(refbits_range)  # 参照ビット数の数
+            fig, axs = plt.subplots(figsize=(12, 12))
+            x_labels = capacity_range
+            y_labels = np.arange(0.5, 1.05, 0.05)
+            x = np.arange(len(x_labels))  # X軸の位置
+
+            # 各条件での棒グラフの幅
+            bar_width = 0.10
+
+            # カラーマップの設定（青色のグラデーション）
+            cmap_blue = plt.get_cmap('Blues')
+            cmap_green = plt.get_cmap('Greens')
+            colors_blue = [cmap_blue((i + 2) / (len(refbits_range) + 2)) for i in range(len(refbits_range))]
+            colors_green = [cmap_green((i + 2) / (len(refbits_range) + 2)) for i in range(len(refbits_range))]
+
+            # すでに凡例が設定されたかどうかを追跡するためのフラグ
+            # 凡例用のセットを初期化
+            legend_labels_32 = set()
+            legend_labels_n = set()
+            
+            # グラフのプロット
+            for index, ncap in enumerate(capacity_range):  # キャッシュのエントリ数ごとにプロット
+                for i, refbit in enumerate(refbits_range):  # 参照ビット数ごとにプロット
+                    d = data[refbit]
+                    capacities = [capacity_32bit, ncap]
+                    query_data = self.query_results_with_capacity(d, capacities)
+                    
+                    if len(query_data) != 0:
+                        qd = query_data[0]
+                        cache32hit = qd.StatDetail.Hit[0] / qd.Processed
+                        cachenhit = qd.StatDetail.Hit[1] / qd.Processed
+                        
+                        # 最初の棒グラフをcache32hitで描画
+                        axs.bar(x[index] + bar_width * i, cache32hit, bar_width, color=colors_blue[0],edgecolor='black')
+                        # その上にcachenhitを積み上げる
+                        axs.bar(x[index] + bar_width * i, cachenhit, bar_width, bottom=cache32hit, color=colors_green[i],edgecolor='black')
+                        
+            axs.bar(0, 0, color=colors_blue[0], label=f'/32キャッシュ', edgecolor='black')  # 仮の棒グラフで凡例を追加
+            legend_labels_32.add(refbit)
+            for i, refbit in enumerate(refbits_range):
+                if refbit not in legend_labels_n:
+                    axs.bar(0, 0, color=colors_green[i], label=f'/{refbit}キャッシュ', edgecolor='black')  # 仮の棒グラフで凡例を追加
+                    legend_labels_n.add(refbit)
+
+            # 凡例をグラフの外に表示
+            axs.legend(title='キャッシュの種類', title_fontsize=19, fontsize=17, bbox_to_anchor=(1.05, 1.0), loc='upper left', borderaxespad=0.)
+            
+            # X軸ラベルと目盛りの設定
+            axs.set_xlabel('/nキャッシュのエントリ数',fontsize=18)
+            axs.set_ylabel('ヒット率',fontsize=18)
+            axs.set_xticks(x + bar_width * num_refbits / 2)  # X軸の目盛りの位置
+            axs.set_xticklabels(x_labels,fontsize=18)  # X軸のラベル
+            
+            axs.set_yticks(y_labels)
+            axs.set_yticklabels([f'{i:.2f}' for i in y_labels],fontsize=18)  # Y軸のラベル
+                # Y軸の範囲を0.5から最大まで設定
+            axs.set_ylim(0.5, 1.0)
+
+            
+            axs.set_title(f'/32キャッシュのエントリ数を{capacity_32bit}に固定した際のヒット率',fontsize=18)
+            
+            fig.tight_layout()
+        
+            # グラフの保存
+            now = datetime.datetime.now()
+            src_file_name = now.strftime("%Y%m%d-%H%M%S") + f"-32bitcap{capacity_32bit}-refbits{refbits_range[0]}-{refbits_range[-1]}-cap{capacity_range[0]}-{capacity_range[-1]}"
+            base_dir = f"../result/hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity"
+            os.makedirs(base_dir, exist_ok=True)
+            file_path = os.path.join(base_dir, f"{src_file_name}.png")
+            plt.savefig(file_path, bbox_inches='tight')  # bbox_inches='tight' でグラフと凡例が切れないようにする
+            plt.close()
+        elif(isinstance(capacity_32bit,list)):
+            data = self.query_results_with_refbits_all()
+            # 列を2つにしてサブプロットを配置する場合の修正
+            num_cols = 2  # 2列にする
+            num_refbits = len(refbits_range)  # 参照ビット数の数
+            num_plots = len(capacity_32bit)  # サブプロットの数
+            num_rows = int(np.ceil(num_plots / num_cols))  # 行数は全体のサブプロット数に基づいて計算
+            fig, axs = plt.subplots(num_rows, num_cols, figsize=(12 * num_cols, 12 * num_rows))  # 2列でサブプロットを作成
+
+            x_labels = capacity_range
+            y_labels = np.arange(0.5, 1.05, 0.05)
+            x = np.arange(len(x_labels))  # X軸の位置
+
+            # 各条件での棒グラフの幅
+            bar_width = 0.10
+
+            # カラーマップの設定（青色と緑色のグラデーション）
+            cmap_blue = plt.get_cmap('Blues')
+            cmap_green = plt.get_cmap('Greens')
+            colors_blue = [cmap_blue((i + 2) / (len(refbits_range) + 2)) for i in range(len(refbits_range))]
+            colors_green = [cmap_green((i + 2) / (len(refbits_range) + 2)) for i in range(len(refbits_range))]
+
+            for plot_idx, cap_32bit in enumerate(capacity_32bit):  # リスト内の各32bit容量に対してサブプロットを作成
+                row = plot_idx // num_cols  # 行のインデックス
+                col = plot_idx % num_cols   # 列のインデックス
+                ax = axs[row, col]  # サブプロットを指定
+
+                for index, ncap in enumerate(capacity_range):  # キャッシュのエントリ数ごとにプロット
+                    for i, refbit in enumerate(refbits_range):  # 参照ビット数ごとにプロット
+                        d = data[refbit]
+                        capacities = [cap_32bit, ncap]
+                        query_data = self.query_results_with_capacity(d, capacities)
+
+                        if len(query_data) != 0:
+                            qd = query_data[0]
+                            cache32hit = qd.StatDetail.Hit[0] / qd.Processed
+                            cachenhit = qd.StatDetail.Hit[1] / qd.Processed
+
+                            # 最初の棒グラフをcache32hitで描画
+                            ax.bar(x[index] + bar_width * i, cache32hit, bar_width, color=colors_blue[0], edgecolor='black')
+                            # その上にcachenhitを積み上げる
+                            ax.bar(x[index] + bar_width * i, cachenhit, bar_width, bottom=cache32hit, color=colors_green[i], edgecolor='black')
+
+                # X軸ラベルと目盛りの設定
+                ax.set_xlabel('/nキャッシュのエントリ数', fontsize=18)
+                ax.set_ylabel('ヒット率', fontsize=18)
+                ax.set_xticks(x + bar_width * len(refbits_range) / 2)
+                ax.set_xticklabels(x_labels, fontsize=18)
+
+                ax.set_yticks(y_labels)
+                ax.set_yticklabels([f'{i:.2f}' for i in y_labels], fontsize=18)
+                ax.set_ylim(0.5, 1.0)
+
+                # 各サブプロットに個別のタイトルを設定
+                ax.set_title(f'/32キャッシュのエントリ数を{cap_32bit}に固定した際のヒット率', fontsize=18)
+
+            # 凡例は1つにまとめる
+            handles = [plt.Rectangle((0,0),1,1, color=colors_blue[0], edgecolor='black', label='/32キャッシュ')]
+            handles += [plt.Rectangle((0,0),1,1, color=colors_green[i], edgecolor='black', label=f'/{refbit}キャッシュ') for i, refbit in enumerate(refbits_range)]
+
+            fig.legend(handles=handles, title='キャッシュの種類', title_fontsize=27, fontsize=25, bbox_to_anchor=(1.02, 1.0), loc='upper left', borderaxespad=0.)
+
+            fig.tight_layout()
+
+            # グラフの保存
+            now = datetime.datetime.now()
+            src_file_name = now.strftime("%Y%m%d-%H%M%S") + f"-32bitcap{capacity_32bit[0]}-{capacity_32bit[-1]}-refbits{refbits_range[0]}-{refbits_range[-1]}-cap{capacity_range[0]}-{capacity_range[-1]}"
+            base_dir = f"../result/hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity"
+            os.makedirs(base_dir, exist_ok=True)
+            file_path = os.path.join(base_dir, f"{src_file_name}.png")
+            plt.savefig(file_path, bbox_inches='tight')
+            plt.close()
+                            
     def hitrate_3dplot_2layer(self, type="wire",rotate=[0,100,200,300]):
         # データを格納するリストの
         # データを格納するリスト
@@ -494,6 +654,15 @@ class AnalysisResults:
                 res[refbits] = []
             res[refbits].append(data)
         return res
+    
+    # cache capacityによってデータを分けます。dict[capacity, List[MultiLayerCacheExclusive]]
+    def query_results_with_capacity(self,results:list[MultiLayerCacheExclusive],capacity=[])->list[MultiLayerCacheExclusive]:
+        res = []
+        if capacity:
+            for data in results:
+                if(data.Parameter.CacheLayers.check_capacity_match(capacity)):
+                    res.append(data)        
+        return res
     def hitrate_2dplot_2layer_refbits_capacity(self,src_file_name:str="test"):
         if(src_file_name=="test"):
             print("src_file_name is not set")
@@ -524,7 +693,7 @@ class AnalysisResults:
         
         sum_res = self.SummarizedResults(data)
         
-        ig, axs = plt.subplots(3, 2, figsize=(20, 40))
+        fig, axs = plt.subplots(3, 2, figsize=(20, 40))
         # refbits-refbitsの組み合わせ
         cache_names= []
         for d in data:
