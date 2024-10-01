@@ -418,7 +418,7 @@ class AnalysisResults:
             num_refbits = len(refbits_range)  # 参照ビット数の数
             fig, axs = plt.subplots(figsize=(12, 12))
             x_labels = capacity_range
-            y_labels = np.arange(0.5, 1.05, 0.05)
+            y_labels = np.arange(0.00, 1.05, 0.05)
             x = np.arange(len(x_labels))  # X軸の位置
 
             # 各条件での棒グラフの幅
@@ -471,7 +471,7 @@ class AnalysisResults:
             axs.set_yticks(y_labels)
             axs.set_yticklabels([f'{i:.2f}' for i in y_labels],fontsize=18)  # Y軸のラベル
                 # Y軸の範囲を0.5から最大まで設定
-            axs.set_ylim(0.5, 1.0)
+            axs.set_ylim(0.0, 1.0)
 
             
             axs.set_title(f'/32キャッシュのエントリ数を{capacity_32bit}に固定した際のヒット率',fontsize=18)
@@ -496,7 +496,7 @@ class AnalysisResults:
             fig, axs = plt.subplots(num_rows, num_cols, figsize=(12 * num_cols, 12 * num_rows))  # 2列でサブプロットを作成
 
             x_labels = capacity_range
-            y_labels = np.arange(0.5, 1.05, 0.05)
+            y_labels = np.arange(0.00, 1.05, 0.05)
             x = np.arange(len(x_labels))  # X軸の位置
 
             # 各条件での棒グラフの幅
@@ -537,7 +537,7 @@ class AnalysisResults:
 
                 ax.set_yticks(y_labels)
                 ax.set_yticklabels([f'{i:.2f}' for i in y_labels], fontsize=18)
-                ax.set_ylim(0.5, 1.0)
+                ax.set_ylim(0.0, 1.0)
 
                 # 各サブプロットに個別のタイトルを設定
                 ax.set_title(f'/32キャッシュのエントリ数を{cap_32bit}に固定した際のヒット率', fontsize=18)

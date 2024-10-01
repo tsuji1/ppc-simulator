@@ -42,13 +42,15 @@ j = aggregate_result()
 analy = AnalysisResults(j)
 analy.find_top_n_hitrate(10,capacity_maximum_limit=1100)
 analy.print_results()
-analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=[64,256,512,1024],refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
+# analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=[64,256,512,1024],refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
 
-# analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=256,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
+analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=64,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
 
-# analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=512,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
+analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=256,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
 
-# analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=1024,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
+analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=512,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
+
+analy.hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity(capacity_32bit=1024,refbits_range=list(range(16,24+1)),capacity_range=[2**i for i in range(4,12)])
 # analy.hitrate_2dplot_2layer_refbits_capacity("tes")
 
 # キャパシティが同じで
