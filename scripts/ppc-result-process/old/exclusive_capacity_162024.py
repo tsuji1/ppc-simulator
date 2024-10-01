@@ -1,6 +1,5 @@
 import os
 import json
-import matplotlib.pyplot as plt
 from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive,AnalysisResults
 import heapq
 src_file_name = '16-24bits_cap4-cap12_exclusive.json'

@@ -1,4 +1,3 @@
-import os
 import subprocess
 
 
@@ -33,7 +32,7 @@ for refbits in range(first, last+1):
         json.dump(data, file, indent=4)
     
     # シミュレータを実行する
-    cmd = f'../main ../simulator-settings/tmp.json ../parsed-pcap/202406251400.p7'
+    cmd = '../main ../simulator-settings/tmp.json ../parsed-pcap/202406251400.p7'
     result = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     _json_data = json.loads(result.stdout)
     result_data[refbits] = _json_data

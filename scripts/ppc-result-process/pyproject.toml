@@ -4,4 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "matplotlib>=3.9.2",
+    "pre-commit>=3.8.0",
+    "ruff>=0.6.8",
+    "sqlalchemy>=2.0.35",
+    "typing-extensions>=4.12.2",
+]

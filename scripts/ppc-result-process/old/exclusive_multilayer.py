@@ -193,7 +193,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=15) as executor:
                 #     print(f"An error occurred: {e}")
                 #     logging.error(f"An error occurred: {e}")
             end_time = time.time()
-            elapsed_time = end_time - start_time;
+            elapsed_time = end_time - start_time
             # すべての処理が完了した時点で次のrefbitsに進む
             print(f"All tasks for refbits={refbits} completed.")
             print(f"Elapsed time: {elapsed_time:.2f} seconds")

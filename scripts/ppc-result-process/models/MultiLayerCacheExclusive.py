@@ -2,9 +2,7 @@ from typing import List, Dict, Literal
 import warnings
 import heapq
 from typing_extensions import deprecated
-from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
-import heapq
 import os
 import datetime
 import numpy as np
@@ -452,7 +450,7 @@ class AnalysisResults:
                         # その上にcachenhitを積み上げる
                         axs.bar(x[index] + bar_width * i, cachenhit, bar_width, bottom=cache32hit, color=colors_green[i],edgecolor='black')
                         
-            axs.bar(0, 0, color=colors_blue[0], label=f'/32キャッシュ', edgecolor='black')  # 仮の棒グラフで凡例を追加
+            axs.bar(0, 0, color=colors_blue[0], label='/32キャッシュ', edgecolor='black')  # 仮の棒グラフで凡例を追加
             legend_labels_32.add(refbit)
             for i, refbit in enumerate(refbits_range):
                 if refbit not in legend_labels_n:
@@ -481,7 +479,7 @@ class AnalysisResults:
             # グラフの保存
             now = datetime.datetime.now()
             src_file_name = now.strftime("%Y%m%d-%H%M%S") + f"-32bitcap{capacity_32bit}-refbits{refbits_range[0]}-{refbits_range[-1]}-cap{capacity_range[0]}-{capacity_range[-1]}"
-            base_dir = f"../result/hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity"
+            base_dir = "../result/hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity"
             os.makedirs(base_dir, exist_ok=True)
             file_path = os.path.join(base_dir, f"{src_file_name}.png")
             plt.savefig(file_path, bbox_inches='tight')  # bbox_inches='tight' でグラフと凡例が切れないようにする
@@ -553,7 +551,7 @@ class AnalysisResults:
             # グラフの保存
             now = datetime.datetime.now()
             src_file_name = now.strftime("%Y%m%d-%H%M%S") + f"-32bitcap{capacity_32bit[0]}-{capacity_32bit[-1]}-refbits{refbits_range[0]}-{refbits_range[-1]}-cap{capacity_range[0]}-{capacity_range[-1]}"
-            base_dir = f"../result/hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity"
+            base_dir = "../result/hitrate_bar_graph_2cache_refbits_fixed_32bitcapacity"
             os.makedirs(base_dir, exist_ok=True)
             file_path = os.path.join(base_dir, f"{src_file_name}.png")
             plt.savefig(file_path, bbox_inches='tight')

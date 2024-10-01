@@ -1,6 +1,6 @@
 import os
 import json
-from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive,AnalysisResults
+from models.MultiLayerCacheExclusive import AnalysisResults
 import copy
 # refbitsごとにまとめよう
 first = 1

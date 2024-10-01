@@ -1,17 +1,9 @@
 import os
-import subprocess
 import copy
-import concurrent.futures
 import json
-import time
-import logging
-from datetime import datetime
 from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive,AnalysisResults
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
 
 import heapq
-import numpy as np
 #
 def _make_join(refbits,cache_capacity):
     refbits_string = "-".join([str(i) for i in refbits])

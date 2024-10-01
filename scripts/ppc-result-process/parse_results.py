@@ -1,7 +1,6 @@
 import json
 import matplotlib.pyplot as plt
-from typing import List, Dict
-from MultiLayerCacheExclusive import MultiLayerExclusiveCache
+from typing import List
 
         
 def plot_graph_hit_rates(dst_path,refbits: List[int], hit_rates: List[float]):

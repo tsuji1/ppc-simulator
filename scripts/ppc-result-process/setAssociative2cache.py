@@ -1,17 +1,7 @@
 import os
-import subprocess
-import copy
-import concurrent.futures
 import json
-import time
-import logging
-from datetime import datetime
-from models.MultiLayerCacheExclusive import MultiLayerCacheExclusive,AnalysisResults
-from mpl_toolkits.mplot3d import Axes3D
-import matplotlib.pyplot as plt
+from models.MultiLayerCacheExclusive import AnalysisResults
 
-import heapq
-import numpy as np
 #
 def _make_join(refbits,cache_capacity):
     refbits_string = "-".join([str(i) for i in refbits])
@@ -28,7 +18,7 @@ def aggregate_result():
     json_result_data = []
     parsed_result_data = [] 
 
-    dst_file_path = f'../result/result021230da-e4b0-4cea-8847-dff1b92bc6ae.json'
+    dst_file_path = '../result/result021230da-e4b0-4cea-8847-dff1b92bc6ae.json'
 
     with open(dst_file_path,'r') as file:
         json_result_data = json.load(file)
