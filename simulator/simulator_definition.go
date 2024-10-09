@@ -35,11 +35,13 @@ func (s *SimulatorDefinition) GetCacheLayerCount() int {
 func (s *SimulatorDefinition) AddCacheLayer(layer *Cache) {
 	if layer == nil {
 		l := Cache{
-			Type:    "FullAssociativeDstipNbitLRUCache",
+			Type:    "NWaySetAssociativeDstipNbitLRUCache",
 			Size:    64,
+			Way:     4,
 			Refbits: 32,
 		}
 		s.Cache.CacheLayers = append(s.Cache.CacheLayers, l)
+		s.Cache.CachePolicies = append(s.Cache.CachePolicies, "WriteThrough")
 	} else {
 		s.Cache.CacheLayers = append(s.Cache.CacheLayers, *layer)
 	}

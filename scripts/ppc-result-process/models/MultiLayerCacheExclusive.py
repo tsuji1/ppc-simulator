@@ -211,6 +211,9 @@ class AnalysisResults:
                 self.__explore_and_parse(item)
         elif isinstance(data, MultiLayerCacheExclusive):
             self.results.append(data)
+        else:
+            print("Invalid data")
+            return 1
     def add_result(self, data: MultiLayerCacheExclusive) -> None:
         self.__explore_and_parse(data)
     
@@ -449,7 +452,8 @@ class AnalysisResults:
                         axs.bar(x[index] + bar_width * i, cache32hit, bar_width, color=colors_blue[0],edgecolor='black')
                         # その上にcachenhitを積み上げる
                         axs.bar(x[index] + bar_width * i, cachenhit, bar_width, bottom=cache32hit, color=colors_green[i],edgecolor='black')
-                        
+                    else:
+                        print("capacities:", capacities, "not found")
             axs.bar(0, 0, color=colors_blue[0], label='/32キャッシュ', edgecolor='black')  # 仮の棒グラフで凡例を追加
             legend_labels_32.add(refbit)
             for i, refbit in enumerate(refbits_range):
