@@ -16,12 +16,16 @@ type FullAssociativeLRUCache struct {
 type fullAssociativeLRUCacheEntry struct {
 	Refered   int
 	FiveTuple FiveTuple
-	NextHop  string
+	NextHop   string
 }
 
 // StatString はキャッシュの統計情報を文字列で返します。
 func (cache *FullAssociativeLRUCache) StatString() string {
 	return ""
+}
+
+func (cache *FullAssociativeLRUCache) Stat() interface{} {
+	return struct{}{}
 }
 
 // AssertImmutableCondition はキャッシュの不変条件をチェックします。
@@ -138,5 +142,11 @@ func NewFullAssociativeLRUCache(size uint) *FullAssociativeLRUCache {
 		Entries:   map[FiveTuple]*list.Element{},
 		Size:      size,
 		evictList: evictList,
+	}
+}
+func (c *FullAssociativeLRUCache) Parameter() Parameter {
+	return &FullAssociativeParameter{
+		Type: c.Description(),
+		Size: c.Size,
 	}
 }

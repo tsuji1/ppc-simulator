@@ -30,6 +30,10 @@ type Cache interface {
 
 	// ParameterString は、キャッシュのパラメータを文字列で返します。
 	ParameterString() string
+
+	Parameter() Parameter
+
+	Stat() interface{}
 }
 
 // AccessCache は、キャッシュにパケットをアクセスさせ、キャッシュヒットしたかどうかを返します。
@@ -38,3 +42,64 @@ func AccessCache(c Cache, p *Packet) bool {
 	hit, _ := c.IsCached(p, true)
 	return hit
 }
+
+// Parameter インターフェース
+type Parameter interface {
+	GetParameterType() string
+}
+
+// FullAssociativeParameter 構造体
+type FullAssociativeParameter struct {
+	Type string
+	Size uint
+}
+
+func (p *FullAssociativeParameter) GetParameterType() string {
+	return p.Type
+}
+
+// NbitFullAssociativeParameter 構造体
+type NbitFullAssociativeParameter struct {
+	Type    string
+	Size    uint
+	Refbits uint8
+}
+
+func (p *NbitFullAssociativeParameter) GetParameterType() string {
+	return p.Type
+}
+
+// SetAssociativeParameter 構造体
+type SetAssociativeParameter struct {
+	Type string
+	Size uint
+	Way  uint
+}
+
+func (p *SetAssociativeParameter) GetParameterType() string {
+	return p.Type
+}
+
+// NbitSetAssociativeParameter 構造体
+type NbitSetAssociativeParameter struct {
+	Type    string
+	Size    uint
+	Way     uint
+	Refbits uint8
+}
+
+func (p *NbitSetAssociativeParameter) GetParameterType() string {
+	return p.Type
+}
+
+type MultiCacheParameter struct {
+	Type          string
+	CacheLayers   []Parameter
+	CachePolicies []CachePolicy
+}
+
+func (p *MultiCacheParameter) GetParameterType() string {
+	return p.Type
+}
+
+type StatDetail interface{}

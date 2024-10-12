@@ -8,8 +8,21 @@ type CacheWithLookAhead struct {
 	InnerCache Cache
 }
 
+type CacheWithLookAheadParameter struct {
+	Type       string
+	InnerCache interface{}
+}
+
+func (c *CacheWithLookAheadParameter) GetParameterType() string {
+	return c.Type
+}
+
 func (c *CacheWithLookAhead) StatString() string {
 	return ""
+}
+
+func (c *CacheWithLookAhead) Stat() interface{} {
+	return struct{}{}
 }
 
 func (c *CacheWithLookAhead) IsCached(p *Packet, update bool) (bool, *int) {
@@ -49,4 +62,12 @@ func (c *CacheWithLookAhead) Description() string {
 
 func (c *CacheWithLookAhead) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"InnerCache\": %s}", c.Description(), c.InnerCache.ParameterString())
+}
+
+// Parameter メソッドで Parameter インターフェースを実装
+func (c *CacheWithLookAhead) Parameter() Parameter {
+	return &CacheWithLookAheadParameter{
+		Type:       "LookAhead",
+		InnerCache: nil,
+	}
 }

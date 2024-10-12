@@ -14,6 +14,10 @@ func (cache *NWaySetAssociativeFIFOCache) StatString() string {
 	return ""
 }
 
+func (cache *NWaySetAssociativeFIFOCache) Stat() interface{} {
+	return struct{}{}
+}
+
 func (cache *NWaySetAssociativeFIFOCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -49,6 +53,14 @@ func (cache *NWaySetAssociativeFIFOCache) Description() string {
 
 func (cache *NWaySetAssociativeFIFOCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d}", cache.Description(), cache.Way, cache.Size)
+}
+
+func (cache *NWaySetAssociativeFIFOCache) Parameter() Parameter {
+	return &SetAssociativeParameter{
+		Type: cache.Description(),
+		Way:  cache.Way,
+		Size: cache.Size,
+	}
 }
 
 func NewNWaySetAssociativeFIFOCache(size, way uint) *NWaySetAssociativeFIFOCache {

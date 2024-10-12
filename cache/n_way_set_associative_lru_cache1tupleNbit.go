@@ -43,6 +43,10 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) StatString() string {
 	return ""
 }
 
+func (cache *NWaySetAssociativeDstipNbitLRUCache) Stat() interface{} {
+	return struct{}{}
+}
+
 func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -82,6 +86,14 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d , \"Ref\": %d}", cache.Description(), cache.Way, cache.Size, cache.Refbits)
 }
 
+func (cache *NWaySetAssociativeDstipNbitLRUCache) Parameter() Parameter {
+	return &NbitSetAssociativeParameter{
+		Type:    cache.Description(),
+		Way:     cache.Way,
+		Size:    cache.Size,
+		Refbits: uint8(cache.Refbits),
+	}
+}
 func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) *NWaySetAssociativeDstipNbitLRUCache {
 	if size%way != 0 {
 		panic("Size must be multiplier of way")

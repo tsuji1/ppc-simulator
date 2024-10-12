@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"test-module/ipaddress"
 	"test-module/routingtable"
-	
 )
 
 // FullAssociativeDstipNbitLRUCache は、Nビットの参照ビットを使用してフルアソシエイティブLRUキャッシュを管理する構造体です。
@@ -34,6 +33,12 @@ func (cache *FullAssociativeDstipNbitLRUCache) ReturnMaskedIP(IP uint32) uint32 
 // 現在は未実装です。
 func (cache *FullAssociativeDstipNbitLRUCache) StatString() string {
 	return ""
+}
+
+// Stat は、キャッシュの統計情報を返します。
+// 現在は未実装です。
+func (cache *FullAssociativeDstipNbitLRUCache) Stat() interface{} {
+	return struct{}{}
 }
 
 // AssertImmutableCondition は、キャッシュの状態が期待通りであることを確認します。
@@ -169,12 +174,27 @@ func (cache *FullAssociativeDstipNbitLRUCache) Clear() {
 
 // Description は、キャッシュの説明文字列を返します。
 func (cache *FullAssociativeDstipNbitLRUCache) Description() string {
-	return "FullAssociativeDstipNbitLRUCache"
+	return "NbitFullAssociativeDstipLRUCache"
 }
 
 // ParameterString は、キャッシュのパラメータをJSON形式の文字列として返します。
 func (cache *FullAssociativeDstipNbitLRUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Size\": %d, \"Refbits\": %d}", cache.Description(), cache.Size, cache.Refbits)
+}
+
+type FullAssociativeDstipNbitLRUCacheParameter struct {
+	Type    string
+	Size    uint
+	Refbits uint
+}
+
+// NewFullAssociativeDstipNbitLRUCacheParameter は、新しい FullAssociativeDstipNbitLRUCacheParameter を作成します。
+func (cache *FullAssociativeDstipNbitLRUCache) Parameter() Parameter {
+	return &NbitFullAssociativeParameter{
+		Type:    cache.Description(),
+		Size:    cache.Size,
+		Refbits: uint8(cache.Refbits),
+	}
 }
 
 // NewFullAssociativeDstipNbitLRUCache は、新しい FullAssociativeDstipNbitLRUCache を作成します。

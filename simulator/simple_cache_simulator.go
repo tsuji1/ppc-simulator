@@ -29,7 +29,7 @@ func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
 			fmt.Printf("sim stat hit: %d\n", sim.Stat.Hit)
 		} else {
 			sim.Cache.CacheFiveTuple(pkt.FiveTuple()) //平均20nsでキャッシュに追加される。
-			
+
 		}
 
 		sim.Stat.Processed += 1
@@ -65,6 +65,17 @@ func (sim *SimpleCacheSimulator) GetStat() CacheSimulatorStat {
 	return sim.Stat
 }
 
+func (sim *SimpleCacheSimulator) GetSimulatorResult() SimulatorResult {
+	return SimulatorResult{
+		Type:       sim.Stat.Type,
+		Parameter:  sim.Stat.Parameter,
+		Processed:  sim.Stat.Processed,
+		Hit:        sim.Stat.Hit,
+		HitRate:    float64(sim.Stat.Hit) / float64(sim.Stat.Processed),
+		StatDetail: sim.Cache.Stat(),
+	}
+}
+
 // GetStatString は、シミュレータの統計情報を文字列形式で返します。
 func (sim *SimpleCacheSimulator) GetStatString() string {
 	stat := sim.Stat.String()
@@ -84,7 +95,7 @@ func (sim *SimpleCacheSimulator) GetStatString() string {
 }
 
 // NewCacheSimulatorStat は、新しいキャッシュシミュレータ統計情報を作成します。
-func NewCacheSimulatorStat(description, parameter string) CacheSimulatorStat {
+func NewCacheSimulatorStat(description string, parameter cache.Parameter) CacheSimulatorStat {
 	return CacheSimulatorStat{
 		Type:      description,
 		Parameter: parameter,
@@ -328,7 +339,7 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 		Cache: cache,
 		Stat: NewCacheSimulatorStat(
 			cache.Description(),
-			cache.ParameterString(),
+			cache.Parameter(),
 		),
 	}
 

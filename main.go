@@ -573,7 +573,7 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
-func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) string {
+func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) simulator.SimulatorResult {
 
 	for _, p := range *packetList {
 
@@ -586,13 +586,15 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 			fmt.Printf("sim process time: %s\n", elapsed)
 			fmt.Printf("%v\n", sim.GetStatString())
 			if bench {
-				os.Exit(0)
+				break
 			}
 		}
+		if sim.GetStat().Processed == 10000 && bench {
+			break
+		}
 	}
-	stat := sim.GetStatString()
+	stat := sim.GetSimulatorResult()
 	fmt.Printf("%v\n", stat)
-
 	return stat
 
 }
@@ -665,17 +667,9 @@ func main() {
 		return
 	}
 
-	// ファイルを作成する。存在すれば上書きされる。
-	file, err := os.Create(resultFilePath)
-	if err != nil {
-		fmt.Println("ファイル作成に失敗しました:", err)
-		return
-	}
-	defer file.Close()
-
 	// ファイルが空の場合は、最初に "[" を書き込む
 	if _, err := os.Stat(resultFilePath); os.IsNotExist(err) {
-		err = writeToFile(resultFilePath, "[\n")
+		err = writeToFile(resultFilePath, "{ 'results':[\n")
 		if err != nil {
 			fmt.Println("ファイル書き込みエラー:", err)
 			return
@@ -787,13 +781,15 @@ func main() {
 
 					// 実際のシミュレーション処理
 					stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, 1000000000, *bench)
+					fmt.Printf("%v\n", stat)
+					statjson, err := stat.ToJSON()
 					duration := time.Since(startTime)
 
 					if err != nil {
 						log.Fatalf("JSONのマーシャリングに失敗しました: %v", err)
 					}
 
-					stat = stat + ","
+					statjson = statjson + ","
 
 					// ファイルに追記
 
@@ -801,7 +797,7 @@ func main() {
 
 					// Mutexで保護しつつ進捗を更新
 					mu.Lock()
-					err = appendToFile(resultFilePath, stat)
+					err = appendToFile(resultFilePath, statjson)
 					if err != nil {
 						fmt.Println("ファイルへの書き込みエラー:", err)
 						continue
@@ -836,7 +832,7 @@ func main() {
 		wg.Wait()
 
 		// 全ての処理が終わったら、"]" を書き込む
-		err = appendToFile(resultFilePath, "\n]")
+		err = appendToFile(resultFilePath, "\n]}")
 		if err != nil {
 			fmt.Println("ファイルへの書き込みエラー:", err)
 		}

@@ -8,16 +8,16 @@ import (
 
 // CacheSimulatorStat は、キャッシュシミュレータの統計情報を表します。
 //
-//type はキャッシュの種類
+// type はキャッシュの種類
 //
-//parameter はキャッシュのパラメータ
+// parameter はキャッシュのパラメータ
 //
-//processed は処理されたパケット
+// processed は処理されたパケット
 //
-//Hit はキャッシュヒット数を示します。
+// Hit はキャッシュヒット数を示します。
 type CacheSimulatorStat struct {
 	Type      string
-	Parameter string
+	Parameter cache.Parameter
 	Processed int
 	Hit       int
 }

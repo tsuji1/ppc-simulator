@@ -86,6 +86,20 @@ func (c *MultiLayerCache) StatString() string {
 	return str
 }
 
+type MultiLayerCacheStat struct {
+	Refered  []uint
+	Replaced []uint
+	Hit      []uint
+}
+
+func (c *MultiLayerCache) Stat() interface{} {
+	return MultiLayerCacheStat{
+		Refered:  c.CacheReferedByLayer,
+		Replaced: c.CacheReplacedByLayer,
+		Hit:      c.CacheHitByLayer,
+	}
+}
+
 func (c *MultiLayerCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return c.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -179,7 +193,7 @@ func (c *MultiLayerCache) Clear() {
 	}
 }
 
-func (c *MultiLayerCache) Description() string {
+func (c *MultiLayerCache) DescriptionParameter() string {
 	str := "MultiLayerCache["
 	for i, cacheLayer := range c.CacheLayers {
 		if i != 0 {
@@ -191,6 +205,10 @@ func (c *MultiLayerCache) Description() string {
 	return str
 }
 
+func (c *MultiLayerCache) Description() string {
+	str := "MultiLayerCache"
+	return str
+}
 func (c *MultiLayerCache) ParameterString() string {
 	// [{Size: 2, CachePolicy: Hoge}, {}]
 	str := "{"
@@ -219,4 +237,20 @@ func (c *MultiLayerCache) ParameterString() string {
 
 	str += "]}"
 	return str
+}
+
+func (c *MultiLayerCache) Parameter() Parameter {
+	// CacheLayers の Parameter を取得し、スライスに格納
+	var cacheLayers []Parameter
+	for _, cacheLayer := range c.CacheLayers {
+		// 各 CacheLayer の Parameter() メソッドを呼び出す
+		cacheLayers = append(cacheLayers, cacheLayer.Parameter())
+	}
+
+	// MultiCacheParameter 構造体を返す
+	return &MultiCacheParameter{
+		Type:          c.DescriptionParameter(), // パラメータのタイプ
+		CacheLayers:   cacheLayers,              // キャッシュレイヤーのパラメータ
+		CachePolicies: c.CachePolicies,          // キャッシュポリシー
+	}
 }

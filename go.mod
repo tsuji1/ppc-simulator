@@ -59,6 +59,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20200121045136-8c9f03a8e57e // indirect
 	github.com/golang/mock v1.4.4 // indirect
 	github.com/golang/protobuf v1.4.3 // indirect
+	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/martian v2.1.0+incompatible // indirect
@@ -92,6 +93,7 @@ require (
 	github.com/karimkhaleel/jsonschema v0.0.0-20231001195015-d933f0d94ea3 // indirect
 	github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd // indirect
 	github.com/kisielk/gotool v1.0.0 // indirect
+	github.com/klauspost/compress v1.13.6 // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 	github.com/kr/logfmt v0.0.0-20140226030751-b84e30acd515 // indirect
@@ -108,6 +110,7 @@ require (
 	github.com/mgutz/str v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
+	github.com/montanaflynn/stats v0.7.1 // indirect
 	github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e // indirect
 	github.com/onsi/ginkgo v1.10.3 // indirect
 	github.com/onsi/gomega v1.7.1 // indirect
@@ -127,16 +130,21 @@ require (
 	github.com/spf13/afero v1.9.5 // indirect
 	github.com/spkg/bom v0.0.0-20160624110644-59b7046e48ad // indirect
 	github.com/stefanhaller/git-todo-parser v0.0.7-0.20240406123903-fd957137b6e2 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
-	github.com/stretchr/testify v1.8.1 // indirect
+	github.com/stretchr/objx v0.5.2 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/thoas/go-funk v0.9.1 // indirect
 	github.com/urfave/cli v1.20.1-0.20180226030253-8e01ec4cd3e2 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/xanzy/ssh-agent v0.2.1 // indirect
+	github.com/xdg-go/pbkdf2 v1.0.0 // indirect
+	github.com/xdg-go/scram v1.1.2 // indirect
+	github.com/xdg-go/stringprep v1.0.4 // indirect
 	github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778 // indirect
+	github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 // indirect
 	github.com/yuin/goldmark v1.4.13 // indirect
+	go.mongodb.org/mongo-driver v1.17.1 // indirect
 	go.opencensus.io v0.22.5 // indirect
-	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/exp v0.0.0-20220318154914-8dddf5d87bd8 // indirect
 	golang.org/x/image v0.0.0-20190802002840-cff245a6509b // indirect
 	golang.org/x/lint v0.0.0-20201208152925-83fdc39ff7b5 // indirect
@@ -144,11 +152,11 @@ require (
 	golang.org/x/mod v0.17.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/oauth2 v0.0.0-20210218202405-ba52d332ba99 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sys v0.23.0 // indirect
 	golang.org/x/telemetry v0.0.0-20240228155512-f48c80bd79b2 // indirect
-	golang.org/x/term v0.21.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/term v0.23.0 // indirect
+	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.0.0-20191024005414-555d28b269f0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect

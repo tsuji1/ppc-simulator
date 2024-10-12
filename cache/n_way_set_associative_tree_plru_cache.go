@@ -20,6 +20,10 @@ func (cache *NWaySetAssociativeTreePLRUCache) StatString() string {
 	return ""
 }
 
+func (cache *NWaySetAssociativeTreePLRUCache) Stat() interface{} {
+	return struct{}{}
+}
+
 func (cache *NWaySetAssociativeTreePLRUCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -57,6 +61,14 @@ func (cache *NWaySetAssociativeTreePLRUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d}", cache.Description(), cache.Way, cache.Size)
 }
 
+func (cache *NWaySetAssociativeTreePLRUCache) Parameter() Parameter {
+	return &SetAssociativeParameter{
+		Type: cache.Description(),
+		Way:  cache.Way,
+		Size: cache.Size,
+	}
+}
+
 func NewNWaySetAssociativeTreePLRUCache(size, way uint) *NWaySetAssociativeTreePLRUCache {
 	if way != 8 && way != 16 {
 		panic("Way must be 8 or 16")
@@ -79,3 +91,5 @@ func NewNWaySetAssociativeTreePLRUCache(size, way uint) *NWaySetAssociativeTreeP
 		Size: size,
 	}
 }
+
+

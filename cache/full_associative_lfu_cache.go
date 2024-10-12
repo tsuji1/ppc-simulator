@@ -17,8 +17,18 @@ type fullAssociativeLFUCacheEntry struct {
 	FiveTuple FiveTuple
 }
 
+func (cache *FullAssociativeLFUCache) Parameter() Parameter {
+	return &FullAssociativeParameter{
+		Type: cache.Description(),
+		Size: cache.Size,
+	}
+}
 func (cache *FullAssociativeLFUCache) StatString() string {
 	return ""
+}
+
+func (cache *FullAssociativeLFUCache) Stat() interface{} {
+	return struct{}{}
 }
 
 func (cache *FullAssociativeLFUCache) AssertImmutableCondition() {

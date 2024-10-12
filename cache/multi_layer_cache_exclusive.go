@@ -103,6 +103,38 @@ func (c *MultiLayerCacheExclusive) StatString() string {
 	return str
 }
 
+type MultiLayerCacheExclusiveStat struct {
+	Refered         []uint
+	Replaced        []uint
+	Hit             []uint
+	MatchMap        []uint
+	LongestMatchMap []uint
+	DepthSum        uint
+	Inserted        []uint
+}
+
+// Stat は、キャッシュの統計情報を構造体として返します。
+func (c *MultiLayerCacheExclusive) Stat() interface{} {
+	// MatchMap と LongestMatchMap を生成
+	matchMap := make([]uint, 33)
+	longestMatchMap := make([]uint, 33)
+	for i := 0; i <= 32; i++ {
+		matchMap[i] = uint(c.MatchMap[i])
+		longestMatchMap[i] = uint(c.LongestMatchMap[i])
+	}
+
+	// 構造体を作成して返す
+	return MultiLayerCacheExclusiveStat{
+		Refered:         c.CacheReferedByLayer,
+		Replaced:        c.CacheReplacedByLayer,
+		Hit:             c.CacheHitByLayer,
+		MatchMap:        matchMap,
+		LongestMatchMap: longestMatchMap,
+		DepthSum:        uint(c.DepthSum),
+		Inserted:        c.CacheInserted,
+	}
+}
+
 // IsCached は、パケットがキャッシュされているかを確認し、必要に応じてキャッシュを更新します。
 //
 // 引数:
@@ -340,9 +372,9 @@ func (c *MultiLayerCacheExclusive) Clear() {
 	}
 }
 
-// Description は、キャッシュ層の説明を文字列形式で返します。
-func (c *MultiLayerCacheExclusive) Description() string {
-	str := "MultiLayerCacheExclusive["
+// DescriptionParameter は、キャッシュ層の説明を文字列形式で返します。
+func (c *MultiLayerCacheExclusive) DescriptionParameter() string {
+	str := "NbitNwaySetAssociativeDstipCache["
 	for i, cacheLayer := range c.CacheLayers {
 		if i != 0 {
 			str += ", "
@@ -350,6 +382,11 @@ func (c *MultiLayerCacheExclusive) Description() string {
 		str += cacheLayer.Description()
 	}
 	str += "]"
+	return str
+}
+
+func (c *MultiLayerCacheExclusive) Description() string {
+	str := "NbitNwaySetAssociativeDstipCache"
 	return str
 }
 
@@ -381,4 +418,21 @@ func (c *MultiLayerCacheExclusive) ParameterString() string {
 
 	str += "]}"
 	return str
+}
+
+// Parameter は、MultiLayerCacheExclusive のパラメータを返します。
+func (c *MultiLayerCacheExclusive) Parameter() Parameter {
+	// CacheLayers の Parameter を取得し、スライスに格納
+	var cacheLayers []Parameter
+	for _, cacheLayer := range c.CacheLayers {
+		// 各 CacheLayer の Parameter() メソッドを呼び出す
+		cacheLayers = append(cacheLayers, cacheLayer.Parameter())
+	}
+
+	// MultiCacheParameter 構造体を返す
+	return &MultiCacheParameter{
+		Type:          c.DescriptionParameter(), // パラメータのタイプ
+		CacheLayers:   cacheLayers,              // キャッシュレイヤーのパラメータ
+		CachePolicies: c.CachePolicies,          // キャッシュポリシー
+	}
 }

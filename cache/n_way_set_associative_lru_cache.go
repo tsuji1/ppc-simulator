@@ -19,6 +19,16 @@ func (cache *NWaySetAssociativeLRUCache) StatString() string {
 	return fmt.Sprintf("%v", cache.DepthSum)
 }
 
+type NWaySetAssociativeLRUCacheStat struct {
+	DepthSum uint64
+}
+
+func (cache *NWaySetAssociativeLRUCache) Stat() interface{} {
+	return NWaySetAssociativeLRUCacheStat{
+		DepthSum: cache.DepthSum,
+	}
+}
+
 func (cache *NWaySetAssociativeLRUCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -64,6 +74,14 @@ func (cache *NWaySetAssociativeLRUCache) Description() string {
 
 func (cache *NWaySetAssociativeLRUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d, \"DepthSum\": %d}", cache.Description(), cache.Way, cache.Size, cache.DepthSum)
+}
+
+func (cache *NWaySetAssociativeLRUCache) Parameter() Parameter {
+	return &SetAssociativeParameter{
+		Type: cache.Description(),
+		Way:  cache.Way,
+		Size: cache.Size,
+	}
 }
 
 func NewNWaySetAssociativeLRUCache(size, way uint) *NWaySetAssociativeLRUCache {

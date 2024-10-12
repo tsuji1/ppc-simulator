@@ -20,6 +20,11 @@ func (cache *NWaySetAssociativeRandomCache) StatString() string {
 	return ""
 }
 
+func (cache *NWaySetAssociativeRandomCache) Stat() interface{} {
+	return struct{}{}
+}
+
+
 func (cache *NWaySetAssociativeRandomCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -57,6 +62,14 @@ func (cache *NWaySetAssociativeRandomCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d}", cache.Description(), cache.Way, cache.Size)
 }
 
+
+func (cache *NWaySetAssociativeRandomCache) Parameter() Parameter {
+	return &SetAssociativeParameter{
+		Type: cache.Description(),
+		Way:  cache.Way,
+		Size: cache.Size,
+	}
+}
 func NewNWaySetAssociativeRandomCache(size, way uint) *NWaySetAssociativeRandomCache {
 	if size%way != 0 {
 		panic("Size must be multiplier of way")

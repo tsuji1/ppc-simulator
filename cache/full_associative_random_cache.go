@@ -19,6 +19,13 @@ type fullAssociativeRandomCacheEntry struct {
 	FiveTuple FiveTuple
 }
 
+func (cache *FullAssociativeRandomCache) Parameter() Parameter {
+	return &FullAssociativeParameter{
+		Type: cache.Description(),
+		Size: cache.Size,
+	}
+}
+
 func init () {
 	rand.Seed(time.Now().UnixNano())
 }
@@ -26,6 +33,11 @@ func init () {
 func (cache *FullAssociativeRandomCache) StatString() string {
 	return ""
 }
+
+func (cache *FullAssociativeRandomCache) Stat() interface{} {
+	return struct{}{}
+}
+
 
 func (cache *FullAssociativeRandomCache) AssertImmutableCondition() {
 	if int(cache.Size) < len(cache.Entries) {
@@ -134,3 +146,4 @@ func NewFullAssociativeRandomCache(size uint) *FullAssociativeRandomCache {
 		evictList: evictList,
 	}
 }
+

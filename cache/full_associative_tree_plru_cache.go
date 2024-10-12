@@ -37,6 +37,13 @@ type FullAssociativeTreePLRUCache struct {
 	entryFromIdx map[uint]*FiveTuple
 }
 
+func (cache *FullAssociativeTreePLRUCache) Parameter() Parameter {
+	return &FullAssociativeParameter{
+		Type: cache.Description(),
+		Size: cache.Size,
+	}
+}
+
 func (cache *FullAssociativeTreePLRUCache) AssertImmutableCondition() {
 	if len(cache.Entries) != len(cache.Entries) {
 		panic(fmt.Sprintf("len(Entries) = %v should equal to len(Entries) = %v\n", len(cache.Entries), len(cache.entryFromIdx)))
@@ -53,6 +60,10 @@ func (cache *FullAssociativeTreePLRUCache) AssertImmutableCondition() {
 
 func (cache *FullAssociativeTreePLRUCache) StatString() string {
 	return ""
+}
+
+func (cache *FullAssociativeTreePLRUCache) Stat() interface{} {
+	return struct{}{}
 }
 
 func (cache *FullAssociativeTreePLRUCache) IsCached(p *Packet, update bool) (bool, *int) {

@@ -14,6 +14,10 @@ func (cache *NWaySetAssociativeLFUCache) StatString() string {
 	return ""
 }
 
+func (cache *NWaySetAssociativeLFUCache) Stat() interface{} {
+	return struct{}{}
+}
+
 func (cache *NWaySetAssociativeLFUCache) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
@@ -51,6 +55,13 @@ func (cache *NWaySetAssociativeLFUCache) ParameterString() string {
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d}", cache.Description(), cache.Way, cache.Size)
 }
 
+func (cache *NWaySetAssociativeLFUCache) Parameter() Parameter {
+	return &SetAssociativeParameter{
+		Type: cache.Description(),
+		Way:  cache.Way,
+		Size: cache.Size,
+	}
+}
 func NewNWaySetAssociativeLFUCache(size, way uint) *NWaySetAssociativeLFUCache {
 	if size%way != 0 {
 		panic("Size must be multiplier of way")
