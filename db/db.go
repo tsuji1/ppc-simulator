@@ -65,16 +65,20 @@ func (db *MongoDB) Close(ctx context.Context) error {
 type SimulatorResultWithMetadata struct {
 	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
 	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
+	RuleFileName    string                    `bson:"rule_file_name"`   // ルールファイル名
+	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
 
 // InsertResult を実装。simulatorResult に timestamp を追加して挿入
-func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.SimulatorResult) error {
+func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.SimulatorResult, ruleFileName string, traceFileName string) error {
 	// Timestamp を現在時刻に設定
 
 	// SimulatorResultWithMetadata 構造体を作成
 	var simulatorResultWithMetadata SimulatorResultWithMetadata
 	simulatorResultWithMetadata.SimulatorResult = simulatorResult
 	simulatorResultWithMetadata.Timestamp = time.Now()
+	simulatorResultWithMetadata.RuleFileName = ruleFileName
+	simulatorResultWithMetadata.TraceFileName = traceFileName
 
 	// データを挿入f
 	_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
@@ -85,22 +89,30 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 	return nil
 }
 
-func (db *MongoDB) IsResultExist(ctx context.Context, simulatorResult simulator.SimulatorResult) (bool, error) {
-
+func (db *MongoDB) IsResultExist(ctx context.Context,
+	simulatorParameter interface{},
+	simulatorProcessed uint64,
+	simulatorType string,
+	ruleFileName string,
+	traceFileName string) (bool, error) {
 	// フィルタークエリ: Parameter と Processed が一致するドキュメントを検索
 	filterQuery := bson.M{
-		"simulator_result.parameter": simulatorResult.Parameter,
-		"simulator_result.processed": simulatorResult.Processed,
-		"simulator_result.type":      simulatorResult.Type,
+		"simulator_result.parameter": simulatorParameter,
+		"simulator_result.processed": simulatorProcessed,
+		"simulator_result.type":      simulatorType,
+		"rule_file_name":             ruleFileName,
+		"trace_file_name":            traceFileName,
 	}
 
 	// ドキュメントを探して結果を取得
 	var result SimulatorResultWithMetadata
+	fmt.Printf("filterQuery: %v\n", filterQuery)
 	err := db.Collection.FindOne(ctx, filterQuery).Decode(&result)
 	fmt.Println(result)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			// ドキュメントが存在しない場合
+			fmt.Println("ドキュメントが存在しない")
 			return false, nil
 		}
 		fmt.Println("その他のエラー")
@@ -108,6 +120,7 @@ func (db *MongoDB) IsResultExist(ctx context.Context, simulatorResult simulator.
 		// その他のエラー
 		return false, err
 	}
+	fmt.Println("ドキュメントが存在する")
 
 	// ドキュメントが存在する場合
 	return true, nil

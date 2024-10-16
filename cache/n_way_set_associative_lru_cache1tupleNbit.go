@@ -79,7 +79,8 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) Clear() {
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) Description() string {
-	return "NWaySetAssociativeDstipNbitLRUCache"
+	return "NbitNWaySetAssociativeDstipLRUCache"
+	// "NWaySetAssociativeDstipNbitLRUCache"
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) ParameterString() string {

@@ -12,7 +12,8 @@ import (
 // このシミュレータは、キャッシュのヒット率や統計情報を収集します。
 type SimpleCacheSimulator struct {
 	cache.Cache
-	Stat CacheSimulatorStat
+	Stat          CacheSimulatorStat
+	SimDefinition SimulatorDefinition
 }
 
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
@@ -202,12 +203,12 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 			CacheReplacedByLayer: make([]uint, cacheLayersLen),
 			CacheHitByLayer:      make([]uint, cacheLayersLen),
 		}
-	case "FullAssociativeDstipNbitLRUCache":
+	case "NbitFullAssociativeDstipLRUCache":
 		size := definitionCache.Size
 
 		refbits := definitionCache.Refbits
 		c = cache.NewFullAssociativeDstipNbitLRUCache(uint(refbits), uint(size), routingTable, debugMode)
-	case "NWaySetAssociativeDstipNbitLRUCache":
+	case "NbitNWaySetAssociativeDstipLRUCache":
 		size := definitionCache.Size
 
 		way := definitionCache.Way
@@ -341,6 +342,7 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 			cache.Description(),
 			cache.Parameter(),
 		),
+		SimDefinition: simulatorDefinition,
 	}
 
 	return sim, nil

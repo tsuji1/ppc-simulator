@@ -86,7 +86,7 @@ func TestInsertResult(t *testing.T) {
 	}
 
 	// Test InsertResult
-	err = mongoDB.InsertResult(ctx, simResult)
+	err = mongoDB.InsertResult(ctx, simResult, "", "")
 	if err != nil {
 		t.Fatalf("InsertResult failed: %v", err)
 	}
@@ -150,13 +150,13 @@ func TestIsExistResult(t *testing.T) {
 	}
 
 	// Insert the test data first
-	err = mongoDB.InsertResult(ctx, simResult)
+	err = mongoDB.InsertResult(ctx, simResult, "", "")
 	if err != nil {
 		t.Fatalf("InsertResult failed: %v", err)
 	}
 
 	// Test IsResultExist function
-	exists, err := mongoDB.IsResultExist(ctx, simResult)
+	exists, err := mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "", "")
 	if err != nil {
 		t.Fatalf("IsResultExist failed: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestIsExistResult(t *testing.T) {
 
 	// Check with different Processed value to ensure non-existence
 	simResult.Processed = 999 // Modify to an unmatched value
-	exists, err = mongoDB.IsResultExist(ctx, simResult)
+	exists, err = mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "", "")
 	if err != nil {
 		t.Fatalf("IsResultExist failed with different Processed value: %v", err)
 	}
@@ -181,7 +181,7 @@ func TestIsExistResult(t *testing.T) {
 
 	// Check with different Type value to ensure non-existence
 	simResult.Type = "DifferentType" // Modify to an unmatched value
-	exists, err = mongoDB.IsResultExist(ctx, simResult)
+	exists, err = mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "", "")
 	if err != nil {
 		t.Fatalf("IsResultExist failed with different Type value: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestIsExistResult(t *testing.T) {
 		CacheLayers:   cacheLayers,
 		CachePolicies: []cache.CachePolicy{1, 1}, // Modify to an unmatched value
 	} // Modify to an unmatched value
-	exists, err = mongoDB.IsResultExist(ctx, simResult)
+	exists, err = mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "", "")
 	if err != nil {
 		t.Fatalf("IsResultExist failed with different Parameter value: %v", err)
 	}
@@ -213,14 +213,33 @@ func TestIsExistResult(t *testing.T) {
 		CacheLayers:   cacheLayers,
 		CachePolicies: []cache.CachePolicy{0, 0}, // Modify to an unmatched value
 	} // Modify to an unmatched value
-	exists, err = mongoDB.IsResultExist(ctx, simResult)
+	exists, err = mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "", "")
 	if err != nil {
 		t.Fatalf("IsResultExist failed with different Parameter value: %v", err)
 	}
 
 	if !exists {
-		t.Errorf("Expected result to  exist, but it doesn't")
+		t.Errorf("Expected result to exist, but it doesn't")
 	}
+
+	exists, err = mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "test", "")
+	if err != nil {
+		t.Fatalf("IsResultExist failed with different Parameter value: %v", err)
+	}
+
+	if exists {
+		t.Errorf("Expected result to not exist, but it does")
+	}
+
+	exists, err = mongoDB.IsResultExist(ctx, simResult.Parameter, uint64(simResult.Processed), simResult.Type, "", "test")
+	if err != nil {
+		t.Fatalf("IsResultExist failed with different Parameter value: %v", err)
+	}
+
+	if exists {
+		t.Errorf("Expected result to not exist, but it does")
+	}
+
 }
 
 // DeleteResult をテスト

@@ -374,7 +374,7 @@ func (c *MultiLayerCacheExclusive) Clear() {
 
 // DescriptionParameter は、キャッシュ層の説明を文字列形式で返します。
 func (c *MultiLayerCacheExclusive) DescriptionParameter() string {
-	str := "NbitNwaySetAssociativeDstipCache["
+	str := "MultiLayerCacheExclusive["
 	for i, cacheLayer := range c.CacheLayers {
 		if i != 0 {
 			str += ", "
@@ -386,7 +386,7 @@ func (c *MultiLayerCacheExclusive) DescriptionParameter() string {
 }
 
 func (c *MultiLayerCacheExclusive) Description() string {
-	str := "NbitNwaySetAssociativeDstipCache"
+	str := "MultiLayerCacheExclusive"
 	return str
 }
 

@@ -2,6 +2,8 @@ package cache
 
 import (
 	"fmt"
+
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type CacheWithLookAhead struct {
@@ -11,6 +13,29 @@ type CacheWithLookAhead struct {
 type CacheWithLookAheadParameter struct {
 	Type       string
 	InnerCache interface{}
+}
+
+func (c *CacheWithLookAheadParameter) GetParameterString() map[string]interface{} {
+	return map[string]interface{}{
+		"Type":       c.Type,
+		"InnerCache": c.InnerCache,
+	}
+}
+func (c *CacheWithLookAheadParameter) GetBson() bson.M {
+	// InnerCacheがParameterインターフェースを実装しているか確認
+	if param, ok := c.InnerCache.(Parameter); ok {
+		// ParameterとしてBSONに変換
+		return bson.M{
+			"Type":       c.Type,
+			"InnerCache": param.GetBson(),
+		}
+	}
+
+	// InnerCacheがParameterインターフェースを実装していない場合はそのまま返す
+	return bson.M{
+		"Type":       c.Type,
+		"InnerCache": c.InnerCache,
+	}
 }
 
 func (c *CacheWithLookAheadParameter) GetParameterType() string {

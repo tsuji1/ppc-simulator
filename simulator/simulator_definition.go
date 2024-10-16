@@ -3,8 +3,12 @@ package simulator
 import (
 	"errors"
 	"fmt"
+	"reflect"
+	"strings"
+	"test-module/cache"
 
 	"github.com/koron/go-dproxy"
+	"go.mongodb.org/mongo-driver/bson"
 )
 
 type Cache struct {
@@ -26,6 +30,240 @@ type SimulatorDefinition struct {
 	Interval  int64  `json:"Interval"`
 }
 
+// MakeParameter
+
+// func MakeParameterString(c Cache) (map[string]interface{}, error) {
+// 	// ParameterのTypeを取得
+// 	paramType := c.Type
+
+// 	var param cache.Parameter
+// 	// Typeに基づいてParameterの型を決定する
+// 	switch {
+// 	case strings.HasPrefix(paramType, "FullAssociative"):
+// 		param = &cache.FullAssociativeParameter{
+// 			Type: paramType,
+// 			Size: uint(c.Size),
+// 		}
+// 	case strings.HasPrefix(paramType, "CacheWithLookAhead"):
+// 		innercache, err := MakeParameterString(*c.InnerCache)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		param = &cache.CacheWithLookAheadParameter{
+// 			Type:       paramType,
+// 			InnerCache: innercache,
+// 		}
+// 	case strings.HasPrefix(paramType, "NbitFullAssociative"):
+// 		param = &cache.NbitFullAssociativeParameter{
+// 			Type:    paramType,
+// 			Size:    uint(c.Size),
+// 			Refbits: uint8(c.Refbits),
+// 		}
+// 	case strings.HasPrefix(paramType, "NbitNwaySetAssociative"):
+// 		param = &cache.NbitSetAssociativeParameter{
+// 			Type:    paramType,
+// 			Size:    uint(c.Size),
+// 			Way:     uint(c.Way),
+// 			Refbits: uint8(c.Refbits),
+// 		}
+// 	case strings.HasPrefix(paramType, "NWaySetAssociative"):
+// 		param = &cache.SetAssociativeParameter{
+// 			Type: paramType,
+// 			Size: uint(c.Size),
+// 			Way:  uint(c.Way),
+// 		}
+// 	case strings.HasPrefix(paramType, "MultiLayer"):
+// 		param = &cache.MultiCacheParameter{
+// 			Type:          paramType,
+// 			CacheLayers:   make([]interface{}, len(c.CacheLayers)),
+// 			CachePolicies: make([]cache.CachePolicy, len(c.CachePolicies)),
+// 		}
+
+// 		// CacheLayersを再帰的に処理
+// 		for i, layer := range c.CacheLayers {
+// 			layerParam, err := MakeParameterString(layer)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+
+// 			// CacheLayerをスライスに格納
+// 			param.(*cache.MultiCacheParameter).CacheLayers[i] = layerParam
+// 		}
+
+// 		// CachePoliciesを格納
+// 		for i, policy := range c.CachePolicies {
+// 			param.(*cache.MultiCacheParameter).CachePolicies[i] = cache.StringToCachePolicy(policy)
+// 		}
+// 	default:
+// 		return nil, fmt.Errorf("unknown parameter type: %s", paramType)
+// 	}
+
+// 	return param.GetParameterString(), nil
+// }
+
+// // GetParameter はParameterを返す
+// func (s *SimulatorDefinition) GetParameterString() (map[string]interface{}, error) {
+// 	param, err := MakeParameterString(s.Cache)
+// 	fmt.Printf("param: %v\n", param)
+// 	return param, err
+// }
+
+func MakeParameterBson(c Cache) (bson.M, error) {
+	// ParameterのTypeを取得
+	paramType := c.Type
+
+	var param cache.Parameter
+	// Typeに基づいてParameterの型を決定する
+	switch {
+	case strings.HasPrefix(paramType, "FullAssociative"):
+		param = &cache.FullAssociativeParameter{
+			Type: paramType,
+			Size: uint(c.Size),
+		}
+	case strings.HasPrefix(paramType, "CacheWithLookAhead"):
+		innercache, err := MakeParameterBson(*c.InnerCache)
+		if err != nil {
+			return nil, err
+		}
+		param = &cache.CacheWithLookAheadParameter{
+			Type:       paramType,
+			InnerCache: innercache,
+		}
+	case strings.HasPrefix(paramType, "NbitFullAssociative"):
+		param = &cache.NbitFullAssociativeParameter{
+			Type:    paramType,
+			Size:    uint(c.Size),
+			Refbits: uint8(c.Refbits),
+		}
+	case strings.HasPrefix(paramType, "NbitNWaySetAssociative"):
+		param = &cache.NbitSetAssociativeParameter{
+			Type:    paramType,
+			Size:    uint(c.Size),
+			Way:     uint(c.Way),
+			Refbits: uint8(c.Refbits),
+		}
+	case strings.HasPrefix(paramType, "NWaySetAssociative"):
+		param = &cache.SetAssociativeParameter{
+			Type: paramType,
+			Size: uint(c.Size),
+			Way:  uint(c.Way),
+		}
+	case strings.HasPrefix(paramType, "MultiLayer"):
+		param = &cache.MultiCacheParameter{
+			Type:          paramType,
+			CacheLayers:   make([]cache.Parameter, len(c.CacheLayers)),
+			CachePolicies: make([]cache.CachePolicy, len(c.CachePolicies)),
+		}
+
+		// CacheLayersを再帰的に処理
+		for i, layer := range c.CacheLayers {
+			layerParam, err := MakeParameter(layer)
+			if err != nil {
+				return nil, err
+			}
+
+			// CacheLayerをスライスに格納
+			param.(*cache.MultiCacheParameter).CacheLayers[i] = layerParam
+		}
+
+		// CachePoliciesを格納
+		for i, policy := range c.CachePolicies {
+			param.(*cache.MultiCacheParameter).CachePolicies[i] = cache.StringToCachePolicy(policy)
+		}
+	default:
+		return nil, fmt.Errorf("unknown parameter type: %s", paramType)
+	}
+
+	return param.GetBson(), nil
+}
+
+// GetParameter はParameterを返す
+func (s *SimulatorDefinition) GetParameterBson() (bson.M, error) {
+	param, err := MakeParameterBson(s.Cache)
+	fmt.Printf("param: %v\n", param)
+	return param, err
+}
+
+func (s *SimulatorDefinition) GetParameter() (cache.Parameter, error) {
+	param, err := MakeParameter(s.Cache)
+	fmt.Printf("param: %v\n", param)
+	return param, err
+}
+func MakeParameter(c Cache) (cache.Parameter, error) {
+	// ParameterのTypeを取得
+	paramType := c.Type
+
+	var param cache.Parameter
+	// Typeに基づいてParameterの型を決定する
+	switch {
+	case strings.HasPrefix(paramType, "FullAssociative"):
+		param = &cache.FullAssociativeParameter{
+			Type: paramType,
+			Size: uint(c.Size),
+		}
+	case strings.HasPrefix(paramType, "CacheWithLookAhead"):
+		innercache, err := MakeParameterBson(*c.InnerCache)
+		if err != nil {
+			return nil, err
+		}
+		param = &cache.CacheWithLookAheadParameter{
+			Type:       paramType,
+			InnerCache: innercache,
+		}
+	case strings.HasPrefix(paramType, "NbitFullAssociative"):
+		param = &cache.NbitFullAssociativeParameter{
+			Type:    paramType,
+			Size:    uint(c.Size),
+			Refbits: uint8(c.Refbits),
+		}
+	case strings.HasPrefix(paramType, "NbitNWaySetAssociative"):
+		param = &cache.NbitSetAssociativeParameter{
+			Type:    paramType,
+			Size:    uint(c.Size),
+			Way:     uint(c.Way),
+			Refbits: uint8(c.Refbits),
+		}
+	case strings.HasPrefix(paramType, "NWaySetAssociative"):
+		param = &cache.SetAssociativeParameter{
+			Type: paramType,
+			Size: uint(c.Size),
+			Way:  uint(c.Way),
+		}
+	case strings.HasPrefix(paramType, "MultiLayer"):
+		param = &cache.MultiCacheParameter{
+			CacheLayers:   make([]cache.Parameter, len(c.CacheLayers)),
+			CachePolicies: make([]cache.CachePolicy, len(c.CachePolicies)),
+		}
+
+		// CacheLayersを再帰的に処理
+		for i, layer := range c.CacheLayers {
+			layerParam, err := MakeParameter(layer)
+			if err != nil {
+				return nil, err
+			}
+
+			// CacheLayerをスライスに格納
+			param.(*cache.MultiCacheParameter).CacheLayers[i] = layerParam
+		}
+
+		// CachePoliciesを格納
+		for i, policy := range c.CachePolicies {
+			param.(*cache.MultiCacheParameter).CachePolicies[i] = cache.StringToCachePolicy(policy)
+		}
+		param.(*cache.MultiCacheParameter).Type = cache.GetMultiLayerParameterTypeName(paramType, param.(*cache.MultiCacheParameter).CacheLayers)
+	default:
+		return nil, fmt.Errorf("unknown parameter type: %s", paramType)
+	}
+
+	return param, nil
+}
+
+// isZeroValue は、与えられた値がゼロ値かどうかを確認するヘルパー関数
+func isZeroValue(v reflect.Value) bool {
+	// ゼロ値と比較してゼロ値かどうかを判定
+	return reflect.DeepEqual(v.Interface(), reflect.Zero(v.Type()).Interface())
+}
+
 // CacheLayerの数を確認するメソッド
 func (s *SimulatorDefinition) GetCacheLayerCount() int {
 	return len(s.Cache.CacheLayers)
@@ -35,7 +273,7 @@ func (s *SimulatorDefinition) GetCacheLayerCount() int {
 func (s *SimulatorDefinition) AddCacheLayer(layer *Cache) {
 	if layer == nil {
 		l := Cache{
-			Type:    "NWaySetAssociativeDstipNbitLRUCache",
+			Type:    "NbitNWaySetAssociativeDstipLRUCache",
 			Size:    64,
 			Way:     4,
 			Refbits: 32,
@@ -183,22 +421,21 @@ func NewSimulatorDefinition() SimulatorDefinition {
 			Type: "MultiLayerCacheExclusive",
 			CacheLayers: []Cache{
 				{
-					Type:    "NWaySetAssociativeDstipNbitLRUCache",
+					Type:    "NbitNWaySetAssociativeDstipLRUCache",
 					Way:     4,
 					Refbits: 32,
 				},
 				{
-					Type:    "NWaySetAssociativeDstipNbitLRUCache",
+					Type:    "NbitNWaySetAssociativeDstipLRUCache",
 					Way:     4,
 					Refbits: 16,
 				},
 			},
-			CachePolicies:  []string{"WriteThrough"},
-			OnceCacheLimit: 64,
+			CachePolicies: []string{"WriteThrough"},
 		},
 		Rule:      "rules/wide.rib.20240625.1400.unique.rule",
 		DebugMode: true,
-		Interval:  10000000,
+		Interval:  10000000000,
 	}
 }
 

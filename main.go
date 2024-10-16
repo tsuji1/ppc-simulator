@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 	"syscall"
 	"test-module/cache"
 	. "test-module/cache"
+	"test-module/db"
 	"test-module/ipaddress"
 	"test-module/routingtable"
 	"test-module/simulator"
@@ -39,9 +41,11 @@ var packets []MinPacket
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 var cacheparam = flag.String("cacheparam", "", "cache parameter file")
+var forceupdate = flag.Bool("dbupdate", false, "update db")
 var cachenum = flag.Int("cachenum", 2, "cache number")
 var trace = flag.String("trace", "", "network trace file")
 var bench = flag.Bool("bench", false, "to benchmark")
+var maxProccess = flag.Uint64("max", 0, "max process")
 var baseSimulatorDefinition = simulator.NewSimulatorDefinition()
 var rulefile = baseSimulatorDefinition.Rule
 
@@ -573,7 +577,7 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
-func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, bench bool) simulator.SimulatorResult {
+func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, maxProccess uint64, bench bool) simulator.SimulatorResult {
 
 	for _, p := range *packetList {
 
@@ -590,6 +594,9 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 			}
 		}
 		if sim.GetStat().Processed == 10000 && bench {
+			break
+		}
+		if maxProccess != 0 && uint64(sim.GetStat().Processed) == maxProccess {
 			break
 		}
 	}
@@ -680,6 +687,17 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 
+	// dbにInsert
+
+	ctx := context.Background()
+
+	// Create a new test MongoDB instance
+	mongoDB, err := db.NewMongoDB()
+	if err != nil {
+		fmt.Printf("Failed to create test MongoDB instance: %v", err)
+	}
+	defer mongoDB.Client.Disconnect(ctx)
+
 	// プロファイルの停止処理をシグナル受信時に行う
 	go func() {
 		sig := <-sigChan
@@ -717,7 +735,7 @@ func main() {
 		}
 		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
 		interval := simDef.Interval
-		rulefile := simDef.Rule
+		rulefile = simDef.Rule
 		fp, _ := os.Open(rulefile)
 
 		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, rulefile)
@@ -751,7 +769,7 @@ func main() {
 
 		refbitsRange := make([]int, 0, 32)
 		fmt.Print("refbitsRange: ")
-		for i := 16; i <= 24; i++ {
+		for i := 1; i <= 31; i++ {
 			refbitsRange = append(refbitsRange, i)
 			fmt.Print("%d,", i)
 		}
@@ -770,44 +788,95 @@ func main() {
 		debugmode := false
 		totalTask := len(settngs)
 		fmt.Println("Total tasks:", totalTask)
+		traceFileName := filepath.Base(*trace)
+		ruleFileName := filepath.Base(rulefile)
+		fmt.Printf("rulefile:%v", rulefile)
+		fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
+		packetlen := uint64(len(packets))
+		if *maxProccess != 0 {
+			packetlen = *maxProccess
+		}
 
+		fmt.Printf("packetlen: %v\n", packetlen)
 		// ワーカーゴルーチンを生成
 		for i := 0; i < runtime.NumCPU()-3; i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
 				for sim := range queue {
+					tempsim := sim
+
+					// dbに追加
+					// データを挿入
+					// すでにデータが存在するか確認
+					// 存在しない場合のみデータを挿入
+					// forceupdate が true の場合は、データを強制的に挿入
+					// parambson, err := tempsim.SimDefinition.GetParameterBson()
+					param, err := tempsim.SimDefinition.GetParameter()
+					if err != nil {
+						panic(err)
+					}
+
+					ex, err := mongoDB.IsResultExist(ctx,
+						param,
+						packetlen,
+						tempsim.SimDefinition.Cache.Type,
+						ruleFileName,
+						traceFileName)
+					if err != nil {
+						// エラーが発生した場合、エラーハンドリングを行う
+
+						panic(err)
+					}
 					startTime := time.Now()
 
-					// 実際のシミュレーション処理
-					stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, 1000000000, *bench)
-					fmt.Printf("%v\n", stat)
-					statjson, err := stat.ToJSON()
-					duration := time.Since(startTime)
+					if !ex || *forceupdate {
 
-					if err != nil {
-						log.Fatalf("JSONのマーシャリングに失敗しました: %v", err)
+						// 実際のシミュレーション処理
+						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
+						err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
+						if err != nil {
+							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
+							panic(err)
+						}
+
+						fmt.Printf("%v\n", stat)
+						statjson, err := stat.ToJSON()
+
+						if err != nil {
+							log.Fatalf("JSONのマーシャリングに失敗しました: %v", err)
+						}
+
+						statjson = statjson + ","
+
+						// ファイルに追記
+
+						// タスクが完了したので進捗を更新
+
+						// Mutexで保護しつつ進捗を更新
+						mu.Lock()
+						err = appendToFile(resultFilePath, statjson)
+						if err != nil {
+							fmt.Println("ファイルへの書き込みエラー:", err)
+							continue
+						}
+
+						fmt.Printf("result written to file filename:%v\n", resultFilePath)
+						mu.Unlock()
+					} else {
+						fmt.Print("skip because Data founded\n")
 					}
-
-					statjson = statjson + ","
-
-					// ファイルに追記
-
-					// タスクが完了したので進捗を更新
-
-					// Mutexで保護しつつ進捗を更新
 					mu.Lock()
-					err = appendToFile(resultFilePath, statjson)
-					if err != nil {
-						fmt.Println("ファイルへの書き込みエラー:", err)
-						continue
-					}
-					fmt.Printf("result written to file filename:%v, duration: %v\n", resultFilePath, duration)
 
+					duration := time.Since(startTime)
 					completedTasks++
 					totalDuration += duration
 					avgDuration := totalDuration / time.Duration(completedTasks)
+
 					fmt.Printf("Task %d / %dcompleted, Average time per task: %v\n", completedTasks, totalTask, avgDuration)
+
+					// forceupdate が true またはデータが存在しない場合に挿入
+
 					mu.Unlock()
 				}
 			}()

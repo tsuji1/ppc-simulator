@@ -2,13 +2,8 @@ package simulator
 
 import (
 	"encoding/json"
-	"fmt"
-	"strings"
-
-	"test-module/cache"
 
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
 // MultiLayerCacheの構造体を定義
@@ -66,69 +61,70 @@ func (sr SimulatorResult) ToBSON() (bson.M, error) {
 }
 
 // setParameter 関数: bson.M も引数に追加
-func setParameter(paramData bson.M) (cache.Parameter, error) {
-	// ParameterのTypeを取得
-	paramType, ok := paramData["type"].(string)
-	if !ok {
-		return nil, fmt.Errorf("parameter type is missing or invalid")
-	}
+// func setParameter(paramData bson.M) (cache.Parameter, error) {
+// 	// ParameterのTypeを取得
+// 	paramType, ok := paramData["type"].(string)
+// 	if !ok {
+// 		return nil, fmt.Errorf("parameter type is missing or invalid")
+// 	}
 
-	var param cache.Parameter
+// 	var param cache.Parameter
 
-	// Typeに基づいてParameterの型を決定する
-	switch {
-	case strings.HasPrefix(paramType, "FullAssociative"):
-		param = &cache.FullAssociativeParameter{}
-	case strings.HasPrefix(paramType, "CacheWithLookAhead"):
-		param = &cache.CacheWithLookAheadParameter{}
-	case strings.HasPrefix(paramType, "NbitFullAssociative"):
-		param = &cache.NbitFullAssociativeParameter{}
-	case strings.HasPrefix(paramType, "NbitNwaySetAssociative"):
-		param = &cache.NbitSetAssociativeParameter{}
-	case strings.HasPrefix(paramType, "NWaySetAssociative"):
-		param = &cache.SetAssociativeParameter{}
-	case strings.HasPrefix(paramType, "MultiLayer"):
-		param = &cache.MultiCacheParameter{}
+// 	// Typeに基づいてParameterの型を決定する
+// 	switch {
+// 	case strings.HasPrefix(paramType, "FullAssociative"):
+// 		param = &cache.FullAssociativeParameter{}
+// 	case strings.HasPrefix(paramType, "CacheWithLookAhead"):
+// 		param = &cache.CacheWithLookAheadParameter{}
+// 	case strings.HasPrefix(paramType, "NbitFullAssociative"):
+// 		param = &cache.NbitFullAssociativeParameter{}
+// 	case strings.HasPrefix(paramType, "NbitNwaySetAssociative"):
+// 		param = &cache.NbitSetAssociativeParameter{}
+// 	case strings.HasPrefix(paramType, "NWaySetAssociative"):
+// 		param = &cache.SetAssociativeParameter{}
+// 	case strings.HasPrefix(paramType, "MultiLayer"):
+// 		param = &cache.MultiCacheParameter{}
 
-		// MultiLayerCacheの場合、CacheLayersを再帰的に処理
-		cacheLayersRaw, ok := paramData["cachelayers"]
-		if !ok {
-			return nil, fmt.Errorf("cache layers field is missing")
-		}
+// 		// MultiLayerCacheの場合、CacheLayersを再帰的に処理
+// 		cacheLayersRaw, ok := paramData["cachelayers"]
+// 		if !ok {
+// 			return nil, fmt.Errorf("cache layers field is missing")
+// 		}
 
-		// cacheLayersがprimitive.A（MongoDBの配列型）かどうか確認
-		cacheLayers, ok := cacheLayersRaw.(primitive.A)
-		if !ok {
-			return nil, fmt.Errorf("cache layers are of an invalid type: %T", cacheLayersRaw)
-		}
+// 		// cacheLayersがprimitive.A（MongoDBの配列型）かどうか確認
+// 		cacheLayers, ok := cacheLayersRaw.(primitive.A)
+// 		if !ok {
+// 			return nil, fmt.Errorf("cache layers are of an invalid type: %T", cacheLayersRaw)
+// 		}
 
-		// CacheLayersを格納するスライスを作成
-		param.(*cache.MultiCacheParameter).CacheLayers = make([]cache.Parameter, len(cacheLayers))
+// 		// CacheLayersを格納するスライスを作成
+// 		param.(*cache.MultiCacheParameter).CacheLayers = make([]interface{}, len(cacheLayers))
 
-		// CacheLayersを再帰的に処理
-		for i, layer := range cacheLayers {
-			layerData, ok := layer.(bson.M)
-			if !ok {
-				return nil, fmt.Errorf("cache layer data is missing or invalid")
-			}
+// 		// CacheLayersを再帰的に処理
+// 		for i, layer := range cacheLayers {
+// 			layerData, ok := layer.(bson.M)
+// 			if !ok {
+// 				return nil, fmt.Errorf("cache layer data is missing or invalid")
+// 			}
 
-			// 再帰的にsetParameterを呼び出し、CacheLayerを取得
-			layerParam, err := setParameter(layerData)
-			if err != nil {
-				return nil, err
-			}
+// 			// 再帰的にsetParameterを呼び出し、CacheLayerを取得
+// 			layerParam, err := setParameter(layerData)
+// 			if err != nil {
+// 				return nil, err
+// 			}
 
-			// CacheLayerをスライスに格納
-			param.(*cache.MultiCacheParameter).CacheLayers[i] = layerParam
+// 			// CacheLayerをスライスに格納
+// 			param.(*cache.MultiCacheParameter).CacheLayers[i] = layerParam
 
-		}
+// 		}
 
-	default:
-		return nil, fmt.Errorf("unknown parameter type: %s", paramType)
-	}
+// 	default:
+// 		return nil, fmt.Errorf("unknown parameter type: %s", paramType)
+// 	}
 
-	return param, nil
-}
+// 	return param, nil
+// }
+
 // func (sr *SimulatorResult) UnmarshalBSON(data []byte) error {
 // 	// Alias 型を使って無限再帰を避けつつ構造体をデコードする
 // 	type Alias SimulatorResult
