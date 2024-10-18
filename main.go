@@ -31,7 +31,6 @@ import (
 
 	"encoding/gob"
 
-	"github.com/google/uuid"
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
 
@@ -606,41 +605,6 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 
 }
 
-// ファイルに追記する関数
-func appendToFile(filepath string, data string) error {
-	// ファイルを追記モードで開く
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// データに改行を追加して書き込み
-	_, err = file.WriteString(data + "\n")
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// ファイルに書き込む関数
-func writeToFile(filepath string, data string) error {
-	file, err := os.OpenFile(filepath, os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	// 文字列を直接書き込み
-	_, err = file.WriteString(data)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
 func main() {
@@ -661,25 +625,6 @@ func main() {
 
 		if err := pprof.StartCPUProfile(f); err != nil {
 			log.Fatal("could not start CPU profile: ", err)
-		}
-	}
-
-	var uuuid = uuid.New()
-	var resultFile = "result" + uuuid.String() + ".json"
-	var resultFilePath = filepath.Join("result", resultFile)
-	// ディレクトリが存在しない場合、"result"ディレクトリを作成
-	err = os.MkdirAll(filepath.Dir(resultFilePath), 0755)
-	if err != nil {
-		fmt.Println("ディレクトリの作成に失敗しました:", err)
-		return
-	}
-
-	// ファイルが空の場合は、最初に "[" を書き込む
-	if _, err := os.Stat(resultFilePath); os.IsNotExist(err) {
-		err = writeToFile(resultFilePath, "{ 'results':[\n")
-		if err != nil {
-			fmt.Println("ファイル書き込みエラー:", err)
-			return
 		}
 	}
 
@@ -736,7 +681,7 @@ func main() {
 		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
 		interval := simDef.Interval
 		rulefile = simDef.Rule
-		fp, _ := os.Open(rulefile)
+		// fp, _ := os.Open(rulefile)
 
 		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, rulefile)
 
@@ -744,7 +689,7 @@ func main() {
 			panic(err)
 		}
 
-		runSimpleCacheSimulatorWithCSV(fp, cacheSim, int(interval), *bench)
+		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
 
@@ -769,7 +714,7 @@ func main() {
 
 		refbitsRange := make([]int, 0, 32)
 		fmt.Print("refbitsRange: ")
-		for i := 1; i <= 31; i++ {
+		for i := 16; i <= 24; i++ {
 			refbitsRange = append(refbitsRange, i)
 			fmt.Print("%d,", i)
 		}
@@ -840,29 +785,6 @@ func main() {
 							panic(err)
 						}
 
-						fmt.Printf("%v\n", stat)
-						statjson, err := stat.ToJSON()
-
-						if err != nil {
-							log.Fatalf("JSONのマーシャリングに失敗しました: %v", err)
-						}
-
-						statjson = statjson + ","
-
-						// ファイルに追記
-
-						// タスクが完了したので進捗を更新
-
-						// Mutexで保護しつつ進捗を更新
-						mu.Lock()
-						err = appendToFile(resultFilePath, statjson)
-						if err != nil {
-							fmt.Println("ファイルへの書き込みエラー:", err)
-							continue
-						}
-
-						fmt.Printf("result written to file filename:%v\n", resultFilePath)
-						mu.Unlock()
 					} else {
 						fmt.Print("skip because Data founded\n")
 					}
@@ -900,8 +822,6 @@ func main() {
 		close(queue)
 		wg.Wait()
 
-		// 全ての処理が終わったら、"]" を書き込む
-		err = appendToFile(resultFilePath, "\n]}")
 		if err != nil {
 			fmt.Println("ファイルへの書き込みエラー:", err)
 		}

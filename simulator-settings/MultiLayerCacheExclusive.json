@@ -4,20 +4,19 @@
 		"Type": "MultiLayerCacheExclusive",
 		"CacheLayers": [
 			{
-				"Type": "FullAssociativeDstipNbitLRUCache",
+				"Type": "NbitFullAssociativeDstipLRUCache",
 				"Size": 64,
 				"Refbits": 32
 			},
 			{
-				"Type": "FullAssociativeDstipNbitLRUCache",
+				"Type": "NbitFullAssociativeDstipLRUCache",
 				"Size": 128,
 				"Refbits": 16
 			}
 		],
 		"CachePolicies": [
 			"WriteThrough"
-		],
-		"OnceCacheLimit": 64
+		]
 	},
 	"Rule": "rules/wide.rib.20240625.1400.unique.rule",
 	"DebugMode": false,
