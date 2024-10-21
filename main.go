@@ -28,6 +28,7 @@ import (
 	"test-module/routingtable"
 	"test-module/simulator"
 	"time"
+	"unicode"
 
 	"encoding/gob"
 
@@ -157,6 +158,11 @@ func init() {
 			runtime.GC()
 
 		case ".pcap":
+			traceBase := filepath.Base(*trace)
+			ruleBase := filepath.Base(*rulefile)
+			if extractDigits(traceBase) != extractDigits(ruleBase) {
+				panic("rulefileとtracefileの数字が一致しません")
+			}
 			handle, err := pcap.OpenOffline(*trace)
 			if err != nil {
 				panic(err)
@@ -176,12 +182,11 @@ func init() {
 			r.ReadRule(fp)
 
 			// range over the channel (only one iteration variable is allowed)
-			i := 0
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
 				minPacket, err := parsePcapPacketToMinPacket(packet, r)
 				if err != nil {
-					// fmt.Println("Error:", err)
+					// fmt.Println("Error:", err) かなりerrorが出るのでコメントアウト
 					continue
 				}
 
@@ -192,7 +197,7 @@ func init() {
 				packets = append(packets, *minPacket)
 				num_minpackets++
 				if num_minpackets%100000 == 0 {
-					if i != 0 {
+					if num_minpackets != 0 {
 						fmt.Printf("num_minpacket %d\n", num_minpackets)
 						if gobdebugmode {
 							break
@@ -221,6 +226,16 @@ func init() {
 		// その他のエラー
 		panic(err)
 	}
+}
+
+func extractDigits(input string) string {
+	result := ""
+	for _, r := range input {
+		if unicode.IsDigit(r) {
+			result += string(r)
+		}
+	}
+	return result
 }
 
 // gobファイルをデコードしてパケットデータを取得
