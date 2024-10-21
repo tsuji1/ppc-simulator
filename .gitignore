@@ -29,3 +29,5 @@ gob-packet
 pcap/*
 
 .env
+vendor/
+
