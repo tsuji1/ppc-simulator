@@ -28,3 +28,4 @@ gob-packet/*
 gob-packet
 pcap/*
 
+.env
