@@ -853,8 +853,8 @@ func main() {
 	} else {
 
 		capacity := make([]int, 0, 30)
-		for i := 2; i <= 20; i++ {
-			capacity = append(capacity, 1<<uint(i))
+		for i := 2; i <= 5; i++ {
+			capacity = append(capacity, 1<<uint(i*2))
 		}
 
 		// print capacity
