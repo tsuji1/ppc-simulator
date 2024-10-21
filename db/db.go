@@ -4,15 +4,16 @@ package db
 import (
 	"context"
 	"fmt"
+	"log"
+	"os"
 	"test-module/simulator"
 	"time"
 
+	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
-
-const uri = "mongodb://192.168.0.9:27017"
 
 // DB のインターフェース
 type DB interface {
@@ -29,10 +30,14 @@ type MongoDB struct {
 // MongoDBクライアントを作成
 func NewMongoDB() (*MongoDB, error) {
 	// mongo.NewClientの代わりにmongo.Connectを直接使用
+	if godotenv.Load("../.env") != nil {
+		log.Fatal("Error loading .env file")
+	}
+	databaseUrl := os.Getenv("DATABASE_URL")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(databaseUrl))
 	if err != nil {
 		return nil, err
 	}
@@ -44,10 +49,14 @@ func NewMongoDB() (*MongoDB, error) {
 // MongoDBクライアントを作成
 func NewTestMongoDB() (*MongoDB, error) {
 	// mongo.NewClientの代わりにmongo.Connectを直接使用
+	if godotenv.Load("../.env") != nil {
+		log.Fatal("Error loading .env file")
+	}
+	databaseUrl := os.Getenv("DATABASE_URL")
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(uri))
+	client, err := mongo.Connect(ctx, options.Client().ApplyURI(databaseUrl))
 	if err != nil {
 		return nil, err
 	}
