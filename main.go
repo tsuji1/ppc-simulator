@@ -49,8 +49,9 @@ var cachenum = flag.Int("cachenum", 2, "cache number")
 var trace = flag.String("trace", "", "network trace file")
 var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
+var skip = flag.Int("skip", 0, "skip")
 var baseSimulatorDefinition = simulator.NewSimulatorDefinition()
-var rulefile = flag.String("rulefile",baseSimulatorDefinition.Rule,"rule file")
+var rulefile = flag.String("rulefile", baseSimulatorDefinition.Rule, "rule file")
 
 func init() {
 	// routingtable.Data 型の登録
@@ -104,7 +105,6 @@ func init() {
 			defer fp.Close()
 			r := routingtable.NewRoutingTablePatriciaTrie()
 			r.ReadRule(fp)
-		
 
 			for i := 0; ; i += 1 {
 				record, err := reader.Read()
@@ -199,7 +199,7 @@ func init() {
 						}
 					}
 				}
-				
+
 			}
 
 			// gobファイルに書き込む処理
@@ -950,17 +950,19 @@ func main() {
 		}
 
 		// 各タスクに対してWaitGroupを増加させ、キューに送信
-		for _, setting := range settngs {
-			newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
-			newSim.DebugMode = debugmode
+		for i, setting := range settngs {
+			if i > *skip {
+				newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
+				newSim.DebugMode = debugmode
 
-			newSim.Interval = 100000000
-			cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+				newSim.Interval = 100000000
+				cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
 
-			if err != nil {
-				panic(err)
+				if err != nil {
+					panic(err)
+				}
+				queue <- *cacheSim
 			}
-			queue <- *cacheSim
 		}
 
 		// 全タスクの終了を待つ

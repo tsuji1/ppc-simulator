@@ -12,7 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-const uri = "mongodb://localhost:27017"
+const uri = "mongodb://192.168.0.9:27017"
 
 // DB のインターフェース
 type DB interface {
