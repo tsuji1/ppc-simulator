@@ -31,6 +31,10 @@ import (
 
 	"encoding/gob"
 
+	"github.com/google/gopacket"
+	"github.com/google/gopacket/layers"
+	"github.com/google/gopacket/pcap"
+
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
 
@@ -46,7 +50,7 @@ var trace = flag.String("trace", "", "network trace file")
 var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
 var baseSimulatorDefinition = simulator.NewSimulatorDefinition()
-var rulefile = baseSimulatorDefinition.Rule
+var rulefile = flag.String("rulefile",baseSimulatorDefinition.Rule,"rule file")
 
 func init() {
 	// routingtable.Data 型の登録
@@ -61,7 +65,9 @@ func init() {
 	// 新しいパスを生成する
 	gobPath := filepath.Join("gob-packet", filename+".gob")
 	gobdebugmode := false
+	ext := filepath.Ext(*trace)
 	// gobPathファイルが存在するか確認
+
 	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
 		// gobファイルが存在する場合、デコードする
 		fmt.Println("gobファイルが見つかりました。デコード中...")
@@ -73,77 +79,144 @@ func init() {
 		} else {
 			fmt.Println("debugmode で実行中")
 		}
-		fpCSV, err := os.Open(*trace)
-		if err != nil {
-			panic(err)
-		}
-		defer fpCSV.Close()
 
-		// パケットスライスを初期化
-		packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
-		reader := deprecatedGetProperCSVReader(fpCSV)
-
-		if reader == nil {
-			panic("Can't read input as valid tsv/csv file")
-		}
-
-		fp, err := os.Open(rulefile)
-		if err != nil {
-			panic(err)
-		}
-		defer fp.Close()
-		r := routingtable.NewRoutingTablePatriciaTrie()
-		r.ReadRule(fp)
-
-		for i := 0; ; i += 1 {
-			record, err := reader.Read()
-
+		switch ext {
+		case ".csv", ".tsv", ".p7":
+			// CSV/TSVファイル処理
+			fpCSV, err := os.Open(*trace)
 			if err != nil {
-				if err == io.EOF {
-					break
-				}
+				panic(err)
+			}
+			defer fpCSV.Close()
 
-				switch err.(type) {
-				case *csv.ParseError:
-					continue
-				default:
-					fmt.Println(reflect.TypeOf(err))
-					continue
-				}
+			// パケットスライスを初期化
+			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
+			reader := deprecatedGetProperCSVReader(fpCSV)
+
+			if reader == nil {
+				panic("Can't read input as valid tsv/csv file")
 			}
 
-			packet, err := parseCSVRecordToMinPacket(record, r)
-
+			fp, err := os.Open(*rulefile)
 			if err != nil {
-				fmt.Println("Error:", err)
-				continue
+				panic(err)
 			}
+			defer fp.Close()
+			r := routingtable.NewRoutingTablePatriciaTrie()
+			r.ReadRule(fp)
+		
 
-			if packet.FiveTuple() == nil {
-				continue
-			}
-			packets = append(packets, *packet)
-			if i%100000 == 0 {
-				if i != 0 {
-					fmt.Printf("i: %d\n", i)
-					if gobdebugmode {
+			for i := 0; ; i += 1 {
+				record, err := reader.Read()
+
+				if err != nil {
+					if err == io.EOF {
 						break
+					}
+
+					switch err.(type) {
+					case *csv.ParseError:
+						continue
+					default:
+						fmt.Println(reflect.TypeOf(err))
+						continue
+					}
+				}
+
+				packet, err := parseCSVRecordToMinPacket(record, r)
+
+				if err != nil {
+					fmt.Println("Error:", err)
+					continue
+				}
+
+				if packet.FiveTuple() == nil {
+					continue
+				}
+				packets = append(packets, *packet)
+				if i%100000 == 0 {
+					if i != 0 {
+						fmt.Printf("i: %d\n", i)
+						if gobdebugmode {
+							break
+						}
 					}
 				}
 			}
-		}
 
-		// gobファイルに書き込む処理
-		if !gobdebugmode {
-			err = savePacketsToGob(gobPath, packets)
-			if err != nil {
-				fmt.Println("gobファイルへの保存に失敗しました:", err)
-			} else {
-				fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
+			// gobファイルに書き込む処理
+			if !gobdebugmode {
+				err = savePacketsToGob(gobPath, packets)
+				if err != nil {
+					fmt.Println("gobファイルへの保存に失敗しました:", err)
+				} else {
+					fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
+				}
 			}
-		}
 
-		runtime.GC()
+			runtime.GC()
+
+		case ".pcap":
+			handle, err := pcap.OpenOffline(*trace)
+			if err != nil {
+				panic(err)
+			}
+			defer handle.Close()
+
+			packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+
+			// パケットスライスを初期化
+			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
+			fp, err := os.Open(*rulefile)
+			if err != nil {
+				panic(err)
+			}
+			defer fp.Close()
+			r := routingtable.NewRoutingTablePatriciaTrie()
+			r.ReadRule(fp)
+
+			// range over the channel (only one iteration variable is allowed)
+			i := 0
+			num_minpackets := 0
+			for packet := range packetSource.Packets() {
+				minPacket, err := parsePcapPacketToMinPacket(packet, r)
+				if err != nil {
+					// fmt.Println("Error:", err)
+					continue
+				}
+
+				if minPacket.FiveTuple() == nil {
+					continue
+				}
+
+				packets = append(packets, *minPacket)
+				num_minpackets++
+				if num_minpackets%100000 == 0 {
+					if i != 0 {
+						fmt.Printf("num_minpacket %d\n", num_minpackets)
+						if gobdebugmode {
+							break
+						}
+					}
+				}
+				
+			}
+
+			// gobファイルに書き込む処理
+			if !gobdebugmode {
+				err = savePacketsToGob(gobPath, packets)
+				if err != nil {
+					fmt.Println("gobファイルへの保存に失敗しました:", err)
+				} else {
+					fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
+				}
+			}
+
+			runtime.GC()
+
+		default:
+			panic("未対応のファイル形式です: " + ext)
+		}
 	} else {
 		// その他のエラー
 		panic(err)
@@ -324,6 +397,78 @@ func parseCSVRecordToMinPacket(record []string, r *routingtable.RoutingTablePatr
 	return packet, nil
 }
 
+// parsePcapPacketToMinPacket parses a gopacket.Packet into a MinPacket
+func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingTablePatriciaTrie) (*cache.MinPacket, error) {
+	// MinPacket構造体を新規作成
+	minPacket := new(cache.MinPacket)
+
+	// Ethernet層があるか確認
+	ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+	if ethernetLayer == nil {
+		return nil, fmt.Errorf("No Ethernet layer found")
+	}
+
+	// IP層があるか確認
+	ipLayer := packet.Layer(layers.LayerTypeIPv4)
+	if ipLayer == nil {
+		return nil, fmt.Errorf("No IPv4 layer found")
+	}
+	ip, _ := ipLayer.(*layers.IPv4)
+
+	// SrcIP, DstIPを設定
+	minPacket.SrcIP = IpToUInt32(ip.SrcIP)
+	minPacket.DstIP = IpToUInt32(ip.DstIP)
+
+	// プロトコルを設定
+	switch ip.Protocol {
+	case layers.IPProtocolTCP:
+		minPacket.Proto = "tcp"
+	case layers.IPProtocolUDP:
+		minPacket.Proto = "udp"
+	case layers.IPProtocolICMPv4:
+		minPacket.Proto = "icmp"
+	default:
+		// minPacket.Proto = strings.ToLower(ip.Protocol.String())
+		return nil, fmt.Errorf("Unsupported protocol: %s", ip.Protocol)
+	}
+
+	// ルーティングテーブルを用いてDstIPのleaf indexを設定
+	dstIP := ipaddress.NewIPaddress(minPacket.DstIP)
+	for i := 0; i < 33; i++ {
+		if r.IsLeaf(dstIP, i) {
+			minPacket.IsLeafIndex = int8(i)
+			break
+		}
+	}
+
+	// // TCP/UDPプロトコルに応じたポート情報を取得
+	// if minPacket.Proto == "tcp" || minPacket.Proto == "udp" {
+	// 	transportLayer := packet.TransportLayer()
+	// 	switch layer := transportLayer.(type) {
+	// 	case *layers.TCP:
+	// 		minPacket.SrcPort = uint16(layer.SrcPort)
+	// 		minPacket.DstPort = uint16(layer.DstPort)
+	// 	case *layers.UDP:
+	// 		minPacket.SrcPort = uint16(layer.SrcPort)
+	// 		minPacket.DstPort = uint16(layer.DstPort)
+	// 	default:
+	// 		return nil, fmt.Errorf("Unsupported transport layer protocol")
+	// 	}
+	// }
+
+	// // ICMPプロトコルの場合、タイプとコードを取得
+	// if minPacket.Proto == "icmp" {
+	// 	icmpLayer := packet.Layer(layers.LayerTypeICMPv4)
+	// 	if icmpLayer == nil {
+	// 		return nil, fmt.Errorf("No ICMPv4 layer found")
+	// 	}
+	// 	icmp, _ := icmpLayer.(*layers.ICMPv4)
+	// 	minPacket.IcmpType = uint16(icmp.TypeCode.Type())
+	// 	minPacket.IcmpCode = uint16(icmp.TypeCode.Code())
+	// }
+
+	return minPacket, nil
+}
 func deprecatedGetProperCSVReader(fp *os.File) *csv.Reader {
 	newReader := func(fp *os.File, comma rune) *csv.Reader {
 		fp.Seek(0, 0)
@@ -680,10 +825,10 @@ func main() {
 		}
 		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
 		interval := simDef.Interval
-		rulefile = simDef.Rule
+		*rulefile = simDef.Rule
 		// fp, _ := os.Open(rulefile)
 
-		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, rulefile)
+		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile)
 
 		if err != nil {
 			panic(err)
@@ -734,7 +879,7 @@ func main() {
 		totalTask := len(settngs)
 		fmt.Println("Total tasks:", totalTask)
 		traceFileName := filepath.Base(*trace)
-		ruleFileName := filepath.Base(rulefile)
+		ruleFileName := filepath.Base(*rulefile)
 		fmt.Printf("rulefile:%v", rulefile)
 		fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
 		packetlen := uint64(len(packets))
@@ -810,7 +955,7 @@ func main() {
 			newSim.DebugMode = debugmode
 
 			newSim.Interval = 100000000
-			cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, rulefile)
+			cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
 
 			if err != nil {
 				panic(err)

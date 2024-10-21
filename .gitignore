@@ -5,6 +5,7 @@ main
 # 生成ファイルや設定ファイル
 *.p7
 *.rule
+*.pcap
 /simulator-settings
 /result
 
@@ -25,3 +26,5 @@ __pycache__
 */myenv
 gob-packet/*
 gob-packet
+pcap/*
+

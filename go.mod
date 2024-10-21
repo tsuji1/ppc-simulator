@@ -62,6 +62,7 @@ require (
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/google/btree v1.0.0 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
+	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/martian v2.1.0+incompatible // indirect
 	github.com/google/martian/v3 v3.1.0 // indirect
 	github.com/google/pprof v0.0.0-20201218002935-b9804c9f04c2 // indirect
