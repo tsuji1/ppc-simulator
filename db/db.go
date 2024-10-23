@@ -30,7 +30,7 @@ type MongoDB struct {
 // MongoDBクライアントを作成
 func NewMongoDB() (*MongoDB, error) {
 	// mongo.NewClientの代わりにmongo.Connectを直接使用
-	if godotenv.Load("../.env") != nil {
+	if godotenv.Load(".env") != nil {
 		log.Fatal("Error loading .env file")
 	}
 	databaseUrl := os.Getenv("DATABASE_URL")
@@ -49,7 +49,7 @@ func NewMongoDB() (*MongoDB, error) {
 // MongoDBクライアントを作成
 func NewTestMongoDB() (*MongoDB, error) {
 	// mongo.NewClientの代わりにmongo.Connectを直接使用
-	if godotenv.Load("../.env") != nil {
+	if godotenv.Load(".env") != nil {
 		log.Fatal("Error loading .env file")
 	}
 	databaseUrl := os.Getenv("DATABASE_URL")

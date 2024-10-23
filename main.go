@@ -35,6 +35,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/joho/godotenv"
 
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
@@ -777,6 +778,11 @@ func main() {
 	var f *os.File
 	var err error
 
+	err = godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file")
+	}
+
 	if *cpuprofile != "" {
 		f, err = os.Create(*cpuprofile)
 		if err != nil {
@@ -853,9 +859,23 @@ func main() {
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
 
+		capacityStart, err := strconv.Atoi(os.Getenv("CAPACITY_START"))
+
+		if err != nil {
+			panic(err)
+		}
+		capacityEnd, err := strconv.Atoi(os.Getenv("CAPACITY_END"))
+		if err != nil {
+			panic(err)
+		}
+		capacityMultiplier, err := strconv.Atoi(os.Getenv("CAPACITY_MULTIPLIER"))
+		if err != nil {
+			panic(err)
+		}
+
 		capacity := make([]int, 0, 30)
-		for i := 2; i <= 10; i++ {
-			capacity = append(capacity, 1<<uint(i))
+		for i := capacityStart; i <= capacityEnd; i++ {
+			capacity = append(capacity, 1<<uint(i*capacityMultiplier))
 		}
 
 		// print capacity
@@ -873,8 +893,17 @@ func main() {
 		// 1 から 32 までの refbits 値のリストを生成
 
 		refbitsRange := make([]int, 0, 32)
+
+		refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
+		if err != nil {
+			panic(err)
+		}
+		refbitsEnd, err := strconv.Atoi(os.Getenv("REFBITS_END"))
+		if err != nil {
+			panic(err)
+		}
 		fmt.Print("refbitsRange: ")
-		for i := 16; i <= 24; i++ {
+		for i := refbitsStart; i <= refbitsEnd; i++ {
 			refbitsRange = append(refbitsRange, i)
 			fmt.Print("%d,", i)
 		}
