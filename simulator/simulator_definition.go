@@ -414,7 +414,17 @@ func InitializedSimulatorDefinition(json interface{}) SimulatorDefinition {
 }
 
 // 初期化関数
-func NewSimulatorDefinition() SimulatorDefinition {
+func NewSimulatorDefinition(cachetype string) (SimulatorDefinition, error) {
+	if cachetype == "MultiLayerCacheExclusive" {
+		return NewMultiLayerExclusiveCacheSimulatorDefinition(), nil
+	} else if cachetype == "LRU" {
+		return NewLRUSimulatorDefinition(), nil
+	} else {
+		return SimulatorDefinition{}, errors.New("invalid cache type")
+	}
+}
+
+func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 	return SimulatorDefinition{
 		Type: "SimpleCacheSimulator",
 		Cache: Cache{
@@ -436,6 +446,16 @@ func NewSimulatorDefinition() SimulatorDefinition {
 		Rule:      "rules/wide.rib.20240625.1400.unique.rule",
 		DebugMode: true,
 		Interval:  10000000000,
+	}
+}
+func NewLRUSimulatorDefinition() SimulatorDefinition {
+	return SimulatorDefinition{
+		Type: "SimpleCacheSimulator",
+		Cache: Cache{
+			Type: "NWaySetAssociativeLRUCache",
+			Size: 64,
+			Way:  4,
+		},
 	}
 }
 
@@ -490,5 +510,12 @@ func CreateSimulatorWithCapacityAndRefbits(base SimulatorDefinition, settings []
 		newSim.Cache.CacheLayers[i].Size = setting[0]
 		newSim.Cache.CacheLayers[i].Refbits = setting[1]
 	}
+	return newSim
+}
+
+// 各CacheLayerにCapacityとRefbitsを設定して新しいSimulatorDefinitionを作成
+func CreateSimulatorWithCapacity(base SimulatorDefinition, capacity int) SimulatorDefinition {
+	newSim := base.DeepCopy()
+	newSim.Cache.Size = capacity
 	return newSim
 }

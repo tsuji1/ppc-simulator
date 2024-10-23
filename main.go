@@ -42,7 +42,6 @@ import (
 
 // グローバル変数でパケットを保存するスライス
 var packets []MinPacket
-
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 var cacheparam = flag.String("cacheparam", "", "cache parameter file")
@@ -52,8 +51,7 @@ var trace = flag.String("trace", "", "network trace file")
 var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
-var baseSimulatorDefinition = simulator.NewSimulatorDefinition()
-var rulefile = flag.String("rulefile", baseSimulatorDefinition.Rule, "rule file")
+var rulefile = flag.String("rulefile", "", "rule file")
 
 func init() {
 	// routingtable.Data 型の登録
@@ -858,7 +856,8 @@ func main() {
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
-
+		wg := new(sync.WaitGroup)
+		queue := make(chan simulator.SimpleCacheSimulator, 4)
 		capacityStart, err := strconv.Atoi(os.Getenv("CAPACITY_START"))
 
 		if err != nil {
@@ -885,54 +884,28 @@ func main() {
 		}
 		fmt.Println()
 
-		// cachenumを反映
-		for i := 2; i < *cachenum; i++ {
-			baseSimulatorDefinition.AddCacheLayer(nil)
-		}
-
 		// 1 から 32 までの refbits 値のリストを生成
-
-		refbitsRange := make([]int, 0, 32)
-
-		refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
-		if err != nil {
-			panic(err)
-		}
-		refbitsEnd, err := strconv.Atoi(os.Getenv("REFBITS_END"))
-		if err != nil {
-			panic(err)
-		}
-		fmt.Print("refbitsRange: ")
-		for i := refbitsStart; i <= refbitsEnd; i++ {
-			refbitsRange = append(refbitsRange, i)
-			fmt.Print("%d,", i)
-		}
-		refbitsRange = append(refbitsRange, 32)
-
-		// タスクの総数に基づいてWaitGroupを設定
-		wg := new(sync.WaitGroup)
-		queue := make(chan simulator.SimpleCacheSimulator, 4)
-
-		var completedTasks int
-		var totalDuration time.Duration
-		var mu sync.Mutex // 進捗状況を守るためのMutex
-
-		// シミュレーション設定を生成
-		settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
-		debugmode := false
-		totalTask := len(settngs)
-		fmt.Println("Total tasks:", totalTask)
 		traceFileName := filepath.Base(*trace)
-		ruleFileName := filepath.Base(*rulefile)
-		fmt.Printf("rulefile:%v", rulefile)
-		fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
+
+		var ruleFileName string
+		var totalTask int
+
+		cachetype := os.Getenv("CACHE_TYPE")
+		var baseSimulatorDefinition simulator.SimulatorDefinition
+
 		packetlen := uint64(len(packets))
 		if *maxProccess != 0 {
 			packetlen = *maxProccess
 		}
 
 		fmt.Printf("packetlen: %v\n", packetlen)
+
+		// タスクの総数に基づいてWaitGroupを設定
+
 		// ワーカーゴルーチンを生成
+		var completedTasks int
+		var totalDuration time.Duration
+		var mu sync.Mutex // 進捗状況を守るためのMutex
 		for i := 0; i < runtime.NumCPU()-3; i++ {
 			wg.Add(1)
 			go func() {
@@ -992,21 +965,79 @@ func main() {
 				}
 			}()
 		}
-
-		// 各タスクに対してWaitGroupを増加させ、キューに送信
-		for i, setting := range settngs {
-			if i > *skip {
-				newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
-				newSim.DebugMode = debugmode
-
-				newSim.Interval = 100000000
-				cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
-
-				if err != nil {
-					panic(err)
-				}
-				queue <- *cacheSim
+		if cachetype == "LRU" {
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("LRU")
+			if err != nil {
+				panic(err)
 			}
+
+			totalTask = len(capacity)
+
+			for i, c := range capacity {
+				if i > *skip {
+					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
+					fmt.Print("newSim: ")
+					newSim.Interval = 1000000000
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					fmt.Print("cacheSim: ")
+					if err != nil {
+						panic(err)
+					}
+					queue <- *cacheSim
+				}
+			}
+
+		} else if cachetype == "MultiLayerExclusiveCache" {
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerExclusiveCache")
+			refbitsRange := make([]int, 0, 32)
+
+			// cachenumを反映
+			for i := 2; i < *cachenum; i++ {
+				baseSimulatorDefinition.AddCacheLayer(nil)
+			}
+			refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
+			if err != nil {
+				panic(err)
+			}
+			refbitsEnd, err := strconv.Atoi(os.Getenv("REFBITS_END"))
+			if err != nil {
+				panic(err)
+			}
+			fmt.Print("refbitsRange: ")
+			for i := refbitsStart; i <= refbitsEnd; i++ {
+				refbitsRange = append(refbitsRange, i)
+				fmt.Print("%d,", i)
+			}
+			refbitsRange = append(refbitsRange, 32)
+
+			settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
+			debugmode := false
+			totalTask := len(settngs)
+
+			fmt.Println("Total tasks:", totalTask)
+
+			ruleFileName := filepath.Base(*rulefile)
+			fmt.Printf("rulefile:%v", rulefile)
+			fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
+
+			// 各タスクに対してWaitGroupを増加させ、キューに送信
+			for i, setting := range settngs {
+				if i > *skip {
+					newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
+					newSim.DebugMode = debugmode
+
+					newSim.Interval = 100000000
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+
+					if err != nil {
+						panic(err)
+					}
+					queue <- *cacheSim
+				}
+			}
+
+		} else {
+			panic("not supported cache type")
 		}
 
 		// 全タスクの終了を待つ

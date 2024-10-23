@@ -71,28 +71,50 @@ func (db *MongoDB) Close(ctx context.Context) error {
 }
 
 // SimulatorResultWithMetadata 構造体
-type SimulatorResultWithMetadata struct {
+type SimulatorResultWithMetadataWithRuleFileName struct {
 	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
 	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
 	RuleFileName    string                    `bson:"rule_file_name"`   // ルールファイル名
 	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
 
+type SimulatorResultWithMetadata struct {
+	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
+	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
+	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
+}
+
 // InsertResult を実装。simulatorResult に timestamp を追加して挿入
 func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.SimulatorResult, ruleFileName string, traceFileName string) error {
+	//もっといい方法があるとおもう。LRUを追加したときの僕より
+
 	// Timestamp を現在時刻に設定
 
-	// SimulatorResultWithMetadata 構造体を作成
-	var simulatorResultWithMetadata SimulatorResultWithMetadata
-	simulatorResultWithMetadata.SimulatorResult = simulatorResult
-	simulatorResultWithMetadata.Timestamp = time.Now()
-	simulatorResultWithMetadata.RuleFileName = ruleFileName
-	simulatorResultWithMetadata.TraceFileName = traceFileName
+	if simulatorResult.Type == "MultiLayerCacheExclusive" {
+		// SimulatorResultWithMetadata 構造体を作成
+		var simulatorResultWithMetadata SimulatorResultWithMetadataWithRuleFileName
+		simulatorResultWithMetadata.SimulatorResult = simulatorResult
+		simulatorResultWithMetadata.Timestamp = time.Now()
+		simulatorResultWithMetadata.RuleFileName = ruleFileName
+		simulatorResultWithMetadata.TraceFileName = traceFileName
 
-	// データを挿入f
-	_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
-	if err != nil {
-		return fmt.Errorf("failed to insert simulator result: %w", err)
+		// データを挿入f
+		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		if err != nil {
+			return fmt.Errorf("failed to insert simulator result: %w", err)
+		}
+	} else if simulatorResult.Type == "NWaySetAssociativeLRUCache" {
+		// SimulatorResultWithMetadata 構造体を作成
+		var simulatorResultWithMetadata SimulatorResultWithMetadata
+		simulatorResultWithMetadata.SimulatorResult = simulatorResult
+		simulatorResultWithMetadata.Timestamp = time.Now()
+		simulatorResultWithMetadata.TraceFileName = traceFileName
+
+		// データを挿入
+		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		if err != nil {
+			return fmt.Errorf("failed to insert simulator result: %w", err)
+		}
 	}
 
 	return nil
@@ -105,12 +127,24 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 	ruleFileName string,
 	traceFileName string) (bool, error) {
 	// フィルタークエリ: Parameter と Processed が一致するドキュメントを検索
-	filterQuery := bson.M{
-		"simulator_result.parameter": simulatorParameter,
-		"simulator_result.processed": simulatorProcessed,
-		"simulator_result.type":      simulatorType,
-		"rule_file_name":             ruleFileName,
-		"trace_file_name":            traceFileName,
+
+	var filterQuery bson.M
+
+	if simulatorType == "MultiLayerCacheExclusive" {
+		filterQuery = bson.M{
+			"simulator_result.parameter": simulatorParameter,
+			"simulator_result.processed": simulatorProcessed,
+			"simulator_result.type":      simulatorType,
+			"rule_file_name":             ruleFileName,
+			"trace_file_name":            traceFileName,
+		}
+	} else {
+		filterQuery = bson.M{
+			"simulator_result.parameter": simulatorParameter,
+			"simulator_result.processed": simulatorProcessed,
+			"simulator_result.type":      simulatorType,
+			"trace_file_name":            traceFileName,
+		}
 	}
 
 	// ドキュメントを探して結果を取得

@@ -322,13 +322,17 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 	if simType != "SimpleCacheSimulator" {
 		return nil, fmt.Errorf("unsupported simulator type: %s", simType)
 	}
-	fp, err := os.Open(rulefile)
-	if err != nil {
-		panic(err)
-	}
-	defer fp.Close()
+
 	r := routingtable.NewRoutingTablePatriciaTrie()
-	r.ReadRule(fp)
+
+	if  rulefile != "" {
+		fp, err := os.Open(rulefile)
+		if err != nil {
+			panic(err)
+		}
+		defer fp.Close()
+		r.ReadRule(fp)
+	}
 	// キャッシュを構築
 	cache, err := buildCache(simulatorDefinition.Cache, r, simulatorDefinition.DebugMode)
 
