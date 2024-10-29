@@ -256,6 +256,49 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 			CacheRefBits:         cacheRefbits,
 			RoutingTable:         *routingTable,
 		}
+	case "DebugCache":
+		// MultiLayerCacheExclusive の設定を取得
+		fmt.Printf("make debug cache\n")
+		cacheLayersPS := definitionCache.CacheLayers
+		cachePoliciesPS := definitionCache.CachePolicies
+		cacheLayersLen := len(cacheLayersPS)
+		cachePoliciesLen := len(cachePoliciesPS)
+
+		cacheRefbits := make([]uint, cacheLayersLen)
+
+		if cachePoliciesLen != (cacheLayersLen - 1) {
+			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
+		}
+
+		// CacheLayersの設定を取得して、キャッシュを構築
+		cacheLayers := make([]cache.Cache, cacheLayersLen)
+		for i := 0; i < cacheLayersLen; i++ {
+			cacheLayer, err := buildCache(cacheLayersPS[i], routingTable, debugMode)
+			if err != nil {
+				return c, err
+			}
+			cacheLayers[i] = cacheLayer
+			refbit := cacheLayersPS[i].Refbits
+			cacheRefbits[i] = uint(refbit)
+		}
+
+		//ポリシーを構築して
+		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
+		for i := 0; i < cachePoliciesLen; i++ {
+			cachePolicyStr := cachePoliciesPS[i]
+			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
+		}
+
+		c = &cache.DebugCache{
+			CacheLayers:          cacheLayers,
+			CachePolicies:        cachePolicies,
+			CacheReferedByLayer:  make([]uint, cacheLayersLen),
+			CacheReplacedByLayer: make([]uint, cacheLayersLen),
+			CacheHitByLayer:      make([]uint, cacheLayersLen),
+			CacheInserted:        make([]uint, cacheLayersLen),
+			CacheRefBits:         cacheRefbits,
+			RoutingTable:         *routingTable,
+		}
 	// case "MultiLayerCacheInclusive":
 	// 	// MultiLayerCacheInclusive の設定を取得
 	// 	cacheLayersPS := p.M("CacheLayers").ProxySet()
@@ -325,7 +368,7 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 
 	r := routingtable.NewRoutingTablePatriciaTrie()
 
-	if  rulefile != "" {
+	if rulefile != "" {
 		fp, err := os.Open(rulefile)
 		if err != nil {
 			panic(err)

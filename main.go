@@ -844,7 +844,7 @@ func main() {
 		}
 		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
 		interval := simDef.Interval
-		*rulefile = simDef.Rule
+		simDef.Rule = *rulefile
 		// fp, _ := os.Open(rulefile)
 
 		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile)
@@ -987,8 +987,8 @@ func main() {
 				}
 			}
 
-		} else if cachetype == "MultiLayerExclusiveCache" {
-			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerExclusiveCache")
+		} else if cachetype == "MultiLayerCacheExclusive" {
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheExclusive")
 			refbitsRange := make([]int, 0, 32)
 
 			// cachenumを反映

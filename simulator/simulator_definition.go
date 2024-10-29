@@ -328,12 +328,12 @@ func InitializedSimulatorDefinition(json interface{}) SimulatorDefinition {
 	if err != nil {
 		panic(fmt.Sprintf("Simulator type is missing or invalid: %v", err))
 	}
-
+	cacheType, err := p.M("Cache").M("Type").String()
 	// デフォルトのシミュレータ定義
 	simDef := SimulatorDefinition{
 		Type: simType,
 		Cache: Cache{
-			Type:           "MultiLayerCacheExclusive",
+			Type:           cacheType,
 			CachePolicies:  []string{"WriteThrough"},
 			OnceCacheLimit: 64,
 		},
