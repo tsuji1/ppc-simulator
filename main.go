@@ -844,6 +844,7 @@ func main() {
 		}
 		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
 		interval := simDef.Interval
+		interval = 10000000000000000
 		simDef.Rule = *rulefile
 		// fp, _ := os.Open(rulefile)
 

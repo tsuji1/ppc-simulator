@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"test-module/ipaddress"
 	"test-module/routingtable"
 )
 
@@ -17,17 +18,26 @@ type DebugCache struct {
 	CacheInserted        []uint
 	RoutingTable         routingtable.RoutingTablePatriciaTrie
 	PrefixMapByLength    map[int]map[string]int
+	IsLeafMapByLength    map[int]map[string]int
 	MatchMap             [33]uint
 	LongestMatchMap      [33]uint
+	IsLeafMap            [33]uint
+
+	IsLeafCountByDstIP map[int]map[string]int
 }
 
 // StatString は、キャッシュの統計情報をJSON形式の文字列として返します。
 
 type DebugCacheStat struct {
-	Hit                 []uint
-	MatchMap            []uint
-	LongestMatchMap     []uint
-	UniquePrefixesCount map[int]int
+	Hit                   []uint
+	MatchMap              []uint
+	LongestMatchMap       []uint
+	UniquePrefixesCount   map[int]int
+	UniqueLeafCount       map[int]int
+	IsLeafMap             [33]uint
+	PrefixMapByLength     map[int]map[string]int
+	IsLeafMapByLength     map[int]map[string]int
+	UniqueLeafPacketCount map[int]int
 }
 
 func (c *DebugCache) StatString() string {
@@ -70,12 +80,47 @@ func (c *DebugCache) Stat() interface{} {
 		uniquePrefixesCount[length] = uniqueCount
 	}
 
+	uniqueLeafCount := make(map[int]int)
+
+	for length, leafMap := range c.IsLeafMapByLength {
+		sum := 0
+		uniqueCount := 0
+
+		// 各プレフィックスの参照回数を合計し、種類をカウント
+		for _, count := range leafMap {
+			sum += count  // 参照回数の合計
+			uniqueCount++ // 異なるプレフィックスの種類
+
+		}
+
+		// プレフィックスの長さごとに合計を更新
+		uniqueLeafCount[length] = uniqueCount
+	}
+
+	uniqueLeafPacketCount := make(map[int]int)
+	for length, leafMap := range c.IsLeafCountByDstIP {
+		sum := 0
+		uniqueCount := 0
+
+		// 各プレフィックスの参照回数を合計し、種類をカウント
+		for _, count := range leafMap {
+			sum += count  // 参照回数の合計
+			uniqueCount++ // 異なるプレフィックスの種類
+		}
+
+		// プレフィックスの長さごとに合計を更新
+		uniqueLeafPacketCount[length] = uniqueCount
+	}
+
 	// 構造体を作成して返す
 	return DebugCacheStat{
-		Hit:                 c.CacheHitByLayer,
-		MatchMap:            matchMap,
-		LongestMatchMap:     longestMatchMap,
-		UniquePrefixesCount: uniquePrefixesCount,
+		Hit:                   c.CacheHitByLayer,
+		IsLeafMap:             c.IsLeafMap,
+		MatchMap:              matchMap,
+		LongestMatchMap:       longestMatchMap,
+		UniquePrefixesCount:   uniquePrefixesCount,
+		UniqueLeafCount:       uniqueLeafCount,
+		UniqueLeafPacketCount: uniqueLeafPacketCount,
 	}
 }
 
@@ -141,6 +186,26 @@ func (c *DebugCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *in
 	}
 	c.PrefixMapByLength[longestPrefixLength][longestPrefix] += 1
 
+	if c.IsLeafMapByLength == nil {
+		c.IsLeafMapByLength = make(map[int]map[string]int)
+	}
+	if c.IsLeafMapByLength[int(f.IsLeafIndex)] == nil {
+		c.IsLeafMapByLength[int(f.IsLeafIndex)] = make(map[string]int)
+	}
+
+	if c.IsLeafCountByDstIP == nil {
+		c.IsLeafCountByDstIP = make(map[int]map[string]int)
+	}
+	if c.IsLeafCountByDstIP[int(f.IsLeafIndex)] == nil {
+		c.IsLeafCountByDstIP[int(f.IsLeafIndex)] = make(map[string]int)
+	}
+
+	c.IsLeafMap[f.IsLeafIndex] += 1
+	fivetupleDstIP := ipaddress.NewIPaddress(f.DstIP)
+	dstIpStr := fivetupleDstIP.MaskedBitString(int(f.IsLeafIndex))
+	c.IsLeafCountByDstIP[int(f.IsLeafIndex)][fivetupleDstIP.String()] += 1
+	// c.IsLeafMapByLength[longestPrefixLength][dstIpStr] = int(f.IsLeafIndex)
+	c.IsLeafMapByLength[int(f.IsLeafIndex)][dstIpStr] += 1
 	for i, cache := range c.CacheLayers {
 		if update {
 			c.CacheReferedByLayer[i] += 1
