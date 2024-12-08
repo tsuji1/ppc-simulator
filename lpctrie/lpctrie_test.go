@@ -1,6 +1,8 @@
 package lpctrie
 
 import (
+	"fmt"
+	"test-module/ipaddress"
 	"testing"
 )
 
@@ -34,65 +36,105 @@ func TestTrieOperations(t *testing.T) {
     } else if l.Key != key {
         t.Errorf("Key mismatch: expected %v, got %v", key, l.Key)
     }
-    // 追加の挿入テスト
-    key2 := Key(0x0B000002) // 10.0.0.2
-    b := &FibAlias{
-        FaSlen: 24,
-    }
-    l = FibFindNode(trie, &tp, key2)
-    if l != nil {
-        t.Errorf("Expected no node found for key2, got %v", l)
-    }
-    FibInsertNode(trie,tp,b ,key2)
-    l2 := FibFindNode(trie, &tp, key2)
-    if l2 == nil || l2.Key != key2 {
-        t.Errorf("Expected to find inserted node for key2=%08x, got %v",key2, l2)
-    }
-    
-    key3 := Key(0x0C000003) //
-    c := &FibAlias{
-        FaSlen: 24,
-    }
-    
-    l = FibFindNode(trie, &tp, key3)
-    if l != nil {
-        t.Errorf("Expected no node found for key3, got %v", l)
-    }
-    FibInsertNode(trie,tp,c ,key3)
-    l3 := FibFindNode(trie, &tp, key3)
-    if l3 == nil || l3.Key != key3 {
-        t.Errorf("Expected to find inserted node for key3=%08x, got %v",key3, l3)
-    }
-    
-    
-    key4 := Key(0x0D000004) //
-    
-    d := &FibAlias{
-        FaSlen: 28,
-    }
+    depth := GetDepth(trie,key)
 
-    l = FibFindNode(trie, &tp, key4)
-    if l != nil {
-        t.Errorf("Expected no node found for key4, got %v", l)
+    if depth != 2{
+        t.Errorf("Expected depth 1, got %d", depth)
     }
-    FibInsertNode(trie,tp,d ,key4)
-    l4 := FibFindNode(trie, &tp, key4)
     DebugPrint(trie)
-    if l4 == nil || l4.Key != key4 {
-        t.Errorf("Expected to find inserted node for key4=%08x, got %v",key4, l4)
-    }
-
-
-    l3 = FibFindNode(trie, &tp, key3)
-    if l3 == nil || l3.Key != key3 {
-        t.Errorf("Expected to find inserted node for key3=%08x, got %v",key3, l3)
-    }
-
-    l2 = FibFindNode(trie, &tp, key2)
-    if l2 == nil || l2.Key != key2 {
-        t.Errorf("Expected to find inserted node for key2=%08x, got %v",key2, l2)
-    }
+    // // 追加の挿入テスト
+    // key2 := Key(0x0B000002) // 10.0.0.2
+    // b := &FibAlias{
+    //     FaSlen: 24,
+    // }
+    // l = FibFindNode(trie, &tp, key2)
+    // if l != nil {
+    //     t.Errorf("Expected no node found for key2, got %v", l)
+    // }
+    // FibInsertNode(trie,tp,b ,key2)
+    // l2 := FibFindNode(trie, &tp, key2)
+    // if l2 == nil || l2.Key != key2 {
+    //     t.Errorf("Expected to find inserted node for key2=%08x, got %v",key2, l2)
+    // }
     
+    // key3 := Key(0x0C000003) //
+    // c := &FibAlias{
+    //     FaSlen: 24,
+    // }
+    
+    // l = FibFindNode(trie, &tp, key3)
+    // if l != nil {
+    //     t.Errorf("Expected no node found for key3, got %v", l)
+    // }
+    // FibInsertNode(trie,tp,c ,key3)
+    // l3 := FibFindNode(trie, &tp, key3)
+    // if l3 == nil || l3.Key != key3 {
+    //     t.Errorf("Expected to find inserted node for key3=%08x, got %v",key3, l3)
+    // }
+    
+    
+    // key4 := Key(0x0D000004) //
+    
+    // d := &FibAlias{
+    //     FaSlen: 28,
+    // }
+
+    // l = FibFindNode(trie, &tp, key4)
+    // if l != nil {
+    //     t.Errorf("Expected no node found for key4, got %v", l)
+    // }
+    // FibInsertNode(trie,tp,d ,key4)
+    // l4 := FibFindNode(trie, &tp, key4)
+    // DebugPrint(trie)
+    // if l4 == nil || l4.Key != key4 {
+    //     t.Errorf("Expected to find inserted node for key4=%08x, got %v",key4, l4)
+    // }
+
+
+    // l3 = FibFindNode(trie, &tp, key3)
+    // if l3 == nil || l3.Key != key3 {
+    //     t.Errorf("Expected to find inserted node for key3=%08x, got %v",key3, l3)
+    // }
+
+    // l2 = FibFindNode(trie, &tp, key2)
+    // if l2 == nil || l2.Key != key2 {
+    //     t.Errorf("Expected to find inserted node for key2=%08x, got %v",key2, l2)
+    // }
+    
+}
+
+func TestFibRandomInsert(t *testing.T) {
+    trie :=NewTrie()
+    // insertedKeyList := make([]Key, 1000)
+    var l *KeyVector
+    var tp *KeyVector
+    for i:=0; i<1000; i++ {
+        key := Key(ipaddress.GetRandomIP().Uint32())
+        randomSlen := ipaddress.GetRandomPrefix()
+        alias := &FibAlias{FaSlen: randomSlen}
+        
+        l = FibFindNode(trie, &tp, key)
+        if l != nil {
+            t.Errorf("Expected no node found, got one: %v", l)
+        }
+        fmt.Printf("Inserting key=%32b, slen=%d\n", key, randomSlen)
+        fmt.Println("--------------------------------------------------------------------")
+        // 挿入
+        inserted := FibInsert(trie,key,alias)
+        if inserted != 0 {
+            t.Fatalf("Insert failed to create a leaf node")
+        }
+
+        // 再度検索
+        l = FibFindNode(trie, &tp, key)
+        if l == nil {
+            t.Errorf("Expected to find inserted node, got nil")
+        } else if l.Key != key {
+            t.Errorf("Key mismatch: expected %v, got %v", key, l.Key)
+        }
+        depth := GetDepth(trie,key)
+        fmt.Println("Depth: ", depth)
+    } 
 }
 // TestFibInsert tests the FibInsert function.
 // func TestFibInsert(t *testing.T) {

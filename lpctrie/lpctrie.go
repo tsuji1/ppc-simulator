@@ -257,6 +257,7 @@ func tnodeNew(key Key, pos uint8, bits uint8) *KeyVector {
 
 	// 条件チェック: bits や pos の値が有効か
 	if bits == 0 || shift > KeyLength { // Assuming KEYLENGTH = 64 for uint64
+		fmt.Printf("Invalid bits or position: bits=%d, pos=%d\n", bits, pos)
 		panic("Invalid bits or position") // BUG_ON に相当
 	}
 	tnode := &TNode{}
@@ -785,6 +786,8 @@ func Resize(t *Trie, tn *KeyVector) *KeyVector {
 	 * これにより、RCUが完全に機能し、我々が干渉することを防ぐ。
 	 */
 	if tn != getChild(tp, cindex) {
+		fmt.Printf("tn=%v, parent=%v, child=%v\n", tn, tp, getChild(tp, cindex))
+		fmt.Printf("Key=%32b, Pos=%d, Bits=%d, Slen=%d\n", tn.Key, tn.Pos, tn.Bits, tn.Slen)
 		panic("BUG: tn does not match parent child")
 	}
 
@@ -801,7 +804,7 @@ func Resize(t *Trie, tn *KeyVector) *KeyVector {
 		tn = getChild(tp, cindex)
 	}
 	fmt.Println("after inflate")
-	DebugPrint(t)
+	// DebugPrint(t)
 
 	/* inflateが失敗した場合、親を更新 */
 	tp = nodeParent(tn)
@@ -824,7 +827,7 @@ func Resize(t *Trie, tn *KeyVector) *KeyVector {
 		tn = getChild(tp, cindex)
 	}
 	fmt.Println("after halve")
-	DebugPrint(t)
+	// DebugPrint(t)
 
 	/* 子が1つだけ残っている場合 */
 	if shouldCollapse(tn) {
@@ -964,15 +967,15 @@ func FibInsertNode(t *Trie, tp *KeyVector, new *FibAlias, key Key) int {
 	nodeInitParent(l, tp)
 	putChildRoot(tp, key, l)
 	fmt.Printf("In FibInsertNode tp = %v\n", tp)
-	DebugPrint(t)
+	// DebugPrint(t)
 	trieRebalance(t, tp)
 
 	return 0
 }
 
 
-// DebugPrint prints the trie structure (for debugging purposes).
-func DebugPrint(t *Trie) {
+// // DebugPrint prints the trie structure (for debugging purposes).
+func  DebugPrint(t *Trie) {
 	var printNode func(node *KeyVector, depth int)
 	printNode = func(node *KeyVector, depth int) {
 		if node == nil {
@@ -1002,13 +1005,32 @@ func fls(value uint32) uint8 {
 		return 0
 	}
 	// bits.Lenは1ベースのビット長を返すため、そのまま利用
-	return uint8(bits.Len(uint(value)))
+	return uint8(bits.Len(uint(value)))-1 
 }
 
 
 
 func FibInsert(t *Trie, key Key, fa *FibAlias) int {
 	var tp *KeyVector
-	FibFindNode(t, &tp, key)
+	l := FibFindNode(t, &tp, key)
+	if l != nil {
+		// キーがすでに存在する
+		return -1
+	}
 	return FibInsertNode(t, tp, fa, key)
+}
+
+// アクセスする回数としている。root の深さを1としている。
+func GetDepth(t *Trie, key Key) int {
+	var tp *KeyVector
+	l := FibFindNode(t, &tp, key)
+	depth := 0
+	for {
+		if l == nil {
+			break
+		}
+		l = nodeParent(l)
+		depth += 1
+	}
+	return depth 
 }

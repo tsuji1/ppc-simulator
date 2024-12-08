@@ -147,3 +147,9 @@ func GetRandomIP() IPaddress {
 
 	return ip
 }
+
+func GetRandomPrefix() uint8 {
+	rand.NewSource(time.Now().UnixNano())
+	
+	return uint8(rand.Intn(32)+1)
+}
