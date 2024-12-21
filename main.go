@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -25,6 +26,7 @@ import (
 	. "test-module/cache"
 	"test-module/db"
 	"test-module/ipaddress"
+	"test-module/memorytrace"
 	"test-module/routingtable"
 	"test-module/simulator"
 	"time"
@@ -764,6 +766,34 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 
 }
 
+func generateFileName() string {
+	// 現在時刻を取得
+	currentTime := time.Now()
+	timestamp := currentTime.Format("200601021504") // フォーマット YYYYMMDDHHMM
+
+	// ランダムな文字列を生成
+	randomString := generateRandomString(8) // 長さ8のランダム文字列
+
+	// ファイル名を構築
+	fileName := fmt.Sprintf("memorytrace-%s-%s.txt", timestamp, randomString)
+	return fileName
+}
+
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	b := make([]byte, length)
+	_, err := rand.Read(b)
+	if err != nil {
+		panic("ランダム文字列の生成に失敗しました")
+	}
+
+	// charsetからランダムな文字を選択
+	for i := range b {
+		b[i] = charset[b[i]%byte(len(charset))]
+	}
+	return string(b)
+}
+
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
 func main() {
@@ -844,7 +874,6 @@ func main() {
 		}
 		simDef := simulator.InitializedSimulatorDefinition(simulatorDefinition)
 		interval := simDef.Interval
-		interval = 10000000000000000
 		simDef.Rule = *rulefile
 		// fp, _ := os.Open(rulefile)
 
@@ -859,33 +888,38 @@ func main() {
 	} else {
 		wg := new(sync.WaitGroup)
 		queue := make(chan simulator.SimpleCacheSimulator, 4)
-		capacityStart, err := strconv.Atoi(os.Getenv("CAPACITY_START"))
 
+		// キャッシュ容量の範囲を取得
+
+		// キャッシュ容量のスタートを定義
+		capacityStart, err := strconv.Atoi(os.Getenv("CAPACITY_START"))
 		if err != nil {
 			panic(err)
 		}
+
+		// キャッシュ容量のエンドを定義
 		capacityEnd, err := strconv.Atoi(os.Getenv("CAPACITY_END"))
 		if err != nil {
 			panic(err)
 		}
+
+		// キャッシュ容量の倍率を定義
 		capacityMultiplier, err := strconv.Atoi(os.Getenv("CAPACITY_MULTIPLIER"))
 		if err != nil {
 			panic(err)
 		}
 
+		// キャッシュ容量のリストを生成
 		capacity := make([]int, 0, 30)
 		for i := capacityStart; i <= capacityEnd; i++ {
 			capacity = append(capacity, 1<<uint(i*capacityMultiplier))
 		}
 
-		// print capacity
 		fmt.Print("capacity: ")
 		for _, c := range capacity {
 			fmt.Print(c, ",")
 		}
-		fmt.Println()
 
-		// 1 から 32 までの refbits 値のリストを生成
 		traceFileName := filepath.Base(*trace)
 
 		var ruleFileName string
@@ -907,6 +941,7 @@ func main() {
 		var completedTasks int
 		var totalDuration time.Duration
 		var mu sync.Mutex // 進捗状況を守るためのMutex
+
 		for i := 0; i < runtime.NumCPU()-3; i++ {
 			wg.Add(1)
 			go func() {
@@ -914,16 +949,12 @@ func main() {
 				for sim := range queue {
 					tempsim := sim
 
-					// dbに追加
-					// データを挿入
-					// すでにデータが存在するか確認
-					// 存在しない場合のみデータを挿入
-					// forceupdate が true の場合は、データを強制的に挿入
-					// parambson, err := tempsim.SimDefinition.GetParameterBson()
 					param, err := tempsim.SimDefinition.GetParameter()
 					if err != nil {
 						panic(err)
 					}
+
+					ruleFileName = filepath.Base(*rulefile)
 
 					ex, err := mongoDB.IsResultExist(ctx,
 						param,
@@ -931,14 +962,16 @@ func main() {
 						tempsim.SimDefinition.Cache.Type,
 						ruleFileName,
 						traceFileName)
+
+					// err の場合と
 					if err != nil {
 						// エラーが発生した場合、エラーハンドリングを行う
-
 						panic(err)
 					}
 					startTime := time.Now()
+					// resultが存在する場合にはスキップ
 
-					if !ex || *forceupdate {
+					if ex==nil || *forceupdate {
 
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
@@ -963,6 +996,8 @@ func main() {
 					// forceupdate が true またはデータが存在しない場合に挿入
 
 					mu.Unlock()
+					filename := generateFileName()
+					memorytrace.WriteDRAMAccessesToFile(filename)
 				}
 			}()
 		}
@@ -990,8 +1025,18 @@ func main() {
 
 		} else if cachetype == "MultiLayerCacheExclusive" {
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheExclusive")
-			refbitsRange := make([]int, 0, 32)
 
+			// ruleFileName := filepath.Base(*rulefile)
+			// settings,err := mongoDB.GetForDepth(
+			// 	ctx,
+			// 	ruleFileName,
+			// 	traceFileName,
+			// )
+			// if err != nil {
+			// 	panic(err)
+			// }
+
+			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
 			for i := 2; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
@@ -1017,11 +1062,9 @@ func main() {
 
 			fmt.Println("Total tasks:", totalTask)
 
-			ruleFileName := filepath.Base(*rulefile)
 			fmt.Printf("rulefile:%v", rulefile)
 			fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
 
-			// 各タスクに対してWaitGroupを増加させ、キューに送信
 			for i, setting := range settngs {
 				if i > *skip {
 					newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
@@ -1036,6 +1079,30 @@ func main() {
 					queue <- *cacheSim
 				}
 			}
+			// 各タスクに対してWaitGroupを増加させ、キューに送信
+			// for i, setting := range settings {
+			// 	if i > *skip {
+			// 	baseSimulatorDefinition, err := simulator.NewSimulatorDefinition("MultiLayerCacheExclusive")
+			// 	if err != nil {
+
+			// 		panic(err)
+			// 	}
+			// 	if(len(setting) == 3){
+			// 		baseSimulatorDefinition.AddCacheLayer(nil);
+
+			// 	}
+			// 		newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
+			// 		newSim.DebugMode = false
+
+			// 		newSim.Interval = 100000000
+			// 		cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+
+			// 		if err != nil {
+			// 			panic(err)
+			// 		}
+			// 		queue <- *cacheSim
+			// 	}
+			// }
 
 		} else {
 			panic("not supported cache type")

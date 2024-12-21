@@ -90,9 +90,9 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) ParameterString() string {
 func (cache *NWaySetAssociativeDstipNbitLRUCache) Parameter() Parameter {
 	return &NbitSetAssociativeParameter{
 		Type:    cache.Description(),
-		Way:     cache.Way,
-		Size:    cache.Size,
-		Refbits: uint8(cache.Refbits),
+		Way:     int(cache.Way),
+		Size:    int(cache.Size),
+		Refbits: int(cache.Refbits),
 	}
 }
 func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) *NWaySetAssociativeDstipNbitLRUCache {

@@ -1,8 +1,9 @@
 package lpctrie
 
 import (
-	"fmt"
 	"math/bits"
+	"unsafe"
+	"test-module/memorytrace"
 
 	"github.com/shuc324/gopush-cluster/hlist"
 )
@@ -20,6 +21,7 @@ const (
 	MaxWork          = 10
 	MaxStatDepth    = 32
 	KeyMax               =  ^Key(0)
+	MemoryLatency		=  50
 )
 
 
@@ -72,8 +74,7 @@ type KeyVector struct {
     Slen  uint8          // Suffix length
     Leaf  *hlist.Hlist     // List pointer for leaf nodes
     TNode []*KeyVector   // Child nodes for internal nodes
-	TnodeInfo *TNode // 上のTNodeにアクセスするためのポインタ
-	
+	TnodeInfo *TNode // 上のTNodeにアクセスするためのポインタこれは実装はない＞
 }
 
 // TNode represents a parent node in the trie
@@ -188,7 +189,6 @@ func getIndex(key Key, kv *KeyVector) uint32  {
 // 	if  KeyLength == kv.pos {
 // 		return 0
 // 	}
-
 // 	return uint64(index >> kv.pos)
 // }
 
@@ -257,7 +257,7 @@ func tnodeNew(key Key, pos uint8, bits uint8) *KeyVector {
 
 	// 条件チェック: bits や pos の値が有効か
 	if bits == 0 || shift > KeyLength { // Assuming KEYLENGTH = 64 for uint64
-		fmt.Printf("Invalid bits or position: bits=%d, pos=%d\n", bits, pos)
+		// fmt.Printf("Invalid bits or position: bits=%d, pos=%d\n", bits, pos)
 		panic("Invalid bits or position") // BUG_ON に相当
 	}
 	tnode := &TNode{}
@@ -302,7 +302,7 @@ func putChild(tn *KeyVector, i uint32, n *KeyVector) {
 
 	// インデックスが範囲外の場合はエラー
 	if i >= childLength(tn) {
-		fmt.Printf("Index out of range i=%d,tn=%v \n",i,tn)
+		// fmt.Printf("Index out of range i=%d,tn=%v \n",i,tn)
 		panic("インデックスが範囲外です") // C の BUG_ON 相当
 	}
 
@@ -339,7 +339,7 @@ func putChild(tn *KeyVector, i uint32, n *KeyVector) {
 		// newChildren[i] = n
 		// tn.TNode = newChildren
 		
-		fmt.Printf("Index out of range i=%d,tn=%v \n",i,tn)
+		// fmt.Printf("Index out of range i=%d,tn=%v \n",i,tn)
 
 		panic("インデックスが範囲外です") // C の BUG_ON 相当
 	}
@@ -392,7 +392,7 @@ func isLeaf(n *KeyVector) bool {
 // putChildRootはトライのルートノードまたは通常ノードに子ノードを設定します
 func putChildRoot(tp *KeyVector, key Key, n *KeyVector) {
 	if isTrie(tp) {
-		fmt.Printf("Root node is  trie: %v\n", tp)
+		// fmt.Printf("Root node is  trie: %v\n", tp)
 		// ルートノードの場合、インデックス0に設定
 		tp.TNode[0] = n
 	} else {
@@ -434,7 +434,7 @@ func Replace(t *Trie, oldTNode, tn *KeyVector) *KeyVector {
 	// if t == nil || oldTNode == nil || tn == nil {
 	// 	return nil
 	// }
-	fmt.Println("In replace")
+	// fmt.Println("In replace")
 
 	// 親ノードを取得
 	
@@ -468,7 +468,7 @@ func Replace(t *Trie, oldTNode, tn *KeyVector) *KeyVector {
 
 // inflateは古いノードを展開し、新しいノードに置き換えます
 func Inflate(t *Trie, oldTNode *KeyVector) *KeyVector {
-	fmt.Println("In inflate")
+	// fmt.Println("In inflate")
 	if oldTNode == nil {
 		return nil
 	}
@@ -476,7 +476,7 @@ func Inflate(t *Trie, oldTNode *KeyVector) *KeyVector {
 	// 新しいノードを作成
 	tn := tnodeNew(oldTNode.Key, oldTNode.Pos-1, oldTNode.Bits+1)
 	if tn == nil {
-		fmt.Println("ノード作成に失敗しました")
+		// fmt.Println("ノード作成に失敗しました")
 		return nil
 	}
 
@@ -507,7 +507,6 @@ func Inflate(t *Trie, oldTNode *KeyVector) *KeyVector {
 		}
 		
 		if(inode.Bits == 1){
-
 			putChild(tn,2 *i +1,getChild(inode,1));
 			putChild(tn,2 *i,getChild(inode,0));
 			continue
@@ -529,7 +528,7 @@ func Inflate(t *Trie, oldTNode *KeyVector) *KeyVector {
 		node0 := tnodeNew(inode.Key, inode.Pos, inode.Bits-1)
 
 		if node0 == nil || node1 == nil {
-			fmt.Println("メモリ不足でノード作成に失敗しました")
+			// fmt.Println("メモリ不足でノード作成に失敗しました")
 			return nil
 		}
 
@@ -561,7 +560,7 @@ func Inflate(t *Trie, oldTNode *KeyVector) *KeyVector {
 
 
 func Halve(t *Trie, oldtnode *KeyVector) *KeyVector {
-	fmt.Println("In halve")
+	// fmt.Println("In halve")
 
 	tn := tnodeNew(oldtnode.Key, oldtnode.Pos+1, oldtnode.Bits-1)
 
@@ -612,7 +611,7 @@ func Halve(t *Trie, oldtnode *KeyVector) *KeyVector {
 
 
 func Collapse(t *Trie, oldtnode *KeyVector) *KeyVector {
-	fmt.Println("In collapse")
+	// fmt.Println("In collapse")
 	var n *KeyVector 
 	var tp *KeyVector
 
@@ -780,14 +779,14 @@ func Resize(t *Trie, tn *KeyVector) *KeyVector {
 	maxWork := MaxWork
 
 	// tnode_resize内でのデバッグ情報出力
-	fmt.Printf("In tnode_resize %p inflate_threshold=%d threshold=%d\n", tn, InflateThreshold, HalveThreshold)
+	// fmt.Printf("In tnode_resize %p inflate_threshold=%d threshold=%d\n", tn, InflateThreshold, HalveThreshold)
 
 	/* 親からのポインタを介してtnodeを追跡。
 	 * これにより、RCUが完全に機能し、我々が干渉することを防ぐ。
 	 */
 	if tn != getChild(tp, cindex) {
-		fmt.Printf("tn=%v, parent=%v, child=%v\n", tn, tp, getChild(tp, cindex))
-		fmt.Printf("Key=%32b, Pos=%d, Bits=%d, Slen=%d\n", tn.Key, tn.Pos, tn.Bits, tn.Slen)
+		// fmt.Printf("tn=%v, parent=%v, child=%v\n", tn, tp, getChild(tp, cindex))
+		// fmt.Printf("Key=%32b, Pos=%d, Bits=%d, Slen=%d\n", tn.Key, tn.Pos, tn.Bits, tn.Slen)
 		panic("BUG: tn does not match parent child")
 	}
 
@@ -803,7 +802,7 @@ func Resize(t *Trie, tn *KeyVector) *KeyVector {
 		maxWork--
 		tn = getChild(tp, cindex)
 	}
-	fmt.Println("after inflate")
+	// fmt.Println("after inflate")
 	// DebugPrint(t)
 
 	/* inflateが失敗した場合、親を更新 */
@@ -826,7 +825,7 @@ func Resize(t *Trie, tn *KeyVector) *KeyVector {
 		maxWork--
 		tn = getChild(tp, cindex)
 	}
-	fmt.Println("after halve")
+	// fmt.Println("after halve")
 	// DebugPrint(t)
 
 	/* 子が1つだけ残っている場合 */
@@ -859,9 +858,9 @@ func nodePushSuffix(tn *KeyVector, slen uint8) {
 	if tn == nil {
 		panic("ノードがnilです")
 	}
-	fmt.Println("In nodePushSuffix")
+	// fmt.Println("In nodePushSuffix")
 	for tn != nil && tn.Slen < slen {
-		fmt.Printf("tn.Slen=%d slen=%d\n", tn.Slen, slen)
+		// fmt.Printf("tn.Slen=%d slen=%d\n", tn.Slen, slen)
 		tn.Slen = slen
 		tn = nodeParent(tn)
 	}
@@ -916,9 +915,8 @@ func FibFindNode(t *Trie, tp **KeyVector, key Key) *KeyVector {
 // trieRebalance: トライを再バランスする
 func trieRebalance(t *Trie, tn *KeyVector) {
 
-	resizeCount := 0
 	for !isTrie(tn) {
-		fmt.Printf("In trieRebalance %v,resizeCount=%d\n", tn,resizeCount)
+		// fmt.Printf("In trieRebalance %v,resizeCount=%d\n", tn,resizeCount)
 		tn = Resize(t, tn)
 	}
 }
@@ -927,7 +925,7 @@ func trieRebalance(t *Trie, tn *KeyVector) {
 func FibInsertNode(t *Trie, tp *KeyVector, new *FibAlias, key Key) int {
 	l := leafNew(key, new)
 
-	fmt.Printf("In FibInsertNode %v\n", l)
+	// fmt.Printf("In FibInsertNode %v\n", l)
 	if l == nil {
 		// 新しいリーフの作成に失敗
 		panic("メモリ不足")
@@ -966,7 +964,7 @@ func FibInsertNode(t *Trie, tp *KeyVector, new *FibAlias, key Key) int {
 	nodePushSuffix(tp, new.FaSlen)
 	nodeInitParent(l, tp)
 	putChildRoot(tp, key, l)
-	fmt.Printf("In FibInsertNode tp = %v\n", tp)
+	// fmt.Printf("In FibInsertNode tp = %v\n", tp)
 	// DebugPrint(t)
 	trieRebalance(t, tp)
 
@@ -987,8 +985,8 @@ func  DebugPrint(t *Trie) {
 			prefix += "  "
 		}
 
-		fmt.Printf("%sNode: Key=%32b, Pos=%d, Bits=%d, Slen=%d\n",
-			prefix, node.Key, node.Pos, node.Bits, node.Slen)
+		// fmt.Printf("%sNode: Key=%32b, Pos=%d, Bits=%d, Slen=%d\n",
+			// prefix, node.Key, node.Pos, node.Bits, node.Slen)
 		for _, child := range node.TNode {
 			printNode(child, depth+1)
 		}
@@ -1024,12 +1022,22 @@ func FibInsert(t *Trie, key Key, fa *FibAlias) int {
 func GetDepth(t *Trie, key Key) int {
 	var tp *KeyVector
 	l := FibFindNode(t, &tp, key)
+	if(l == nil){
+		l=tp
+	}
 	depth := 0
+	addingcycle := uint64(1)
+	nowCycle := memorytrace.GetCycleCounter()
 	for {
 		if l == nil {
 			break
 		}
 		l = nodeParent(l)
+		if(l != nil){
+		cycle := nowCycle+addingcycle+MemoryLatency
+		dramAccess := memorytrace.NewDRAMAccess(cycle,uintptr(unsafe.Pointer(l)))
+		memorytrace.AddDRAMAccess(dramAccess)
+		}
 		depth += 1
 	}
 	return depth 

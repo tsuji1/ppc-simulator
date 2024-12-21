@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"test-module/ipaddress"
+	"test-module/lpctrie"
 	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -23,6 +24,8 @@ type RoutingTablePatriciaTrie struct {
 	SearchIpCache            *lru.Cache[string, Result]
 	SearchIpCacheHit         int
 	SearchIpCacheTotal       int
+	LpcTrie 				*lpctrie.Trie
+	
 }
 
 // Data は、ルーティング情報を深さとネクストホップで保持するデータ構造です。
@@ -244,22 +247,19 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 
 		ip := ipaddress.NewIPaddress(slice[0])
 		i, _ := strconv.Atoi(slice[1])
-		a := ip.MaskedBitString(i)
 
 		var item Data
 		item.NextHop = slice[2]
+		fibalias := &lpctrie.FibAlias{FaSlen: uint8(i)}
 
-		// プレフィックスの長さに基づいて深さを設定
-		if len(a) <= 16 {
-			item.Depth = 2
-		} else if len(a) <= 24 {
-			item.Depth = 3
-		} else if len(a) <= 32 {
-			item.Depth = 4
-		}
+		lpctrie.FibInsert(routingtable.LpcTrie, lpctrie.Key(ip.Uint32()),  fibalias)
 		// routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(refbits)), nil)
 		routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(i)), item)
 	}
+}
+
+func (routingtable *RoutingTablePatriciaTrie) GetDepth(dstIP uint32) int{
+	return lpctrie.GetDepth(routingtable.LpcTrie,lpctrie.Key(dstIP))
 }
 
 // NewRoutingTablePatriciaTrie は、Patricia Trieを用いた新しいルーティングテーブルを初期化します。
@@ -267,6 +267,7 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 	trie := patricia.NewTrie(patricia.MaxPrefixPerNode(33), patricia.MaxChildrenPerSparseNode(257))
 	l, _ := lru.New[string, bool](2048)
 	s, _ := lru.New[string, Result](2048)
+	lpctrie := lpctrie.NewTrie()
 
 	return &RoutingTablePatriciaTrie{
 		RoutingTablePatriciaTrie: trie,
@@ -276,6 +277,7 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 		SearchIpCache:            s,
 		SearchIpCacheHit:         0,
 		SearchIpCacheTotal:       0,
+		LpcTrie: lpctrie,
 	}
 }
 

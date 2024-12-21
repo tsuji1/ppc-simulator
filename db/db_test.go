@@ -239,7 +239,6 @@ func TestIsExistResult(t *testing.T) {
 	if exists {
 		t.Errorf("Expected result to not exist, but it does")
 	}
-
 }
 
 // DeleteResult をテスト

@@ -1,8 +1,9 @@
-package lpctrie
+package lpctrie_test
 
 import (
 	"fmt"
 	"test-module/ipaddress"
+    . "test-module/lpctrie"
 	"testing"
 )
 
@@ -111,7 +112,11 @@ func TestFibRandomInsert(t *testing.T) {
     for i:=0; i<1000; i++ {
         key := Key(ipaddress.GetRandomIP().Uint32())
         randomSlen := ipaddress.GetRandomPrefix()
-        alias := &FibAlias{FaSlen: randomSlen}
+        randomuint32 := ipaddress.GetRandomIP().Uint32()
+        alias := &FibAlias{
+            FaSlen: randomSlen,
+            TbID: randomuint32,
+        }
         
         l = FibFindNode(trie, &tp, key)
         if l != nil {
@@ -131,7 +136,16 @@ func TestFibRandomInsert(t *testing.T) {
             t.Errorf("Expected to find inserted node, got nil")
         } else if l.Key != key {
             t.Errorf("Key mismatch: expected %v, got %v", key, l.Key)
+        }else{ 
+            fmt.Printf("Value type: %T\n", l.Leaf.Front().Value)
+
+            resultTbID := l.Leaf.Front().Value.(*FibAlias).TbID
+            if resultTbID != alias.TbID{
+                t.Errorf("TbID mismatch: expected %v, got %v", alias.TbID, resultTbID)
+            }
+
         }
+
         depth := GetDepth(trie,key)
         fmt.Println("Depth: ", depth)
     } 

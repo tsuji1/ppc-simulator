@@ -75,9 +75,9 @@ type SetAssociativeParameter struct {
 // NbitSetAssociativeParameter 構造体
 type NbitSetAssociativeParameter struct {
 	Type    string
-	Size    uint
-	Way     uint
-	Refbits uint8
+	Size    int
+	Way     int
+	Refbits int
 }
 
 type MultiCacheParameter struct {

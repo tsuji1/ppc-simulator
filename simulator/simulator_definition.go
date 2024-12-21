@@ -138,9 +138,9 @@ func MakeParameterBson(c Cache) (bson.M, error) {
 	case strings.HasPrefix(paramType, "NbitNWaySetAssociative"):
 		param = &cache.NbitSetAssociativeParameter{
 			Type:    paramType,
-			Size:    uint(c.Size),
-			Way:     uint(c.Way),
-			Refbits: uint8(c.Refbits),
+			Size:    int(c.Size),
+			Way:     int(c.Way),
+			Refbits: int(c.Refbits),
 		}
 	case strings.HasPrefix(paramType, "NWaySetAssociative"):
 		param = &cache.SetAssociativeParameter{
@@ -219,9 +219,9 @@ func MakeParameter(c Cache) (cache.Parameter, error) {
 	case strings.HasPrefix(paramType, "NbitNWaySetAssociative"):
 		param = &cache.NbitSetAssociativeParameter{
 			Type:    paramType,
-			Size:    uint(c.Size),
-			Way:     uint(c.Way),
-			Refbits: uint8(c.Refbits),
+			Size:    int(c.Size),
+			Way:     int(c.Way),
+			Refbits: int(c.Refbits),
 		}
 	case strings.HasPrefix(paramType, "NWaySetAssociative"):
 		param = &cache.SetAssociativeParameter{
@@ -273,7 +273,8 @@ func (s *SimulatorDefinition) GetCacheLayerCount() int {
 func (s *SimulatorDefinition) AddCacheLayer(layer *Cache) {
 	if layer == nil {
 		l := Cache{
-			Type:    "NbitNWaySetAssociativeDstipLRUCache",
+			// Type:    "NbitNWaySetAssociativeDstipLRUCache",
+			Type: "NbitNWaySetAssociativeDstipLRUCache",
 			Size:    64,
 			Way:     4,
 			Refbits: 32,
@@ -432,11 +433,14 @@ func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 			CacheLayers: []Cache{
 				{
 					Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					Size:   64,
 					Way:     4,
 					Refbits: 32,
 				},
 				{
-					Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					// Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					Type:   "NbitNWaySetAssociativeDstipLRUCache",
+					Size : 64,
 					Way:     4,
 					Refbits: 16,
 				},
