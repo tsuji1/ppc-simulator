@@ -996,8 +996,8 @@ func main() {
 					// forceupdate が true またはデータが存在しない場合に挿入
 
 					mu.Unlock()
-					filename := generateFileName()
-					memorytrace.WriteDRAMAccessesToFile(filename)
+					// filename := generateFileName()
+					// memorytrace.WriteDRAMAccessesToFile(filename)
 				}
 			}()
 		}
