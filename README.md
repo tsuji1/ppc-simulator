@@ -5,6 +5,7 @@
 
 ルーティングテーブルのルールは.ruleでruleディレクトリ以下
 
+go tool pprof -http=localhost:8080 cpu.prof
 
 
 ## 長田さんメモ
