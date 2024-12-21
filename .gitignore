@@ -31,3 +31,4 @@ pcap/*
 .env
 vendor/
 
+memorytrace-*
