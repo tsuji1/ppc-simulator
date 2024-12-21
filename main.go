@@ -26,7 +26,6 @@ import (
 	. "test-module/cache"
 	"test-module/db"
 	"test-module/ipaddress"
-	"test-module/memorytrace"
 	"test-module/routingtable"
 	"test-module/simulator"
 	"time"
@@ -1049,8 +1048,14 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
+			
+
+			refbitsMultiplier, err := strconv.Atoi(os.Getenv("REFBITS_MULTIPLIER"))
+			if err != nil {
+				panic(err)
+			}
 			fmt.Print("refbitsRange: ")
-			for i := refbitsStart; i <= refbitsEnd; i++ {
+			for i := refbitsStart; i <= refbitsEnd; i=i+refbitsMultiplier {
 				refbitsRange = append(refbitsRange, i)
 				fmt.Print("%d,", i)
 			}
