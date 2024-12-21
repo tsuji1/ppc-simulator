@@ -70,7 +70,6 @@ func NewTestMongoDB() (*MongoDB, error) {
 func (db *MongoDB) Close(ctx context.Context) error {
 	return db.Client.Disconnect(ctx)
 }
-
 // SimulatorResultWithMetadata 構造体
 type SimulatorResultWithMetadataWithRuleFileName struct {
 	ID 			primitive.ObjectID        `bson:"_id"`             // ID
@@ -89,8 +88,8 @@ type SimulatorResultWithMetadataWithRuleFileName struct {
 }
 
 type SimulatorResultWithMetadata struct {
-	ID 			primitive.ObjectID        `bson:"_id"`             // ID
 	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
+	RuleFileName string `bson:"rule_file_name"` // ルールファイル名
 	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
 	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
@@ -103,7 +102,7 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 
 	if simulatorResult.Type == "MultiLayerCacheExclusive" {
 		// SimulatorResultWithMetadata 構造体を作成
-		var simulatorResultWithMetadata SimulatorResultWithMetadataWithRuleFileName
+		var simulatorResultWithMetadata SimulatorResultWithMetadata
 		simulatorResultWithMetadata.SimulatorResult = simulatorResult
 		simulatorResultWithMetadata.Timestamp = time.Now()
 		simulatorResultWithMetadata.RuleFileName = ruleFileName

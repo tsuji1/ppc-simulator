@@ -974,6 +974,7 @@ func main() {
 
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
+						fmt.Println(stat)
 						err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
 						if err != nil {
 							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
@@ -1012,7 +1013,7 @@ func main() {
 				if i > *skip {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
 					fmt.Print("newSim: ")
-					newSim.Interval = 1000000000
+					newSim.Interval = 100000000000
 					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
 					fmt.Print("cacheSim: ")
 					if err != nil {
@@ -1075,7 +1076,7 @@ func main() {
 					newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
 					newSim.DebugMode = debugmode
 
-					newSim.Interval = 100000000
+					newSim.Interval = 100000000000
 					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
 
 					if err != nil {

@@ -2,8 +2,8 @@ package lpctrie
 
 import (
 	"math/bits"
-	"unsafe"
 	"test-module/memorytrace"
+	"unsafe"
 
 	"github.com/shuc324/gopush-cluster/hlist"
 )
@@ -1036,7 +1036,8 @@ func GetDepth(t *Trie, key Key) int {
 		if(l != nil){
 		cycle := nowCycle+addingcycle+MemoryLatency
 		dramAccess := memorytrace.NewDRAMAccess(cycle,uintptr(unsafe.Pointer(l)))
-		memorytrace.AddDRAMAccess(dramAccess)
+		_ = dramAccess
+		// memorytrace.AddDRAMAccess(dramAccess)
 		}
 		depth += 1
 	}
