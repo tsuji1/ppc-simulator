@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"test-module/cache"
+	"test-module/memorytrace"
 
 	"test-module/routingtable"
 )
@@ -19,6 +20,7 @@ type SimpleCacheSimulator struct {
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
 // パケットがキャッシュにヒットしたかどうかを返します。
 func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
+	memorytrace.IncrementCycleCounter()
 	switch pkt := p.(type) {
 	case *cache.Packet:
 		// キャッシュを検索
@@ -58,6 +60,7 @@ func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
 		fmt.Println("Unsupported packet type")
 		return false
 	}
+	
 
 }
 

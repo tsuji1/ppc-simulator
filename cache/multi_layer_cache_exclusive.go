@@ -285,7 +285,7 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	c.LongestMatchMap[len(prefix[prefix_size])] += 1
 
 	// プレフィックスの深さの合計を更新
-	// c.DepthSum += prefix_item[prefix_size].(routingtable.Data).Depth
+	c.DepthSum += uint64(c.RoutingTable.GetDepth(f.DstIP))
 
 	// キャッシュ挿入の条件をチェック
 	// 最長一致したIPアドレスのプレフィックスがキャッシュ参照ビット以下である場合 + 葉ノードである場合
