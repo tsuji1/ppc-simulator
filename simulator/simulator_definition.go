@@ -274,7 +274,7 @@ func (s *SimulatorDefinition) AddCacheLayer(layer *Cache) {
 	if layer == nil {
 		l := Cache{
 			// Type:    "NbitNWaySetAssociativeDstipLRUCache",
-			Type: "NbitNWaySetAssociativeDstipLRUCache",
+			Type:    "NbitNWaySetAssociativeDstipLRUCache",
 			Size:    64,
 			Way:     4,
 			Refbits: 32,
@@ -433,14 +433,14 @@ func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 			CacheLayers: []Cache{
 				{
 					Type:    "NbitNWaySetAssociativeDstipLRUCache",
-					Size:   64,
+					Size:    64,
 					Way:     4,
 					Refbits: 32,
 				},
 				{
 					// Type:    "NbitNWaySetAssociativeDstipLRUCache",
-					Type:   "NbitNWaySetAssociativeDstipLRUCache",
-					Size : 64,
+					Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					Size:    64,
 					Way:     4,
 					Refbits: 16,
 				},
@@ -482,17 +482,17 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 			// current のコピーを作成して結果に追加。直接追加すると current の参照が使われるため、コピーが必要。
 			combination := make([][2]int, layers)
 			copy(combination, current)
-			if combination[0][1] == 32 {
+			// if combination[0][1] == 32 {
 				// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
-				results = append(results, combination)
-			}
+			results = append(results, combination)
+			// }
 			return
 		}
 		// capacity と refbitsRange のすべての組み合わせを試す。
 		for _, cap := range capacity {
 			for _, ref := range refbitsRange {
 				// 最初の階層では制約がないが、2階層目以降では前の refbits より小さい値のみ許可する。
-				if index == 0 || ref < prevRefbits {
+				if index == 0 || ref+2 < prevRefbits {
 					// 現在の階層に [capacity, refbits] の組み合わせを保存。
 					current[index] = [2]int{cap, ref}
 					// 次の階層へ再帰的に探索を続ける。prevRefbits を現在の ref に更新。
