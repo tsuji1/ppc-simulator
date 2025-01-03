@@ -161,7 +161,9 @@ func init() {
 			traceBase := filepath.Base(*trace)
 			ruleBase := filepath.Base(*rulefile)
 			if extractDigits(traceBase) != extractDigits(ruleBase) {
-				panic("rulefileとtracefileの数字が一致しません")
+				// panic("rulefileとtracefileの文字が一致しません")
+				fmt.Printf("rulefileとtracefileの文字が一致しませんが無視します。")
+
 			}
 			handle, err := pcap.OpenOffline(*trace)
 			if err != nil {
