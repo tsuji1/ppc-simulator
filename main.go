@@ -970,7 +970,7 @@ func main() {
 					startTime := time.Now()
 					// resultが存在する場合にはスキップ
 
-					if ex==nil || *forceupdate {
+					if ex == nil || *forceupdate {
 
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
@@ -1041,26 +1041,30 @@ func main() {
 			for i := 2; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
-			refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
-			if err != nil {
-				panic(err)
-			}
-			refbitsEnd, err := strconv.Atoi(os.Getenv("REFBITS_END"))
-			if err != nil {
-				panic(err)
-			}
-			
+			// refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
+			// if err != nil {
+			// 	panic(err)
+			// }
+			// refbitsEnd, err := strconv.Atoi(os.Getenv("REFBITS_END"))
+			// if err != nil {
+			// 	panic(err)
+			// }
 
-			refbitsMultiplier, err := strconv.Atoi(os.Getenv("REFBITS_MULTIPLIER"))
-			if err != nil {
-				panic(err)
-			}
+			// refbitsMultiplier, err := strconv.Atoi(os.Getenv("REFBITS_MULTIPLIER"))
+			// if err != nil {
+			// 	panic(err)
+			// }
 			fmt.Print("refbitsRange: ")
-			for i := refbitsStart; i <= refbitsEnd; i=i+refbitsMultiplier {
+			for i := 16; i <= 24; i++ {
 				refbitsRange = append(refbitsRange, i)
-				fmt.Print("%d,", i)
 			}
-			refbitsRange = append(refbitsRange, 32)
+			for i := 1; i <= 15; i = i + 3 {
+				refbitsRange = append(refbitsRange, i)
+			}
+			for i := 17; i <= 32; i = i + 3 {
+				refbitsRange = append(refbitsRange, i)
+			}
+			// refbitsRange = append(refbitsRange, 32)
 
 			settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
 			debugmode := false

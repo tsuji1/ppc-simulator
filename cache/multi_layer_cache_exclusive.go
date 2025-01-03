@@ -292,7 +292,6 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	// /nに挿入
 
 	hitLayer := 0
-	//最終的にはレイヤ0であるのでk=0は確認していない。
 	for k := len(c.CacheLayers) - 1; k > -2; k-- {
 		if k == -1 {
 			return make([]*FiveTuple, 0)
