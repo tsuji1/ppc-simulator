@@ -482,10 +482,10 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 			// current のコピーを作成して結果に追加。直接追加すると current の参照が使われるため、コピーが必要。
 			combination := make([][2]int, layers)
 			copy(combination, current)
-			// if combination[0][1] == 32 {
+			if combination[0][1] >= 24{
 				// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
 			results = append(results, combination)
-			// }
+			}
 			return
 		}
 		// capacity と refbitsRange のすべての組み合わせを試す。
