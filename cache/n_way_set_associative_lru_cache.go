@@ -1,6 +1,8 @@
 package cache
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"test-module/ipaddress"
@@ -33,15 +35,15 @@ func (cache *NWaySetAssociativeLRUCache) IsCached(p *Packet, update bool) (bool,
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
 
-// func fiveTupleToBigEndianByteArray(f *FiveTuple) []byte {  無視できないくらい遅いのでコメントアウト
-//
-//		var buf bytes.Buffer
-//		binary.Write(&buf, binary.BigEndian, *f)
-//		return buf.Bytes()
-//	}
+func fiveTupleToBigEndianByteArray(f *FiveTuple) []byte { //無視できないくらい遅いのでコメントアウト
+
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.BigEndian, *f)
+	return buf.Bytes()
+}
 func (cache *NWaySetAssociativeLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
-	idx := (uint(f.SrcIP) ^ uint(f.DstIP)) % maxSetIdx
+	idx := binary.BigEndian.Uint32(fiveTupleToBigEndianByteArray(f)) % uint32(maxSetIdx)
 	return uint(idx)
 }
 
