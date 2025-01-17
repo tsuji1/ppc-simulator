@@ -9,11 +9,12 @@ import (
 type IPProtocol uint8
 
 const (
-	IP_ICMP   IPProtocol = 1
-	IP_TCP    IPProtocol = 6
-	IP_UDP    IPProtocol = 17
-	IP_ICMPv6 IPProtocol = 58
-	IP_L2TP   IPProtocol = 115
+	IP_ICMP    IPProtocol = 1
+	IP_TCP     IPProtocol = 6
+	IP_UDP     IPProtocol = 17
+	IP_ICMPv6  IPProtocol = 58
+	IP_L2TP    IPProtocol = 115
+	IP_UNKNOWN IPProtocol = 0
 )
 
 // uint8 + uint32 x 2 + uint16 x2 = 104 byte
@@ -37,20 +38,20 @@ func Uint32ToIP(nn uint32) net.IP {
 	return ip
 }
 
-func StrToIPProtocol(proto string) IPProtocol {
+func StrToIPProtocol(proto string) (IPProtocol, error) {
 	switch proto {
 	case "ICMP", "icmp":
-		return IP_ICMP
+		return IP_ICMP, nil
 	case "TCP", "tcp":
-		return IP_TCP
+		return IP_TCP, nil
 	case "ICMPv6", "icmpv6":
-		return IP_ICMPv6
+		return IP_ICMPv6, nil
 	case "UDP", "udp":
-		return IP_UDP
+		return IP_UDP, nil
 	case "L2TP", "l2tp":
-		return IP_L2TP
+		return IP_L2TP, nil
 	default:
-		panic("Can't match any of the known protocols")
+		return IP_UNKNOWN, fmt.Errorf("Unknown protocol: %s", proto)
 	}
 }
 
@@ -62,7 +63,12 @@ func (p *Packet) FiveTuple() *FiveTuple {
 		proto64 = proto64 | uint64(p.Proto[i])
 	}
 
-	proto := StrToIPProtocol(p.Proto)
+	proto, err := StrToIPProtocol(p.Proto)
+	if err != nil {
+		fmt.Printf("Error: %v\n %v", err, p)
+		panic(err)
+	}
+
 	switch proto {
 	case IP_TCP, IP_UDP:
 		return &FiveTuple{
@@ -88,7 +94,12 @@ func (p *MinPacket) FiveTuple() *FiveTuple {
 		proto64 = proto64 | uint64(p.Proto[i])
 	}
 
-	proto := StrToIPProtocol(p.Proto)
+	proto,  err := StrToIPProtocol(p.Proto)
+	if err != nil {
+		fmt.Printf("Error: %v\n %v", err, p)
+		panic(err)
+	}
+
 	switch proto {
 	case IP_TCP, IP_UDP:
 		return &FiveTuple{
