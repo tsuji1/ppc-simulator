@@ -83,7 +83,7 @@ func init() {
 		}
 
 		switch ext {
-		case ".csv", ".tsv", ".p7":
+		case ".csv", ".tsv", ".p7",".dat",".txt":
 			// CSV/TSVファイル処理
 			fpCSV, err := os.Open(*trace)
 			if err != nil {
@@ -369,9 +369,23 @@ func parseCSVRecordToMinPacket(record []string, r *routingtable.RoutingTablePatr
 	default:
 		return nil, fmt.Errorf("expected record have 7 or 8 fields, but not: %d", len(record))
 	}
+	
+	if(recordProtoStr == "0x00" ){
+		fmt.Printf("recordProtoStr: %v\n",record)
+		return nil, fmt.Errorf("recordProtoStr is 0x00")
+	}
 
-	packet.SrcIP = IpToUInt32(net.ParseIP(recordSrcIPStr))
-	packet.DstIP = IpToUInt32(net.ParseIP(recordDstIPStr))
+	srcip := net.ParseIP(recordSrcIPStr)
+	if srcip == nil{
+		return nil, fmt.Errorf("srcip is nil")
+	}
+	packet.SrcIP = IpToUInt32(srcip)
+
+	dstip := net.ParseIP(recordDstIPStr)
+	if dstip == nil{
+		return nil, fmt.Errorf("dstip is nil")
+	}
+	packet.DstIP = IpToUInt32(dstip)
 	packet.Proto = strings.ToLower(recordProtoStr)
 
 	dstIP := ipaddress.NewIPaddress(packet.DstIP)
