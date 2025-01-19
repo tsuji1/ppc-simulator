@@ -1070,18 +1070,17 @@ func main() {
 			// if err != nil {
 			// 	panic(err)
 			// }
-			for i := 8; i <= 15; i = i + 3 {
-				refbitsRange = append(refbitsRange, i)
-			}
-			for i := 16; i <= 24; i++ {
-				refbitsRange = append(refbitsRange, i)
-			}
-			for i := 26; i <= 32; i = i + 3 {
+			// for i := 8; i <= 15; i = i + 3 {
+			// 	refbitsRange = append(refbitsRange, i)
+			// }
+			// for i := 16; i <= 24; i++ {
+			// 	refbitsRange = append(refbitsRange, i)
+			// }
+			for i := 16; i <= 32; i++  {
 				refbitsRange = append(refbitsRange, i)
 			}
 
 			fmt.Printf("refbitsRange: %v\n", refbitsRange)
-			// refbitsRange = append(refbitsRange, 32)
 
 			settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
 			fmt.Printf("%v \n", settngs)

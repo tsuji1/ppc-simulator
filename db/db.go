@@ -70,26 +70,27 @@ func NewTestMongoDB() (*MongoDB, error) {
 func (db *MongoDB) Close(ctx context.Context) error {
 	return db.Client.Disconnect(ctx)
 }
+
 // SimulatorResultWithMetadata 構造体
 type SimulatorResultWithMetadataWithRuleFileName struct {
-	ID 			primitive.ObjectID        `bson:"_id"`             // ID
-	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
-	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
-	RuleFileName    string                    `bson:"rule_file_name"`   // ルールファイル名
-	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
-	Bitsum uint64 `bson:"bitsum"`
-	CactiResults interface{} `bson:"cacti_results"`
-	ThroughputSeries float64 `bson:"throughput_series"`
-	ThroughputParallel float64 `bson:"throughput_parallel"`
-	CacheSize uint64 `bson:"cache_size"`
-	PowerSeries float64 `bson:"power_series"`
-	PowerParallel float64 `bson:"power_parallel"`
-	Area float64 `bson:"area"`
+	ID                 primitive.ObjectID        `bson:"_id"`              // ID
+	SimulatorResult    simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
+	Timestamp          time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
+	RuleFileName       string                    `bson:"rule_file_name"`   // ルールファイル名
+	TraceFileName      string                    `bson:"trace_file_name"`  // トレースファイル名
+	Bitsum             uint64                    `bson:"bitsum"`
+	CactiResults       interface{}               `bson:"cacti_results"`
+	ThroughputSeries   float64                   `bson:"throughput_series"`
+	ThroughputParallel float64                   `bson:"throughput_parallel"`
+	CacheSize          uint64                    `bson:"cache_size"`
+	PowerSeries        float64                   `bson:"power_series"`
+	PowerParallel      float64                   `bson:"power_parallel"`
+	Area               float64                   `bson:"area"`
 }
 
 type SimulatorResultWithMetadata struct {
 	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"` // ネストされたSimulatorResult
-	RuleFileName string `bson:"rule_file_name"` // ルールファイル名
+	RuleFileName    string                    `bson:"rule_file_name"`   // ルールファイル名
 	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
 	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
@@ -135,30 +136,29 @@ func (db *MongoDB) GetForDepth(ctx context.Context,
 	traceFileName string) ([][][2]int, error) {
 	// フィルタークエリ: Parameter と Processed が一致するドキュメントを検索
 
-
 	fmt.Printf("ruleFileName: %v\n", ruleFileName)
 	fmt.Printf("traceFileName: %v\n", traceFileName)
-		filterQuery := bson.M{
-			"simulator_result.processed":10000000, 
-			"throughput_series": bson.M{"$exists": true},
-			"rule_file_name": ruleFileName,
-			"trace_file_name": traceFileName,
-			"simulator_result.statdetail.depthsum":0,
-		}
+	filterQuery := bson.M{
+		"simulator_result.processed":           10000000,
+		"throughput_series":                    bson.M{"$exists": true},
+		"rule_file_name":                       ruleFileName,
+		"trace_file_name":                      traceFileName,
+		"simulator_result.statdetail.depthsum": 0,
+	}
 
 	// ドキュメントを探して結果を取得opts := options.Find().SetLimit(0) // 制限なし
-	opts := options.Find().SetLimit(0) // 制限なし
+	opts := options.Find().SetLimit(0)         // 制限なし
 	opts1 := options.Find().SetBatchSize(1000) // 必要ならバッチサイズを設定
-	cursor,err := db.Collection.Find(ctx, filterQuery,opts,opts1)
+	cursor, err := db.Collection.Find(ctx, filterQuery, opts, opts1)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer cursor.Close(ctx)
-	var results = make([][][2]int,0,300000)
+	var results = make([][][2]int, 0, 300000)
 	var size int64
 	var refbits int32
 	sizedocument := 0
-	
+
 	for cursor.Next(ctx) {
 		sizedocument++
 		var result SimulatorResultWithMetadataWithRuleFileName
@@ -170,44 +170,43 @@ func (db *MongoDB) GetForDepth(ctx context.Context,
 			continue
 		}
 		param := result.SimulatorResult.Parameter.(primitive.D)
-		for _,v := range param {
+		for _, v := range param {
 			if v.Key == "cachelayers" {
 				cachelayers := v.Value.(primitive.A)
-				for _,v := range cachelayers {
+				for _, v := range cachelayers {
 					cacheLayer := v.(primitive.D)
-					for _,v := range cacheLayer {
+					for _, v := range cacheLayer {
 
 						if v.Key == "size" {
 							switch v := v.Value.(type) {
-case int64:
-    size = v
-case int32:
-    size = int64(v) // int32 を int64 に変換
-default:
-    log.Printf("Unexpected type for size: %T\n", v)
-}
+							case int64:
+								size = v
+							case int32:
+								size = int64(v) // int32 を int64 に変換
+							default:
+								log.Printf("Unexpected type for size: %T\n", v)
+							}
 						}
 						if v.Key == "refbits" {
 							refbits = v.Value.(int32)
 						}
 
 					}
-				settings = append(settings,[2]int{int(size),int(refbits)})
-		size = 0
-		refbits = 0
+					settings = append(settings, [2]int{int(size), int(refbits)})
+					size = 0
+					refbits = 0
 				}
-				
+
 			}
 		}
 		results = append(results, settings)
 	}
 	fmt.Printf("size_document: %v\n", sizedocument)
-	
-	
-   // カーソルエラーの確認
-    if err := cursor.Err(); err != nil {
+
+	// カーソルエラーの確認
+	if err := cursor.Err(); err != nil {
 		fmt.Printf("cursor.Err(): %v\n", err)
-    }
+	}
 
 	// ドキュメントが存在する場合
 	return results, nil
@@ -229,7 +228,10 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 			"simulator_result.processed": simulatorProcessed,
 			"simulator_result.type":      simulatorType,
 			"rule_file_name":             ruleFileName,
-			"trace_file_name":            traceFileName,
+			"trace_file_name":            traceFileName, // depthsum が 0 以上である条件を追加
+			"simulator_result.statdetail.depthsum": bson.M{
+				"$gte": 0, // Greater Than or Equal: 0以上
+			},
 		}
 	} else {
 		filterQuery = bson.M{
@@ -237,6 +239,10 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 			"simulator_result.processed": simulatorProcessed,
 			"simulator_result.type":      simulatorType,
 			"trace_file_name":            traceFileName,
+			// depthsum が 0 以上である条件を追加
+			"simulator_result.statdetail.depthsum": bson.M{
+				"$gte": 0, // Greater Than or Equal: 0以上
+			},
 		}
 	}
 	fmt.Printf("filterQuery: %v\n", filterQuery)
