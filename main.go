@@ -66,7 +66,7 @@ func init() {
 
 	// 新しいパスを生成する
 	gobPath := filepath.Join("gob-packet", filename+".gob")
-	gobdebugmode := false
+	gobdebugmode := false 
 	ext := filepath.Ext(*trace)
 	// gobPathファイルが存在するか確認
 
@@ -158,6 +158,7 @@ func init() {
 			runtime.GC()
 
 		case ".pcap":
+			fmt.Println("pcapファイルを処理中...")
 			traceBase := filepath.Base(*trace)
 			ruleBase := filepath.Base(*rulefile)
 			if extractDigits(traceBase) != extractDigits(ruleBase) {
@@ -183,16 +184,32 @@ func init() {
 			r := routingtable.NewRoutingTablePatriciaTrie()
 			r.ReadRule(fp)
 
+				// メタデータを表示
+			fmt.Printf("PCAP File Metadata:\n")
+			fmt.Printf("LinkType: %v\n", handle.LinkType())
+			fmt.Printf("SnapLen: %d\n", handle.SnapLen())
+			
+
+
+			isLinkTypeRaw := false
+			if layers.LinkType(handle.LinkType()) == layers.LinkTypeRaw{
+				isLinkTypeRaw = true
+			}
+			
+			fmt.Printf("isLinkTypeRaw: %v\n", isLinkTypeRaw)
+
+
 			// range over the channel (only one iteration variable is allowed)
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
-				minPacket, err := parsePcapPacketToMinPacket(packet, r)
+				minPacket, err := parsePcapPacketToMinPacket(packet, r,isLinkTypeRaw)
 				if err != nil {
-					// fmt.Println("Error:", err) かなりerrorが出るのでコメントアウト
+					fmt.Println("Error:", err)// かなりerrorが出るのでコメントアウト
+					// エラーでてもcontinueしない
 					continue
 				}
-
 				if minPacket.FiveTuple() == nil {
+					
 					continue
 				}
 
@@ -429,15 +446,17 @@ func parseCSVRecordToMinPacket(record []string, r *routingtable.RoutingTablePatr
 }
 
 // parsePcapPacketToMinPacket parses a gopacket.Packet into a MinPacket
-func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingTablePatriciaTrie) (*cache.MinPacket, error) {
+func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingTablePatriciaTrie,isRawType bool) (*cache.MinPacket, error) {
 	// MinPacket構造体を新規作成
 	minPacket := new(cache.MinPacket)
+	// if !isRawType {
 
-	// Ethernet層があるか確認
-	ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
-	if ethernetLayer == nil {
-		return nil, fmt.Errorf("No Ethernet layer found")
-	}
+	// // Ethernet層があるか確認
+	// ethernetLayer := packet.Layer(layers.LayerTypeEthernet)
+	// if ethernetLayer == nil {
+	// 	return nil, fmt.Errorf("No Ethernet layer found")
+	// }
+	// }
 
 	// IP層があるか確認
 	ipLayer := packet.Layer(layers.LayerTypeIPv4)
@@ -447,6 +466,11 @@ func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingT
 	ip, _ := ipLayer.(*layers.IPv4)
 
 	// SrcIP, DstIPを設定
+	ipuint32src := IpToUInt32(ip.SrcIP)
+	ipuint32dst := IpToUInt32(ip.DstIP)
+
+	fmt.Println(ipaddress.NewIPaddress(ipuint32src).String())
+	fmt.Println(ipaddress.NewIPaddress(ipuint32dst).String())
 	minPacket.SrcIP = IpToUInt32(ip.SrcIP)
 	minPacket.DstIP = IpToUInt32(ip.DstIP)
 
