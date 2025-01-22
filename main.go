@@ -83,7 +83,7 @@ func init() {
 		}
 
 		switch ext {
-		case ".csv", ".tsv", ".p7",".dat",".txt":
+		case ".csv", ".tsv", ".p7",".data",".txt":
 			// CSV/TSVファイル処理
 			fpCSV, err := os.Open(*trace)
 			if err != nil {
@@ -1100,7 +1100,7 @@ func main() {
 			// for i := 16; i <= 24; i++ {
 			// 	refbitsRange = append(refbitsRange, i)
 			// }
-			for i := 16; i <= 32; i++  {
+			for i := 1; i <= 32; i++  {
 				refbitsRange = append(refbitsRange, i)
 			}
 
