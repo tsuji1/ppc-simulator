@@ -9,12 +9,15 @@
 # print("1bit power:", energy_per_bit_pj, "pJ/per bit")
 
 
-read_burst_power = 0.5 # W 
+read_burst_power = 1 # W 
 frequency = 2 * 10 ** 9 # Hz
 bl = 8
-read_burst_energy= read_burst_power/ frequency / bl
+read_burst_energy= read_burst_power/ frequency  * bl
 read_burst_energy_pj = read_burst_energy * 10**12
 print("read_burst_count:", read_burst_energy_pj)
-    
-#     return
+  
+  
+depthsum = 28799
+miss = 10000000 - 9992503
+print(depthsum/miss)
 # 62.5 ,31,25, 125

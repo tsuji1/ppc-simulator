@@ -88,16 +88,15 @@ func (p *Packet) FiveTuple() *FiveTuple {
 
 // {Proto, SrcIP, DstIP, SrcPort or 0, DstPort or 0}
 func (p *MinPacket) FiveTuple() *FiveTuple {
-	var proto64 uint64
-	for i := 0; i < len(p.Proto) && i < 5; i++ {
-		proto64 = proto64 << 8
-		proto64 = proto64 | uint64(p.Proto[i])
-	}
+	// var proto64 uint64
+	// for i := 0; i < len(p.Proto) && i < 5; i++ {
+	// 	proto64 = proto64 << 8
+	// 	proto64 = proto64 | uint64(p.Proto[i])
+	// }
 
 	proto,  err := StrToIPProtocol(p.Proto)
 	if err != nil {
-		fmt.Printf("Error: %v\n %v", err, p)
-		panic(err)
+		fmt.Printf("Error WithStrToIPProtocol: %v\n packet:%v", err, p)
 	}
 
 	switch proto {
@@ -112,6 +111,7 @@ func (p *MinPacket) FiveTuple() *FiveTuple {
 	// case "icmp":
 	// 	return FiveTuple{p.Proto, p.SrcIP, p.DstIP, 0, 0}
 	default:
+		fmt.Printf("Error: %v\n packet %v", err, p)
 		return nil
 		// return FiveTuple{proto64, srcIp64, dstIp64, 0, 0}
 	}
