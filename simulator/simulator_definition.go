@@ -499,7 +499,7 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 		for _, cap := range capacity {
 			for _, ref := range refbitsRange {
 				// 最初の階層では制約がないが、2階層目以降では前の refbits より小さい値のみ許可する。
-				if index == 0 || (ref+2 < prevRefbits ) { //&& prevRefbits <= 24
+				if index == 0 || (ref < prevRefbits ) { //&& prevRefbits <= 24
 					// 現在の階層に [capacity, refbits] の組み合わせを保存。
 					current[index] = [2]int{cap, ref}
 					// 次の階層へ再帰的に探索を続ける。prevRefbits を現在の ref に更新。

@@ -218,9 +218,9 @@ func init() {
 				if num_minpackets%100000 == 0 {
 					if num_minpackets != 0 {
 						fmt.Printf("num_minpacket %d\n", num_minpackets)
-						if gobdebugmode {
-							break
-						}
+						// if gobdebugmode {
+						// 	break
+						// }
 					}
 				}
 
@@ -466,11 +466,11 @@ func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingT
 	ip, _ := ipLayer.(*layers.IPv4)
 
 	// SrcIP, DstIPを設定
-	ipuint32src := IpToUInt32(ip.SrcIP)
-	ipuint32dst := IpToUInt32(ip.DstIP)
+	// ipuint32src := IpToUInt32(ip.SrcIP)
+	// ipuint32dst := IpToUInt32(ip.DstIP)
 
-	fmt.Println(ipaddress.NewIPaddress(ipuint32src).String())
-	fmt.Println(ipaddress.NewIPaddress(ipuint32dst).String())
+	// fmt.Println(ipaddress.NewIPaddress(ipuint32src).String())
+	// fmt.Println(ipaddress.NewIPaddress(ipuint32dst).String())
 	minPacket.SrcIP = IpToUInt32(ip.SrcIP)
 	minPacket.DstIP = IpToUInt32(ip.DstIP)
 
@@ -1097,10 +1097,11 @@ func main() {
 			// for i := 8; i <= 15; i = i + 3 {
 			// 	refbitsRange = append(refbitsRange, i)
 			// }
-			// for i := 16; i <= 24; i++ {
+			// for i := 16; i <=24; i++ {
 			// 	refbitsRange = append(refbitsRange, i)
 			// }
-			for i := 1; i <= 32; i++  {
+			// refbitsRange = append(refbitsRange, 32)
+			for i := 16; i <= 32; i++  {
 				refbitsRange = append(refbitsRange, i)
 			}
 
