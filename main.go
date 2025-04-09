@@ -950,8 +950,8 @@ func main() {
 
 		// キャッシュ容量のリストを生成
 		capacity := make([]int, 0, 30)
-		for i := capacityStart; i <= capacityEnd; i++ {
-			capacity = append(capacity, 1<<uint(i*capacityMultiplier))
+		for i := capacityStart; i <= capacityEnd; i = i+capacityMultiplier {
+			capacity = append(capacity, 1<<uint(i))
 		}
 
 		fmt.Print("capacity: ")
@@ -1101,7 +1101,7 @@ func main() {
 			// 	refbitsRange = append(refbitsRange, i)
 			// }
 			// refbitsRange = append(refbitsRange, 32)
-			for i := 16; i <= 32; i++  {
+			for i := 16; i <= 24; i++  {
 				refbitsRange = append(refbitsRange, i)
 			}
 

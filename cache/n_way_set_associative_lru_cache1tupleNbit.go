@@ -15,6 +15,7 @@ type NWaySetAssociativeDstipNbitLRUCache struct {
 	Refbits      uint
 	routingTable *routingtable.RoutingTablePatriciaTrie
 	debugMode    bool
+	isFull bool
 }
 
 func returnMaskedIP(IP uint32, refbits uint) uint32 {
@@ -51,7 +52,7 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCached(p *Packet, update boo
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
 
-func (cache *NWaySetAssociativeDstipNbitLRUCache) setIdxFromFiveTuple(f *FiveTuple) uint {
+func (cache *NWaySetAssociativeDstipNbitLRUCache) setIdxFromMaskedDstIp(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
 	dstIP := returnMaskedIP(f.DstIP, cache.Refbits)
 
@@ -60,17 +61,17 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) setIdxFromFiveTuple(f *FiveTup
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
-	setIdx := cache.setIdxFromFiveTuple(f)
+	setIdx := cache.setIdxFromMaskedDstIp(f)
 	return cache.Sets[setIdx].IsCachedWithFiveTuple(f, update) // TODO: return meaningful value
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
-	setIdx := cache.setIdxFromFiveTuple(f)
+	setIdx := cache.setIdxFromMaskedDstIp(f)
 	return cache.Sets[setIdx].CacheFiveTuple(f)
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) InvalidateFiveTuple(f *FiveTuple) {
-	setIdx := cache.setIdxFromFiveTuple(f)
+	setIdx := cache.setIdxFromMaskedDstIp(f)
 	cache.Sets[setIdx].InvalidateFiveTuple(f)
 }
 
@@ -114,5 +115,6 @@ func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTabl
 		Refbits:      refbits,
 		routingTable: routingTable,
 		debugMode:    debugMode,
+		isFull: 	  false,
 	}
 }
