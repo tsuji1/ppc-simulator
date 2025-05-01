@@ -484,8 +484,8 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 			copy(combination, current)
 			if layers == 2 {
 				// if combination[0][1] >= 24 {
-					// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
-					results = append(results, combination)
+				// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
+				results = append(results, combination)
 				// }
 			} else if layers == 3 {
 				if combination[0][1] == 24 {
@@ -493,12 +493,20 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 					results = append(results, combination)
 				}
 			} else if layers == 4 {
-				if combination[0][1] == 24 &&( combination[1][1] == 20  ||  combination[2][1] == 20 ){
+				if combination[0][1] == 24 && (combination[1][1] == 20 || combination[2][1] == 20) {
 					results = append(results, combination)
 				}
-			}else if layers == 5 {
+			} else if layers == 5 {
 				if combination[0][1] == 24 {
 					results = append(results, combination)
+				}
+			} else if layers == 6 {
+				if combination[0][1] == 24 {
+
+					// combinationの3と4が20なら
+					if combination[3][1] == 20 || combination[4][1] == 20 {
+						results = append(results, combination)
+					}
 				}
 			}
 			return
@@ -507,7 +515,7 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 		for _, cap := range capacity {
 			for _, ref := range refbitsRange {
 				// 最初の階層では制約がないが、2階層目以降では前の refbits より小さい値のみ許可する。
-				if index == 0 || (ref < prevRefbits  ) { //&& prevRefbits <= 24
+				if index == 0 || (ref < prevRefbits) { //&& prevRefbits <= 24
 					// 現在の階層に [capacity, refbits] の組み合わせを保存。
 					current[index] = [2]int{cap, ref}
 					// 次の階層へ再帰的に探索を続ける。prevRefbits を現在の ref に更新。
