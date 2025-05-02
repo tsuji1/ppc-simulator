@@ -9,10 +9,9 @@ import (
 	"strings"
 	"test-module/ipaddress"
 	"test-module/lpctrie"
-	"time"
 
 	lru "github.com/hashicorp/golang-lru/v2"
-	"github.com/tchap/go-patricia/patricia"
+	"github.com/tsuji1/go-patricia/patricia"
 )
 
 // RoutingTablePatriciaTrie は、ルーティングテーブルのためのPatricia Trieを保持する構造体です。
@@ -24,8 +23,7 @@ type RoutingTablePatriciaTrie struct {
 	SearchIpCache            *lru.Cache[string, Result]
 	SearchIpCacheHit         int
 	SearchIpCacheTotal       int
-	LpcTrie 				*lpctrie.Trie
-	
+	LpcTrie                  *lpctrie.Trie
 }
 
 // Data は、ルーティング情報を深さとネクストホップで保持するデータ構造です。
@@ -252,14 +250,14 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 		item.NextHop = slice[2]
 		fibalias := &lpctrie.FibAlias{FaSlen: uint8(i)}
 
-		lpctrie.FibInsert(routingtable.LpcTrie, lpctrie.Key(ip.Uint32()),  fibalias)
+		lpctrie.FibInsert(routingtable.LpcTrie, lpctrie.Key(ip.Uint32()), fibalias)
 		// routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(refbits)), nil)
 		routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(i)), item)
 	}
 }
 
-func (routingtable *RoutingTablePatriciaTrie) GetDepth(dstIP uint32) int{
-	return lpctrie.GetDepth(routingtable.LpcTrie,lpctrie.Key(dstIP))
+func (routingtable *RoutingTablePatriciaTrie) GetDepth(dstIP uint32) int {
+	return lpctrie.GetDepth(routingtable.LpcTrie, lpctrie.Key(dstIP))
 }
 
 // NewRoutingTablePatriciaTrie は、Patricia Trieを用いた新しいルーティングテーブルを初期化します。
@@ -277,7 +275,7 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 		SearchIpCache:            s,
 		SearchIpCacheHit:         0,
 		SearchIpCacheTotal:       0,
-		LpcTrie: lpctrie,
+		LpcTrie:                  lpctrie,
 	}
 }
 
@@ -295,22 +293,34 @@ func p(hoge interface{}) {
 	fmt.Println(hoge)
 }
 
-func GetRandomDstIP() ipaddress.IPaddress {
+// func GetRandomDstIP() ipaddress.IPaddress {
 
-	// 乱数生成
-	strIP := ""
+// 	// 乱数生成(全くランダムではない)
+// 	strIP := ""
+// 	for i := 0; i < 4; i++ {
+// 		rand.NewSource(time.Now().UnixNano())
+// 		randomint := rand.Intn(254) // 0-253の乱数生成
+// 		randomint = randomint + 1
+// 		strIP += strconv.Itoa(randomint)
+// 		if i != 3 {
+// 			strIP += "."
+// 		}
+// 	}
+// 	ip := ipaddress.NewIPaddress(strIP)
+// 	return ip
+// }
+
+func GetRandomDstIP() ipaddress.IPaddress {
+	// 0-255の範囲でランダムに4つのオクテットを作成
+	octets := make([]string, 4)
 	for i := 0; i < 4; i++ {
-		rand.NewSource(time.Now().UnixNano())
-		randomint := rand.Intn(254) // 0-253の乱数生成
-		randomint = randomint + 1
-		strIP += strconv.Itoa(randomint)
-		if i != 3 {
-			strIP += "."
-		}
+		octets[i] = strconv.Itoa(rand.Intn(254) + 1) // 1〜254
 	}
+	strIP := strings.Join(octets, ".")
 	ip := ipaddress.NewIPaddress(strIP)
 	return ip
 }
+
 
 func (routingtable *RoutingTablePatriciaTrie) StatDetail() {
 	fmt.Println("IsLeafCacheHit : ", float64(routingtable.IsLeafCacheHit)/float64(routingtable.IsLeafCacheTotal))
