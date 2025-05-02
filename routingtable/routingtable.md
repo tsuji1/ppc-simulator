@@ -8,7 +8,7 @@
 package routingtable
 
 import (
-	. "github.com/tchap/go-patricia/patricia"
+	. "github.com/tsuji1/go-patricia/patricia"
 	"fmt"
 	"strconv"
 	"strings"
@@ -18,7 +18,7 @@ import (
 )
 ```
 
-- `github.com/tchap/go-patricia/patricia` パッケージをインポートし、Patricia Trie を使用しています。
+- `github.com/tsuji1/go-patricia/patricia` パッケージをインポートし、Patricia Trie を使用しています。
 - `test-module/ipaddress` はカスタムモジュールで、IPアドレスの操作を行います。
 
 ### データ構造

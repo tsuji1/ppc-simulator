@@ -12,7 +12,7 @@ package routingtable
 // 	"test-module/lpctrie"
 
 // 	lru "github.com/hashicorp/golang-lru/v2"
-// 	"github.com/tchap/go-patricia/patricia"
+// 	"github.com/tsuji1/go-patricia/patricia"
 // )
 
 // // RoutingTableLPCtrie は、ルーティングテーブルのためのPatricia Trieを保持する構造体です。
@@ -25,7 +25,6 @@ package routingtable
 // 	SearchIpCacheHit         int
 // 	SearchIpCacheTotal       int
 // }
-
 
 // // PrintMatchRulesInfo は、指定されたIPアドレスと参照ビットに一致するルールの情報を出力します。
 // func (routingtable *RoutingTableLPCtrie) PrintMatchRulesInfo(ip ipaddress.IPaddress, refbits int) {
@@ -346,4 +345,3 @@ package routingtable
 // 	routingtable.ResetTreeDepth()
 // 	routingtable.RoutingTableLPCtrie.VisitSubtree(patricia.Prefix(""), storeans)
 // }*/
-

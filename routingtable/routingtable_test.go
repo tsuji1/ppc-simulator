@@ -3,7 +3,10 @@ package routingtable
 import (
 	"fmt"
 	"os"
+	"test-module/ipaddress"
 	"testing"
+
+	"github.com/tsuji1/go-patricia/patricia"
 )
 
 func initializeRoutingTable() *RoutingTablePatriciaTrie {
@@ -59,6 +62,36 @@ func TestIsLeaf(t *testing.T) {
 	routingTable := initializeRoutingTable()
 	dstIP := GetRandomDstIP()
 	fmt.Println(routingTable.IsLeaf(dstIP, 3))
+}
+
+func TestPatriciaTrie(t *testing.T) {
+	t.Log("test Patricia trie")
+	routingTable := initializeRoutingTable()
+	refbits := 20
+	dstIP := GetRandomDstIP()
+	t.Log("dstIP:", dstIP.String())
+	prefix := patricia.Prefix(dstIP.MaskedBitString(refbits))
+
+	l, found, leftover := routingTable.RoutingTablePatriciaTrie.FindSubtreePath(prefix)
+	parent,root, _, _ := routingTable.RoutingTablePatriciaTrie.FindSubtree(prefix)
+
+	t.Log("root:", root)
+	t.Log("root:", parent)
+	
+
+	p := ""
+	for _, node := range l {
+		p = p + string(node.GetPrefix())
+	}
+
+	t.Log("prefix:", p, "len:", len(p))
+	
+	t.Log(ipaddress.BitStringToIP(p))
+
+	t.Log(found)
+
+	t.Log(leftover)
+
 }
 
 // func TestPrintTrie(t *testing.T) {
