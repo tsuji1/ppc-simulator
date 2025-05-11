@@ -69,23 +69,47 @@ func TestPatriciaTrie(t *testing.T) {
 	routingTable := initializeRoutingTable()
 	refbits := 20
 	dstIP := GetRandomDstIP()
+	// 最初の3bitが111の場合は再生成
+	for 0 <= refbits && refbits <= 32 && dstIP.BitString()[:3] == "111" {
+		dstIP = GetRandomDstIP()
+	}
 	t.Log("dstIP:", dstIP.String())
+	t.Log("dstIP masked:", dstIP.MaskedBitString(refbits))
+
+	dstIPMaskedWithInt := dstIP.Uint32() & (0xFFFFFFFF << (32 - refbits))
+	dstIPMasked := ipaddress.NewIPaddress(dstIPMaskedWithInt)
+	t.Log("dstIPMasked:", dstIPMasked.String())
+
 	prefix := patricia.Prefix(dstIP.MaskedBitString(refbits))
 
 	l, found, leftover := routingTable.RoutingTablePatriciaTrie.FindSubtreePath(prefix)
-	parent,root, _, _ := routingTable.RoutingTablePatriciaTrie.FindSubtree(prefix)
+	parent, root, _, _ := routingTable.RoutingTablePatriciaTrie.FindSubtree(prefix)
 
 	t.Log("root:", root)
-	t.Log("root:", parent)
-	
+	t.Log("parent:", parent)
+
+	visitoFunc := func(k patricia.Prefix, i patricia.Item) error {
+		t.Log("VisitorFunc prefix:", ipaddress.BitStringToIP(string(k)), "item:", i, len(k))
+		return nil
+	}
+
+	routingTable.RoutingTablePatriciaTrie.VisitSubtree(prefix, visitoFunc)
 
 	p := ""
 	for _, node := range l {
 		p = p + string(node.GetPrefix())
 	}
+	// p はleftoverが末尾についているはずなので消したい
+	p = p[:len(p)-len(leftover)]
+
+	visitoFunc = func(k patricia.Prefix, i patricia.Item) error {
+		t.Log("VisitorFunc2 prefix:", ipaddress.BitStringToIP(string(k)), "item:", i, "len:", len(k))
+		return nil
+	}
+	routingTable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(p), visitoFunc)
 
 	t.Log("prefix:", p, "len:", len(p))
-	
+
 	t.Log(ipaddress.BitStringToIP(p))
 
 	t.Log(found)

@@ -2,6 +2,7 @@ package routingtable
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -37,21 +38,6 @@ type Result struct {
 	items  []patricia.Item
 }
 
-// PrintMatchRulesInfo は、指定されたIPアドレスと参照ビットに一致するルールの情報を出力します。
-func (routingtable *RoutingTablePatriciaTrie) PrintMatchRulesInfo(ip ipaddress.IPaddress, refbits int) {
-	hitted, _ := routingtable.SearchIP(ip, refbits)
-	ans := "["
-	for _, p := range hitted {
-		ans += strconv.Itoa(len(p))
-		ans += " "
-	}
-	ans += "],"
-	ans += strconv.Itoa(int(routingtable.CountIPsInChildrenRule(ip, len(hitted[len(hitted)-1])))) // 最長一致ルールの子ノード数
-	ans += ","
-	ans += strconv.Itoa(int(routingtable.CountIPsInChildrenRule(ip, 24))) // /24にキャッシュするのに必要なIP数
-	// fmt.Println(ans)
-}
-
 // ReturnIPsInRule は、指定されたプレフィックスに含まれるすべてのIPアドレスを返します。
 func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInRule(prefix patricia.Prefix) []string {
 	num_IPs := routingtable.CountIPsInRule(prefix)
@@ -66,6 +52,118 @@ func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInRule(prefix patricia.Pr
 	return ans
 }
 
+// EnumerateSubPrefixes は、指定されたプレフィックスに含まれるすべてのプレフィクスを返します。
+func (routingtable *RoutingTablePatriciaTrie) EnumerateSubPrefixes(prefix patricia.Prefix,srcRefbit uint, upperRefbit uint) (ans []string) {
+
+	prefix_length := uint(len(prefix))
+	fillLength := upperRefbit - prefix_length
+
+	suffixLength := 32 - upperRefbit
+	// baseip fillip suffixip(これはいらない)
+
+	baseIp := ipaddress.NewIPaddress(string(prefix))
+	baseIpUint := baseIp.Uint32()
+	// baseIp を
+
+	var i uint
+
+	// baseipをupperRefbitまでシフトして
+	// fillLength(個)を考慮してIPアドレスを生成する
+	// 最後にシフトを戻す
+	baseIpUint = baseIpUint >> suffixLength
+
+	for i = 0; i < (1 << fillLength) ; i++ {
+		cacheIp := baseIpUint + uint32(i)
+		cacheIp = cacheIp << uint32(suffixLength)
+		cacheIpAddress := ipaddress.NewIPaddress(cacheIp)
+		ans = append(ans, cacheIpAddress.String())
+	}
+
+	return ans
+}
+
+func (routingtable *RoutingTablePatriciaTrie) GroupChildPrefixesByRefBits(prefix string, srcRefbit uint, upperRefbits []uint) (ans [][]string) {
+
+	ans = make([][]string, len(upperRefbits))
+	tmpPrefix := ipaddress.NewIPaddress(prefix).String()
+	_ = tmpPrefix
+
+
+	countchild := func(p patricia.Prefix, i patricia.Item) error {
+		if prefix != string(p) {
+			p_length := uint(len(p))
+			// upperRefbitsを逆順で処理する
+			for i := len(upperRefbits) - 1; i >= 0; i-- {
+				upperRefbit := upperRefbits[i]
+				// 正確には，3相とかある場合はupperRefbitは消していくべき？違うか，17のルールは18に入れればいいし，19のルールは24に入れればいいだけのことか
+				if p_length <= upperRefbit {
+					cache_prefix_list := routingtable.EnumerateSubPrefixes(p, srcRefbit,upperRefbit)
+					ans[i] = append(ans[i], cache_prefix_list...)
+					tmp := ipaddress.NewIPaddress(string(p)).String()
+					_ = tmp
+
+					break
+				}
+				return errors.New("prefix length is greater than upperRefbit")
+			}
+		}
+		return nil
+	}
+
+	routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(prefix), countchild)
+
+	return ans
+}
+
+// CountIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるIPアドレスの数を返します。
+var ErrStopWalk = errors.New("patricia: stop walk")  // 独自 sentinel
+func (routingtable *RoutingTablePatriciaTrie) CountMatchingSubtreeRules(ip ipaddress.IPaddress, srcRefbit uint, upperRefbits []uint, limit int) (ans uint, prefix string) {
+	path, _, leftover := routingtable.RoutingTablePatriciaTrie.FindSubtreePath(patricia.Prefix(ip.MaskedBitString(int(srcRefbit))))
+	prefix = ""
+	for _, node := range path {
+		prefix = prefix + string(node.GetPrefix())
+	}
+	// p はleftoverが末尾についているはずなので消したい
+	prefix = prefix[:len(prefix)-len(leftover)]
+
+	ans = 0
+	countchild := func(p patricia.Prefix, i patricia.Item) error {
+		if prefix != string(p) {
+			ans += routingtable.CountFilledRule(p, srcRefbit, upperRefbits)
+		}
+		if ans > uint(limit) {
+			return ErrStopWalk
+		}
+		return nil
+	}
+
+	routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(prefix), countchild)
+	if ans > 0 && len(upperRefbits) == 0 {
+		// something wrong
+		ans = 4294967295
+		return
+	}
+	return
+}
+
+func (routingtable *RoutingTablePatriciaTrie) CountFilledRule(prefix patricia.Prefix, srcRefbit uint, upperRefbits []uint) (ans uint) {
+	prefix_length := uint(len(prefix))
+
+	ans = 1
+
+	// upperRefbits をrange
+	for i := len(upperRefbits) - 1; i >= 0; i-- {
+		upperRefbit := upperRefbits[i]
+		if upperRefbit >= prefix_length {
+			ans = ans << (upperRefbit - prefix_length)
+			break
+		}
+		return 4294967295
+	}
+	return
+
+}
+
 // CountIPsInRule は、指定されたプレフィックスに含まれるIPアドレスの数を返します。
 // 例えば、/24のプレフィックスに含まれるIPアドレスの数は256です。
 func (routingtable *RoutingTablePatriciaTrie) CountIPsInRule(prefix patricia.Prefix) uint32 {
@@ -78,56 +176,6 @@ func (routingtable *RoutingTablePatriciaTrie) CountIPsInRule(prefix patricia.Pre
 	if ans == 0 {
 		return 4294967295
 	}
-	return ans
-}
-
-// ReturnIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるすべてのIPアドレスを返します。
-func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInChildrenRule(ip ipaddress.IPaddress, refbits int) []string {
-	hitted, data := routingtable.SearchLongestIP(ip, refbits)
-	depth := data.(Data).Depth // 最長一致ルールの深さ
-	var ans []string
-	countchild := func(prefix patricia.Prefix, item patricia.Item) error {
-
-		// 子ノードの深さが最長一致ルールの深さ+1の場合、そのルールに含まれるIPアドレスを返す
-		if item.(Data).Depth == depth+1 {
-			ans = append(ans, routingtable.ReturnIPsInRule(prefix)...)
-		}
-		return nil
-	}
-
-	if len(hitted) == refbits {
-		routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(hitted), countchild)
-	} else {
-		var temp Data
-		routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(refbits)), temp)
-		routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(ip.MaskedBitString(refbits)), countchild)
-		routingtable.RoutingTablePatriciaTrie.Delete(patricia.Prefix(ip.MaskedBitString(refbits)))
-	}
-
-	return ans
-}
-
-// CountIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるIPアドレスの数を返します。
-func (routingtable *RoutingTablePatriciaTrie) CountIPsInChildrenRule(ip ipaddress.IPaddress, refbits int) uint32 {
-	hitted, data := routingtable.SearchLongestIP(ip, refbits)
-	depth := data.(Data).Depth
-	var ans uint32
-	countchild := func(prefix patricia.Prefix, item patricia.Item) error {
-		if item.(Data).Depth == depth+1 {
-			ans += routingtable.CountIPsInRule(prefix)
-		}
-		return nil
-	}
-
-	if len(hitted) == refbits {
-		routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(hitted), countchild)
-	} else {
-		var temp Data
-		routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(refbits)), temp)
-		routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(ip.MaskedBitString(refbits)), countchild)
-		routingtable.RoutingTablePatriciaTrie.Delete(patricia.Prefix(ip.MaskedBitString(refbits)))
-	}
-
 	return ans
 }
 
@@ -320,7 +368,6 @@ func GetRandomDstIP() ipaddress.IPaddress {
 	ip := ipaddress.NewIPaddress(strIP)
 	return ip
 }
-
 
 func (routingtable *RoutingTablePatriciaTrie) StatDetail() {
 	fmt.Println("IsLeafCacheHit : ", float64(routingtable.IsLeafCacheHit)/float64(routingtable.IsLeafCacheTotal))

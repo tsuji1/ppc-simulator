@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"test-module/ipaddress"
 	"test-module/routingtable"
-
 	"github.com/tsuji1/go-patricia/patricia"
 )
 
@@ -292,8 +291,6 @@ func (c *MultiLayerCacheExclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	// /nに挿入
 
 	hitLayer := 0
-	//これ順番はどうでも良い、なぜなら上位層と下位層でどちらもマッチすることはない
-	// 上層がマッチするなら下位層はマッチしない。なぜならleafノードであるという条件があるから
 	for k := len(c.CacheLayers) - 1; k > -2; k-- {
 		if k == -1 {
 			return make([]*FiveTuple, 0)

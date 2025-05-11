@@ -56,6 +56,10 @@ var rulefile = flag.String("rulefile", "", "rule file")
 
 func init() {
 	// routingtable.Data 型の登録
+
+	if godotenv.Load(".env") != nil {
+		panic("Error loading .env file")
+	}
 	flag.Parse()
 	debug.SetGCPercent(50)
 	gob.Register(routingtable.Data{})
@@ -66,7 +70,7 @@ func init() {
 
 	// 新しいパスを生成する
 	gobPath := filepath.Join("gob-packet", filename+".gob")
-	gobdebugmode := false 
+	gobdebugmode := false
 	ext := filepath.Ext(*trace)
 	// gobPathファイルが存在するか確認
 
@@ -83,7 +87,7 @@ func init() {
 		}
 
 		switch ext {
-		case ".csv", ".tsv", ".p7",".data",".txt":
+		case ".csv", ".tsv", ".p7", ".data", ".txt":
 			// CSV/TSVファイル処理
 			fpCSV, err := os.Open(*trace)
 			if err != nil {
@@ -184,32 +188,29 @@ func init() {
 			r := routingtable.NewRoutingTablePatriciaTrie()
 			r.ReadRule(fp)
 
-				// メタデータを表示
+			// メタデータを表示
 			fmt.Printf("PCAP File Metadata:\n")
 			fmt.Printf("LinkType: %v\n", handle.LinkType())
 			fmt.Printf("SnapLen: %d\n", handle.SnapLen())
-			
-
 
 			isLinkTypeRaw := false
-			if layers.LinkType(handle.LinkType()) == layers.LinkTypeRaw{
+			if layers.LinkType(handle.LinkType()) == layers.LinkTypeRaw {
 				isLinkTypeRaw = true
 			}
-			
-			fmt.Printf("isLinkTypeRaw: %v\n", isLinkTypeRaw)
 
+			fmt.Printf("isLinkTypeRaw: %v\n", isLinkTypeRaw)
 
 			// range over the channel (only one iteration variable is allowed)
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
-				minPacket, err := parsePcapPacketToMinPacket(packet, r,isLinkTypeRaw)
+				minPacket, err := parsePcapPacketToMinPacket(packet, r, isLinkTypeRaw)
 				if err != nil {
-					fmt.Println("Error:", err)// かなりerrorが出るのでコメントアウト
+					fmt.Println("Error:", err) // かなりerrorが出るのでコメントアウト
 					// エラーでてもcontinueしない
 					continue
 				}
 				if minPacket.FiveTuple() == nil {
-					
+
 					continue
 				}
 
@@ -386,20 +387,20 @@ func parseCSVRecordToMinPacket(record []string, r *routingtable.RoutingTablePatr
 	default:
 		return nil, fmt.Errorf("expected record have 7 or 8 fields, but not: %d", len(record))
 	}
-	
-	if(recordProtoStr == "0x00" ){
-		fmt.Printf("recordProtoStr: %v\n",record)
+
+	if recordProtoStr == "0x00" {
+		fmt.Printf("recordProtoStr: %v\n", record)
 		return nil, fmt.Errorf("recordProtoStr is 0x00")
 	}
 
 	srcip := net.ParseIP(recordSrcIPStr)
-	if srcip == nil{
+	if srcip == nil {
 		return nil, fmt.Errorf("srcip is nil")
 	}
 	packet.SrcIP = IpToUInt32(srcip)
 
 	dstip := net.ParseIP(recordDstIPStr)
-	if dstip == nil{
+	if dstip == nil {
 		return nil, fmt.Errorf("dstip is nil")
 	}
 	packet.DstIP = IpToUInt32(dstip)
@@ -446,7 +447,7 @@ func parseCSVRecordToMinPacket(record []string, r *routingtable.RoutingTablePatr
 }
 
 // parsePcapPacketToMinPacket parses a gopacket.Packet into a MinPacket
-func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingTablePatriciaTrie,isRawType bool) (*cache.MinPacket, error) {
+func parsePcapPacketToMinPacket(packet gopacket.Packet, r *routingtable.RoutingTablePatriciaTrie, isRawType bool) (*cache.MinPacket, error) {
 	// MinPacket構造体を新規作成
 	minPacket := new(cache.MinPacket)
 	// if !isRawType {
@@ -836,6 +837,9 @@ func generateRandomString(length int) string {
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
 func main() {
+	if godotenv.Load(".env") != nil {
+		panic("Error loading .env file")
+	}
 
 	if *trace == "" {
 		fmt.Printf("You must specify the trace file\n")
@@ -950,7 +954,7 @@ func main() {
 
 		// キャッシュ容量のリストを生成
 		capacity := make([]int, 0, 30)
-		for i := capacityStart; i <= capacityEnd; i = i+capacityMultiplier {
+		for i := capacityStart; i <= capacityEnd; i = i + capacityMultiplier {
 			capacity = append(capacity, 1<<uint(i))
 		}
 
@@ -1014,7 +1018,8 @@ func main() {
 
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
-						fmt.Println(stat)
+						sim.SimDefinition.Print()
+						stat.Print()
 						err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
 						if err != nil {
 							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
@@ -1101,7 +1106,7 @@ func main() {
 			// 	refbitsRange = append(refbitsRange, i)
 			// }
 			// refbitsRange = append(refbitsRange, 32)
-			for i := 16; i <= 24; i++  {
+			for i := 16; i <= 24; i++ {
 				refbitsRange = append(refbitsRange, i)
 			}
 
@@ -1131,31 +1136,60 @@ func main() {
 					queue <- *cacheSim
 				}
 			}
-			// 各タスクに対してWaitGroupを増加させ、キューに送信
-			// for i, setting := range settings {
-			// 	if i > *skip {
-			// 	baseSimulatorDefinition, err := simulator.NewSimulatorDefinition("MultiLayerCacheExclusive")
-			// 	if err != nil {
 
-			// 		panic(err)
-			// 	}
-			// 	if(len(setting) == 3){
-			// 		baseSimulatorDefinition.AddCacheLayer(nil);
+		} else if cachetype == "MultiLayerCacheInclusive" {
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheInclusive")
+			refbitsRange := make([]int, 0, 32)
+			// cachenumを反映
+			for i := 2; i < *cachenum; i++ {
+				baseSimulatorDefinition.AddCacheLayer(nil)
+			}
+			for i := 16; i <= 24; i++ {
+				refbitsRange = append(refbitsRange, i)
+			}
 
-			// 	}
-			// 		newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
-			// 		newSim.DebugMode = false
+			onceCacheLimits := make([]int, 0, 128)
+			for i := 8; i <= 64; i += 8 {
+				onceCacheLimits = append(onceCacheLimits, i)
+			}
 
-			// 		newSim.Interval = 100000000
-			// 		cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+			if err != nil {
+				panic(err)
+			}
 
-			// 		if err != nil {
-			// 			panic(err)
-			// 		}
-			// 		queue <- *cacheSim
-			// 	}
-			// }
+			settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
+			fmt.Printf("%v \n", settngs)
 
+			debugmodeEnv := os.Getenv("DEBUG_MODE")
+			debugmode := false
+			if debugmodeEnv == "true" || debugmodeEnv == "1" {
+				debugmode = true
+			}
+			totalTask := len(settngs)
+
+			fmt.Println("Total tasks:", totalTask)
+
+			fmt.Printf("rulefile:%v", rulefile)
+			fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
+
+			for i, setting := range settngs {
+
+				for _, onceCacheLimit := range onceCacheLimits {
+					if i > *skip {
+						newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
+						newSim.DebugMode = debugmode
+						newSim.Cache.OnceCacheLimit = onceCacheLimit
+
+						newSim.Interval = 1000000000000000
+						cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+
+						if err != nil {
+							panic(err)
+						}
+						queue <- *cacheSim
+					}
+				}
+			}
 		} else {
 			panic("not supported cache type")
 		}
