@@ -2,7 +2,7 @@ package simulator
 
 import (
 	"encoding/json"
-
+	"fmt"
 	"go.mongodb.org/mongo-driver/bson"
 )
 
@@ -16,6 +16,13 @@ type SimulatorResult struct {
 	StatDetail interface{} `json:"StatDetail" bson:"statdetail"`
 }
 
+
+
+// Print メソッド: Parameter, Hit, Process をいい感じに表示
+func (sr SimulatorResult) Print() {
+	fmt.Printf("Processed: %d\n", sr.Processed)
+	fmt.Printf("HitRate: %.2f%%\n", sr.HitRate*100)
+}
 // ToJSON メソッド: SimulatorResult 構造体をJSONとして出力する関数
 func (sr SimulatorResult) ToJSON() (string, error) {
 	// JSON化の際に、インターフェース型の内容を正しく表示するため、特別に構造体を作成する

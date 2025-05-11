@@ -5,7 +5,6 @@ import (
 	"os"
 	"test-module/cache"
 	"test-module/memorytrace"
-
 	"test-module/routingtable"
 )
 
@@ -15,6 +14,23 @@ type SimpleCacheSimulator struct {
 	cache.Cache
 	Stat          CacheSimulatorStat
 	SimDefinition SimulatorDefinition
+}
+
+// CacheInitInfo はキャッシュ構築時の追加情報を保持します。
+// 上位キャッシュやデバッグモードなどの情報が含まれます。
+type CacheInitInfo struct {
+	RoutingTable *routingtable.RoutingTablePatriciaTrie
+	DebugMode    bool
+	ParentCache  cache.Cache // 必要に応じて上位キャッシュなども追加可能
+	CacheIndex   int         // ParentCache内で自分が何番目か（親がいる場合のみ有効）
+}
+
+func NewAddtionalInfoBuildCache(routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool, parentCache cache.Cache) CacheInitInfo {
+	return CacheInitInfo{
+		RoutingTable: routingTable,
+		DebugMode:    debugMode,
+		ParentCache:  parentCache,
+	}
 }
 
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
@@ -60,7 +76,6 @@ func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
 		fmt.Println("Unsupported packet type")
 		return false
 	}
-	
 
 }
 
@@ -109,16 +124,20 @@ func NewCacheSimulatorStat(description string, parameter cache.Parameter) CacheS
 }
 
 // buildCache は、キャッシュ設定に基づいて適切なキャッシュを構築します。
-func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) (cache.Cache, error) {
+func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cache, error) {
 	// キャッシュタイプを取得
 	cache_type := definitionCache.Type
 
 	var c cache.Cache
 
+	// CacheInitInfo から必要な情報を取得
+	routingTable := additionalInfo.RoutingTable
+	debugMode := additionalInfo.DebugMode
+
 	// キャッシュタイプに応じてキャッシュを生成
 	switch cache_type {
 	case "CacheWithLookAhead":
-		innerCache, err := buildCache(*definitionCache.InnerCache, routingTable, debugMode)
+		innerCache, err := buildCache(*definitionCache.InnerCache, additionalInfo)
 		if err != nil {
 			return c, err
 		}
@@ -147,102 +166,33 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 		c = cache.NewFullAssociativeFIFOCache(uint(size))
 	case "NWaySetAssociativeLRUCache":
 		size := definitionCache.Size
-
 		way := definitionCache.Way
+
 		c = cache.NewNWaySetAssociativeLRUCache(uint(size), uint(way))
-	case "NWaySetAssociativeTreePLRUCache":
-		size := definitionCache.Size
-
-		way := definitionCache.Way
-		c = cache.NewNWaySetAssociativeTreePLRUCache(uint(size), uint(way))
-	case "NWaySetAssociativeLFUCache":
-		size := definitionCache.Size
-
-		way := definitionCache.Way
-		c = cache.NewNWaySetAssociativeLFUCache(uint(size), uint(way))
-	case "NWaySetAssociativeRandomCache":
-		size := definitionCache.Size
-
-		way := definitionCache.Way
-		c = cache.NewNWaySetAssociativeRandomCache(uint(size), uint(way))
-	case "NWaySetAssociativeFIFOCache":
-		size := definitionCache.Size
-
-		way := definitionCache.Way
-		c = cache.NewNWaySetAssociativeFIFOCache(uint(size), uint(way))
-	case "MultiLayerCache":
-		// MultiLayerCache の設定を取得
-		cacheLayersPS := definitionCache.CacheLayers
-		cachePoliciesPS := definitionCache.CachePolicies
-		cacheLayersLen := len(cacheLayersPS)
-		cachePoliciesLen := len(cachePoliciesPS)
-
-		// CachePoliciesの数はCacheLayersの数-1でなければならない
-		// CachePoliciesはCacheLayersの間のポリシーを表す
-		if cachePoliciesLen != (cacheLayersLen - 1) {
-			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
-		}
-
-		cacheLayers := make([]cache.Cache, cacheLayersLen)
-		for i := 0; i < cacheLayersLen; i++ {
-			cacheLayer, err := buildCache(cacheLayersPS[i], routingTable, debugMode)
-			if err != nil {
-				return c, err
-			}
-			cacheLayers[i] = cacheLayer
-		}
-
-		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
-		for i := 0; i < cachePoliciesLen; i++ {
-			cachePolicyStr := cachePoliciesPS[i]
-
-			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
-		}
-
-		c = &cache.MultiLayerCache{
-			CacheLayers:          cacheLayers,
-			CachePolicies:        cachePolicies,
-			CacheReferedByLayer:  make([]uint, cacheLayersLen),
-			CacheReplacedByLayer: make([]uint, cacheLayersLen),
-			CacheHitByLayer:      make([]uint, cacheLayersLen),
-		}
 	case "NbitFullAssociativeDstipLRUCache":
 		size := definitionCache.Size
-
 		refbits := definitionCache.Refbits
+
 		c = cache.NewFullAssociativeDstipNbitLRUCache(uint(refbits), uint(size), routingTable, debugMode)
 	case "NbitNWaySetAssociativeDstipLRUCache":
 		size := definitionCache.Size
-
 		way := definitionCache.Way
 		refbits := definitionCache.Refbits
-		c = cache.NewNWaySetAssociativeDstipNbitLRUCache(uint(refbits), uint(size), uint(way), routingTable, debugMode)
+		parentCache := additionalInfo.ParentCache
+		indexInParentCache := additionalInfo.CacheIndex
+
+		c = cache.NewNWaySetAssociativeDstipNbitLRUCache(uint(refbits), uint(size), uint(way), routingTable, debugMode, parentCache, indexInParentCache)
 	case "MultiLayerCacheExclusive":
-		// MultiLayerCacheExclusive の設定を取得
 		cacheLayersPS := definitionCache.CacheLayers
 		cachePoliciesPS := definitionCache.CachePolicies
 		cacheLayersLen := len(cacheLayersPS)
 		cachePoliciesLen := len(cachePoliciesPS)
-
 		cacheRefbits := make([]uint, cacheLayersLen)
 
 		if cachePoliciesLen != (cacheLayersLen - 1) {
 			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
 		}
 
-		// CacheLayersの設定を取得して、キャッシュを構築
-		cacheLayers := make([]cache.Cache, cacheLayersLen)
-		for i := 0; i < cacheLayersLen; i++ {
-			cacheLayer, err := buildCache(cacheLayersPS[i], routingTable, debugMode)
-			if err != nil {
-				return c, err
-			}
-			cacheLayers[i] = cacheLayer
-			refbit := cacheLayersPS[i].Refbits
-			cacheRefbits[i] = uint(refbit)
-		}
-
-		//ポリシーを構築して
 		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
 		for i := 0; i < cachePoliciesLen; i++ {
 			cachePolicyStr := cachePoliciesPS[i]
@@ -250,7 +200,6 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 		}
 
 		c = &cache.MultiLayerCacheExclusive{
-			CacheLayers:          cacheLayers,
 			CachePolicies:        cachePolicies,
 			CacheReferedByLayer:  make([]uint, cacheLayersLen),
 			CacheReplacedByLayer: make([]uint, cacheLayersLen),
@@ -259,9 +208,23 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 			CacheRefBits:         cacheRefbits,
 			RoutingTable:         *routingTable,
 		}
-	case "DebugCache":
-		// MultiLayerCacheExclusive の設定を取得
-		fmt.Printf("make debug cache\n")
+
+		cacheLayers := make([]cache.Cache, cacheLayersLen)
+		for i := 0; i < cacheLayersLen; i++ {
+			additionalInfo.CacheIndex = i
+			additionalInfo.ParentCache = c
+			cacheLayer, err := buildCache(cacheLayersPS[i], additionalInfo)
+			if err != nil {
+				return c, err
+			}
+			cacheLayers[i] = cacheLayer
+			refbit := cacheLayersPS[i].Refbits
+			cacheRefbits[i] = uint(refbit)
+		}
+
+		c.(*cache.MultiLayerCacheExclusive).CacheLayers = cacheLayers
+
+	case "MultiLayerCacheInclusive":
 		cacheLayersPS := definitionCache.CacheLayers
 		cachePoliciesPS := definitionCache.CachePolicies
 		cacheLayersLen := len(cacheLayersPS)
@@ -273,10 +236,31 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 			return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
 		}
 
-		// CacheLayersの設定を取得して、キャッシュを構築
+		// 先に MultiLayerCacheInclusive インスタンスを作成
+		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
+		for i := 0; i < cachePoliciesLen; i++ {
+			cachePolicyStr := cachePoliciesPS[i]
+			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
+		}
+
+		c = &cache.MultiLayerCacheInclusive{
+			CachePolicies:        cachePolicies,
+			CacheReferedByLayer:  make([]uint, cacheLayersLen),
+			CacheReplacedByLayer: make([]uint, cacheLayersLen),
+			CacheHitByLayer:      make([]uint, cacheLayersLen),
+			CacheInserted:        make([]uint, cacheLayersLen),
+			OnceCacheLimit:       definitionCache.OnceCacheLimit,
+			Invalidate:           make([]uint, cacheLayersLen),
+			CacheRefBits:         cacheRefbits,
+			RoutingTable:         *routingTable,
+		}
+
+		// 次に各レイヤーのキャッシュを作成
 		cacheLayers := make([]cache.Cache, cacheLayersLen)
 		for i := 0; i < cacheLayersLen; i++ {
-			cacheLayer, err := buildCache(cacheLayersPS[i], routingTable, debugMode)
+			additionalInfo.CacheIndex = i
+			additionalInfo.ParentCache = c
+			cacheLayer, err := buildCache(cacheLayersPS[i], additionalInfo)
 			if err != nil {
 				return c, err
 			}
@@ -285,73 +269,8 @@ func buildCache(definitionCache Cache, routingTable *routingtable.RoutingTablePa
 			cacheRefbits[i] = uint(refbit)
 		}
 
-		//ポリシーを構築して
-		cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
-		for i := 0; i < cachePoliciesLen; i++ {
-			cachePolicyStr := cachePoliciesPS[i]
-			cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
-		}
-
-		c = &cache.DebugCache{
-			CacheLayers:          cacheLayers,
-			CachePolicies:        cachePolicies,
-			CacheReferedByLayer:  make([]uint, cacheLayersLen),
-			CacheReplacedByLayer: make([]uint, cacheLayersLen),
-			CacheHitByLayer:      make([]uint, cacheLayersLen),
-			CacheInserted:        make([]uint, cacheLayersLen),
-			CacheRefBits:         cacheRefbits,
-			RoutingTable:         *routingTable,
-		}
-	// case "MultiLayerCacheInclusive":
-	// 	// MultiLayerCacheInclusive の設定を取得
-	// 	cacheLayersPS := p.M("CacheLayers").ProxySet()
-	// 	cachePoliciesPS := p.M("CachePolicies").ProxySet()
-	// 	cacheLayersLen := cacheLayersPS.Len()
-	// 	cachePoliciesLen := cachePoliciesPS.Len()
-
-	// 	cacheRefbits := make([]uint, cacheLayersLen)
-
-	// 	if cachePoliciesLen != (cacheLayersLen - 1) {
-	// 		return c, fmt.Errorf("`CachePolicies` (%d items) must have `CacheLayers` length - 1 (%d) items", cachePoliciesLen, cacheLayersLen-1)
-	// 	}
-
-	// 	cacheLayers := make([]cache.Cache, cacheLayersLen)
-	// 	for i := 0; i < cacheLayersLen; i++ {
-	// 		cacheLayer, err := buildCache(cacheLayersPS.A(i), routingTable, debugMode)
-	// 		if err != nil {
-	// 			return c, err
-	// 		}
-	// 		cacheLayers[i] = cacheLayer
-	// 		refbit, _ := cacheLayersPS.A(i).M("Refbits").Int64()
-	// 		cacheRefbits[i] = uint(refbit)
-	// 	}
-
-	// 	cachePolicies := make([]cache.CachePolicy, cachePoliciesLen)
-	// 	for i := 0; i < cachePoliciesLen; i++ {
-	// 		cachePolicyStr, err := cachePoliciesPS.A(i).String()
-	// 		if err != nil {
-	// 			return c, err
-	// 		}
-
-	// 		cachePolicies[i] = cache.StringToCachePolicy(cachePolicyStr)
-	// 	}
-
-	// 	onceCacheLimit, e := p.M("OnceCacheLimit").Int64()
-	// 	if e != nil {
-	// 		panic("OnceCacheLimit is not set")
-	// 	}
-	// 	c = &cache.MultiLayerCacheInclusive{
-	// 		CacheLayers:          cacheLayers,
-	// 		CachePolicies:        cachePolicies,
-	// 		CacheReferedByLayer:  make([]uint, cacheLayersLen),
-	// 		CacheReplacedByLayer: make([]uint, cacheLayersLen),
-	// 		CacheHitByLayer:      make([]uint, cacheLayersLen),
-	// 		CacheNotInserted:     make([]uint, cacheLayersLen),
-	// 		Special:              make([]uint, cacheLayersLen),
-	// 		CacheRefBits:         cacheRefbits,
-	// 		RoutingTable:         *routingTable,
-	// 		OnceCacheLimit:       int(onceCacheLimit),
-	// 	}
+		// 作成したキャッシュレイヤーを設定
+		c.(*cache.MultiLayerCacheInclusive).CacheLayers = cacheLayers
 	default:
 		return nil, fmt.Errorf("unsupported cache type: %s", cache_type)
 	}
@@ -369,6 +288,7 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 		return nil, fmt.Errorf("unsupported simulator type: %s", simType)
 	}
 
+	// ルーティングテーブルを初期化
 	r := routingtable.NewRoutingTablePatriciaTrie()
 
 	if rulefile != "" {
@@ -379,13 +299,22 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 		defer fp.Close()
 		r.ReadRule(fp)
 	}
-	// キャッシュを構築
-	cache, err := buildCache(simulatorDefinition.Cache, r, simulatorDefinition.DebugMode)
 
+	// CacheInitInfo を生成
+	additionalInfo := CacheInitInfo{
+		RoutingTable: r,
+		DebugMode:    simulatorDefinition.DebugMode,
+		ParentCache:  nil, // 上位キャッシュがない場合は nil
+		CacheIndex:   -1,  // 上位キャッシュがない場合は -1
+	}
+
+	// キャッシュを構築
+	cache, err := buildCache(simulatorDefinition.Cache, additionalInfo)
 	if err != nil {
 		return nil, err
 	}
 
+	// シミュレータを初期化
 	sim := &SimpleCacheSimulator{
 		Cache: cache,
 		Stat: NewCacheSimulatorStat(

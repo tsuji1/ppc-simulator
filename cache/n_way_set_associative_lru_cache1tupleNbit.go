@@ -5,17 +5,20 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"strings"
 	"test-module/routingtable"
 )
 
 type NWaySetAssociativeDstipNbitLRUCache struct {
-	Sets         []FullAssociativeDstipNbitLRUCache // len(Sets) = Size / Way, each size == Way
-	Way          uint
-	Size         uint
-	Refbits      uint
-	routingTable *routingtable.RoutingTablePatriciaTrie
-	debugMode    bool
-	isFull bool
+	Sets               []FullAssociativeDstipNbitLRUCache // len(Sets) = Size / Way, each size == Way
+	Way                uint
+	Size               uint
+	Refbits            uint
+	routingTable       *routingtable.RoutingTablePatriciaTrie
+	debugMode          bool
+	ParentCache        Cache
+	IndexInParentCache int
+	IsFull             bool
 }
 
 func returnMaskedIP(IP uint32, refbits uint) uint32 {
@@ -67,7 +70,18 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCachedWithFiveTuple(f *FiveT
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	setIdx := cache.setIdxFromMaskedDstIp(f)
-	return cache.Sets[setIdx].CacheFiveTuple(f)
+	description := cache.ParentCache.Description()
+	evictedFiveTuples := cache.Sets[setIdx].CacheFiveTuple(f)
+
+	switch {
+	case strings.HasPrefix(description, "MultiLayerCacheInclusive"):
+		cache.ParentCache.(*MultiLayerCacheInclusive).CacheInserted[cache.IndexInParentCache] += 1
+		cache.ParentCache.(*MultiLayerCacheInclusive).CacheReplacedByLayer[cache.IndexInParentCache] += uint(len(evictedFiveTuples))
+		break
+	default:
+	}
+
+	return evictedFiveTuples
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) InvalidateFiveTuple(f *FiveTuple) {
@@ -96,7 +110,7 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) Parameter() Parameter {
 		Refbits: int(cache.Refbits),
 	}
 }
-func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool) *NWaySetAssociativeDstipNbitLRUCache {
+func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool, parentCache Cache, indexInParentCache int) *NWaySetAssociativeDstipNbitLRUCache {
 	if size%way != 0 {
 		panic("Size must be multiplier of way")
 	}
@@ -109,12 +123,14 @@ func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTabl
 	}
 
 	return &NWaySetAssociativeDstipNbitLRUCache{
-		Sets:         sets,
-		Way:          way,
-		Size:         size,
-		Refbits:      refbits,
-		routingTable: routingTable,
-		debugMode:    debugMode,
-		isFull: 	  false,
+		Sets:               sets,
+		Way:                way,
+		Size:               size,
+		Refbits:            refbits,
+		routingTable:       routingTable,
+		debugMode:          debugMode,
+		ParentCache:        parentCache,
+		IndexInParentCache: indexInParentCache,
+		IsFull:             false,
 	}
 }

@@ -148,6 +148,13 @@ func MakeParameterBson(c Cache) (bson.M, error) {
 			Size: uint(c.Size),
 			Way:  uint(c.Way),
 		}
+	case strings.HasPrefix(paramType, "MultiLayerCacheInclusive"):
+		param = &cache.InclusiveCacheParameter{
+			Type:           paramType,
+			CacheLayers:    make([]cache.Parameter, len(c.CacheLayers)),
+			CachePolicies:  make([]cache.CachePolicy, len(c.CachePolicies)),
+			OnceCacheLimit: c.OnceCacheLimit,
+		}
 	case strings.HasPrefix(paramType, "MultiLayer"):
 		param = &cache.MultiCacheParameter{
 			Type:          paramType,
@@ -183,10 +190,21 @@ func (s *SimulatorDefinition) GetParameterBson() (bson.M, error) {
 	fmt.Printf("param: %v\n", param)
 	return param, err
 }
-
+func (s *SimulatorDefinition) Print() {
+	fmt.Printf("SimulatorDefinition:\n")
+	fmt.Printf("  Type: %s\n", s.Type)
+	if len(s.Cache.CacheLayers) > 0 {
+		fmt.Printf("    CacheLayers:\n")
+		for i, layer := range s.Cache.CacheLayers {
+			fmt.Printf("      Cache %d:\n", i)
+			fmt.Printf("        Type: %s\n", layer.Type)
+			fmt.Printf("        Size: %d\n", layer.Size)
+			fmt.Printf("        Refbits: %d\n", layer.Refbits)
+		}
+	}
+}
 func (s *SimulatorDefinition) GetParameter() (cache.Parameter, error) {
 	param, err := MakeParameter(s.Cache)
-	fmt.Printf("param: %v\n", param)
 	return param, err
 }
 func MakeParameter(c Cache) (cache.Parameter, error) {
@@ -229,6 +247,30 @@ func MakeParameter(c Cache) (cache.Parameter, error) {
 			Size: uint(c.Size),
 			Way:  uint(c.Way),
 		}
+	case paramType == "MultiLayerCacheInclusive":
+		param = &cache.InclusiveCacheParameter{
+			CacheLayers:    make([]cache.Parameter, len(c.CacheLayers)),
+			CachePolicies:  make([]cache.CachePolicy, len(c.CachePolicies)),
+			OnceCacheLimit: c.OnceCacheLimit,
+		}
+
+		// CacheLayersを再帰的に処理
+		for i, layer := range c.CacheLayers {
+			layerParam, err := MakeParameter(layer)
+			if err != nil {
+				return nil, err
+			}
+
+			// CacheLayerをスライスに格納
+			param.(*cache.InclusiveCacheParameter).CacheLayers[i] = layerParam
+		}
+
+		// CachePoliciesを格納
+		for i, policy := range c.CachePolicies {
+			param.(*cache.InclusiveCacheParameter).CachePolicies[i] = cache.StringToCachePolicy(policy)
+		}
+		param.(*cache.InclusiveCacheParameter).Type = cache.GetMultiLayerParameterTypeName(paramType, param.(*cache.InclusiveCacheParameter).CacheLayers)
+
 	case strings.HasPrefix(paramType, "MultiLayer"):
 		param = &cache.MultiCacheParameter{
 			CacheLayers:   make([]cache.Parameter, len(c.CacheLayers)),
@@ -418,6 +460,8 @@ func InitializedSimulatorDefinition(json interface{}) SimulatorDefinition {
 func NewSimulatorDefinition(cachetype string) (SimulatorDefinition, error) {
 	if cachetype == "MultiLayerCacheExclusive" {
 		return NewMultiLayerExclusiveCacheSimulatorDefinition(), nil
+	} else if cachetype == "MultiLayerCacheInclusive" {
+		return NewMultiLayerInclusiveCacheSimulatorDefinition(), nil
 	} else if cachetype == "LRU" {
 		return NewLRUSimulatorDefinition(), nil
 	} else {
@@ -439,6 +483,32 @@ func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 				},
 				{
 					// Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					Size:    64,
+					Way:     4,
+					Refbits: 16,
+				},
+			},
+			CachePolicies: []string{"WriteThrough"},
+		},
+		Rule:      "rules/wide.rib.20240625.1400.unique.rule",
+		DebugMode: true,
+		Interval:  10000000000,
+	}
+}
+func NewMultiLayerInclusiveCacheSimulatorDefinition() SimulatorDefinition {
+	return SimulatorDefinition{
+		Type: "SimpleCacheSimulator",
+		Cache: Cache{
+			Type: "MultiLayerCacheInclusive",
+			CacheLayers: []Cache{
+				{
+					Type:    "NbitNWaySetAssociativeDstipLRUCache",
+					Size:    64,
+					Way:     4,
+					Refbits: 32,
+				},
+				{
 					Type:    "NbitNWaySetAssociativeDstipLRUCache",
 					Size:    64,
 					Way:     4,
@@ -483,10 +553,10 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 			combination := make([][2]int, layers)
 			copy(combination, current)
 			if layers == 2 {
-				// if combination[0][1] >= 24 {
-				// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
-				results = append(results, combination)
-				// }
+				if combination[0][1] >= 24 {
+					// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
+					results = append(results, combination)
+				}
 			} else if layers == 3 {
 				if combination[0][1] == 24 {
 					// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。

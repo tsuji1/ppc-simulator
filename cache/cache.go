@@ -85,6 +85,12 @@ type MultiCacheParameter struct {
 	CacheLayers   []Parameter
 	CachePolicies []CachePolicy
 }
+type InclusiveCacheParameter struct {
+	Type          string
+	CacheLayers   []Parameter
+	CachePolicies []CachePolicy
+	OnceCacheLimit int
+}
 
 // FullAssociativeParameter の GetParameterString 実装
 func (p FullAssociativeParameter) GetParameterString() map[string]interface{} {
@@ -131,6 +137,15 @@ func (p MultiCacheParameter) GetParameterString() map[string]interface{} {
 	}
 }
 
+// MultiCacheParameter の GetParameterString 実装
+func (p InclusiveCacheParameter) GetParameterString() map[string]interface{} {
+	return map[string]interface{}{
+		"Type":          p.Type,
+		"CacheLayers":   p.CacheLayers,
+		"CachePolicies": p.CachePolicies,
+		"OnceCacheLimit": p.OnceCacheLimit,
+	}
+}
 // FullAssociativeParameter の GetBson 実装
 func (p FullAssociativeParameter) GetBson() bson.M {
 	return bson.M{
@@ -182,6 +197,33 @@ func (p MultiCacheParameter) GetBson() bson.M {
 	}
 }
 
+func (p *MultiCacheParameter) GetParameterType() string {
+	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
+	return name
+}
+
+// MultiCacheParameter の GetBson 実装
+func (p InclusiveCacheParameter) GetBson() bson.M {
+	cacheLayers := make([]bson.M, len(p.CacheLayers))
+	for i, layer := range p.CacheLayers {
+		if param, ok := layer.(Parameter); ok {
+			cacheLayers[i] = param.GetBson()
+		}
+	}
+	return bson.M{
+		"type":          p.GetParameterType(),
+		"cachelayers":   cacheLayers,
+		"cachepolicies": p.CachePolicies,
+		"oncecachelimit": p.OnceCacheLimit, 
+	}
+}
+
+func (p *InclusiveCacheParameter) GetParameterType() string {
+	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
+	return name
+}
+
+
 func (p *NbitFullAssociativeParameter) GetParameterType() string {
 	return p.Type
 }
@@ -200,10 +242,6 @@ func GetMultiLayerParameterTypeName(typeMultiCache string, cacheLayers []Paramet
 	}
 	parameterName = parameterName + "]"
 	return parameterName
-}
-func (p *MultiCacheParameter) GetParameterType() string {
-	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
-	return name
 }
 func (p *FullAssociativeParameter) GetParameterType() string {
 	return p.Type

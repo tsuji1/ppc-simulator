@@ -126,6 +126,21 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 		if err != nil {
 			return fmt.Errorf("failed to insert simulator result: %w", err)
 		}
+	} else if simulatorResult.Type == "MultiLayerCacheInclusive" {
+		// SimulatorResultWithMetadata 構造体を作成
+		var simulatorResultWithMetadata SimulatorResultWithMetadata
+		simulatorResultWithMetadata.SimulatorResult = simulatorResult
+		simulatorResultWithMetadata.Timestamp = time.Now()
+		simulatorResultWithMetadata.RuleFileName = ruleFileName
+		simulatorResultWithMetadata.TraceFileName = traceFileName
+
+		// データを挿入f
+		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		if err != nil {
+			return fmt.Errorf("failed to insert simulator result: %w", err)
+		}
+	} else {
+		panic("Unknown Simulator Type, Type: " + simulatorResult.Type)
 	}
 
 	return nil
@@ -233,6 +248,19 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 				"$gte": 0, // Greater Than or Equal: 0以上
 			},
 		}
+	} else if simulatorType == "MultiLayerCacheInclusive" {
+		fmt.Printf("MultiLayerCacheInclusive\n")
+		fmt.Printf("Parameter: %+v\n", simulatorParameter)
+		filterQuery = bson.M{
+			"simulator_result.parameter": simulatorParameter,
+			"simulator_result.processed": simulatorProcessed,
+			"simulator_result.type":      simulatorType,
+			"rule_file_name":             ruleFileName,
+			"trace_file_name":            traceFileName, // depthsum が 0 以上である条件を追加
+			// "simulator_result.statdetail.depthsum": bson.M{
+			// 	"$gte": 0, // Greater Than or Equal: 0以上
+			// },
+		}
 	} else {
 		filterQuery = bson.M{
 			"simulator_result.parameter": simulatorParameter,
@@ -245,15 +273,12 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 			},
 		}
 	}
-	fmt.Printf("filterQuery: %v\n", filterQuery)
 
 	// ドキュメントを探して結果を取得
 	var result SimulatorResultWithMetadata
 	mongoResult := db.Collection.FindOne(ctx, filterQuery)
-	fmt.Printf("mongoResult: %v\n", mongoResult)
 	err := mongoResult.Decode(&result)
 
-	fmt.Printf("result: %v\n", result)
 	if err != nil {
 		if err == mongo.ErrNoDocuments {
 			// ドキュメントが存在しない場合
