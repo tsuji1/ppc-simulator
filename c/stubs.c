@@ -124,3 +124,33 @@ void *kvzalloc(size_t sz, unsigned int gfp)
     (void)gfp;
     return calloc(1, sz);
 }
+
+/* ユーザ空間では単に malloc するだけ */
+void *pcpu_alloc_noprof(size_t size, size_t align)
+{
+    /* align は無視していいが、posix_memalign を使う方法もある */
+    void *p = NULL;
+    if (posix_memalign(&p, (align > 0 ? align : sizeof(void *)), size) != 0)
+        return NULL;
+    return p;
+}
+
+/* free_percpu → free と同じ */
+void free_percpu(void *ptr)
+{
+    free(ptr);
+}
+
+/* __per_cpu_offset は本来「各 CPU ごとのベースアドレス」を返すが、
+ * ユーザ空間では単に 0 を返す（per‐CPU 配列はすべて index 0 に集約）
+ */
+uintptr_t __per_cpu_offset(unsigned int cpu)
+{
+    (void)cpu;  // CPU 番号は無視
+    return (uintptr_t)0;
+}
+
+/* __cpu_possible_mask は本来「CPU のビットマスク」だが、
+ * ユーザ空間では「すべてのビットオフ」（= 0）でいい
+ */
+unsigned long __cpu_possible_mask = 0;

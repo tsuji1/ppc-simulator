@@ -74,7 +74,7 @@
  #include <net/sock.h>
  #include <net/ip_fib.h>
  #include <net/fib_notifier.h>
- #include <trace/events/fib.h>
+//  #include <trace/events/fib.h>
  #endif
  #include "fib_lookup.h"
  #undef CONFIG_TRACEPOINTS
@@ -225,114 +225,126 @@
  
  #define get_cindex(key, kv) (((key) ^ (kv)->key) >> (kv)->pos)
  
- static inline unsigned long get_index(t_key key, struct key_vector *kv)
- {
-     unsigned long index = key ^ kv->key;
- 
-     if ((BITS_PER_LONG <= KEYLENGTH) && (KEYLENGTH == kv->pos))
-         return 0;
- 
-     return index >> kv->pos;
- }
- 
- /* To understand this stuff, an understanding of keys and all their bits is
-  * necessary. Every node in the trie has a key associated with it, but not
-  * all of the bits in that key are significant.
-  *
-  * Consider a node 'n' and its parent 'tp'.
-  *
-  * If n is a leaf, every bit in its key is significant. Its presence is
-  * necessitated by path compression, since during a tree traversal (when
-  * searching for a leaf - unless we are doing an insertion) we will completely
-  * ignore all skipped bits we encounter. Thus we need to verify, at the end of
-  * a potentially successful search, that we have indeed been walking the
-  * correct key path.
-  *
-  * Note that we can never "miss" the correct key in the tree if present by
-  * following the wrong path. Path compression ensures that segments of the key
-  * that are the same for all keys with a given prefix are skipped, but the
-  * skipped part *is* identical for each node in the subtrie below the skipped
-  * bit! trie_insert() in this implementation takes care of that.
-  *
-  * if n is an internal node - a 'tnode' here, the various parts of its key
-  * have many different meanings.
-  *
-  * Example:
-  * _________________________________________________________________
-  * | i | i | i | i | i | i | i | N | N | N | S | S | S | S | S | C |
-  * -----------------------------------------------------------------
-  *  31  30  29  28  27  26  25  24  23  22  21  20  19  18  17  16
-  *
-  * _________________________________________________________________
-  * | C | C | C | u | u | u | u | u | u | u | u | u | u | u | u | u |
-  * -----------------------------------------------------------------
-  *  15  14  13  12  11  10   9   8   7   6   5   4   3   2   1   0
-  *
-  * tp->pos = 22
-  * tp->bits = 3
-  * n->pos = 13
-  * n->bits = 4
-  *
-  * First, let's just ignore the bits that come before the parent tp, that is
-  * the bits from (tp->pos + tp->bits) to 31. They are *known* but at this
-  * point we do not use them for anything.
-  *
-  * The bits from (tp->pos) to (tp->pos + tp->bits - 1) - "N", above - are the
-  * index into the parent's child array. That is, they will be used to find
-  * 'n' among tp's children.
-  *
-  * The bits from (n->pos + n->bits) to (tp->pos - 1) - "S" - are skipped bits
-  * for the node n.
-  *
-  * All the bits we have seen so far are significant to the node n. The rest
-  * of the bits are really not needed or indeed known in n->key.
-  *
-  * The bits from (n->pos) to (n->pos + n->bits - 1) - "C" - are the index into
-  * n's child array, and will of course be different for each child.
-  *
-  * The rest of the bits, from 0 to (n->pos -1) - "u" - are completely unknown
-  * at this point.
-  */
- 
- static const int halve_threshold = 25;
- static const int inflate_threshold = 50;
- static const int halve_threshold_root = 15;
- static const int inflate_threshold_root = 30;
- 
- static inline void alias_free_mem_rcu(struct fib_alias *fa)
- {
-     kfree_rcu(fa, rcu);
- }
- 
- #define TNODE_VMALLOC_MAX \
-     ilog2((SIZE_MAX - TNODE_SIZE(0)) / sizeof(struct key_vector *))
- 
- static void __node_free_rcu(struct rcu_head *head)
- {
-     struct tnode *n = container_of(head, struct tnode, rcu);
- 
-     if (!n->tn_bits)
-         kmem_cache_free(trie_leaf_kmem, n);
-     else
-         kvfree(n);
- }
- 
- #define node_free(n) call_rcu(&tn_info(n)->rcu, __node_free_rcu)
- 
- static struct tnode *tnode_alloc(int bits)
- {
-     size_t size;
- 
-     /* verify bits is within bounds */
-     if (bits > TNODE_VMALLOC_MAX)
-         return NULL;
- 
-     /* determine size and verify it is non-zero and didn't overflow */
-     size = TNODE_SIZE(1ul << bits);
- 
-     if (size <= PAGE_SIZE)
-         return kzalloc(size, GFP_KERNEL);
-     else
+/**
+ * @brief キー・ベクター・ノード内でのキーのインデックスを計算する
+ * 
+ * この関数は、入力されたキーとノードのキーをXORし、
+ * ノードの位置で右シフトすることで、関連するビットを抽出し、
+ * トライ・ノード内でキーを見つけるためのインデックスを計算します。
+ * 
+ * @param key インデックスを求めるキー
+ * @param kv 基準キーと位置を含むキー・ベクター・ノードへのポインタ
+ * @return 計算されたインデックス、またはキー長がノード位置と等しく
+ *         BITS_PER_LONGがKEYLENGTH以下の場合は0
+ */
+static inline unsigned long get_index(t_key key, struct key_vector *kv)
+{
+    unsigned long index = key ^ kv->key;
+
+    if ((BITS_PER_LONG <= KEYLENGTH) && (KEYLENGTH == kv->pos))
+        return 0;
+
+    return index >> kv->pos;
+}
+
+/* このコードを理解するには、キーとそのすべてのビットについての理解が必要です。
+ * トライ内のすべてのノードにはキーが関連付けられていますが、
+ * そのキーのすべてのビットが重要であるとは限りません。
+ *
+ * ノード 'n' とその親 'tp' を考えてみましょう。
+ *
+ * n がリーフの場合、そのキーのすべてのビットが重要です。その存在は
+ * パス圧縮によって必要とされています。なぜなら、ツリーの走査中に
+ * （リーフを検索する場合 - 挿入を行っている場合を除く）、遭遇した
+ * スキップされたビットをすべて完全に無視するからです。そのため、
+ * 潜在的に成功した検索の最後に、実際に正しいキーパスを辿ったことを
+ * 確認する必要があります。
+ *
+ * 存在する場合、間違ったパスを辿ることで正しいキーを「見逃す」ことは
+ * 決してありません。パス圧縮により、特定のプレフィックスを持つすべての
+ * キーで同じキーのセグメントがスキップされますが、スキップされた部分は
+ * スキップされたビット以下のサブトライの各ノードで同一です！
+ * この実装のtrie_insert()がそれを処理します。
+ *
+ * n が内部ノード - ここでは 'tnode' の場合、そのキーの様々な部分は
+ * 多くの異なる意味を持ちます。
+ *
+ * 例：
+ * _________________________________________________________________
+ * | i | i | i | i | i | i | i | N | N | N | S | S | S | S | S | C |
+ * -----------------------------------------------------------------
+ *  31  30  29  28  27  26  25  24  23  22  21  20  19  18  17  16
+ *
+ * _________________________________________________________________
+ * | C | C | C | u | u | u | u | u | u | u | u | u | u | u | u | u |
+ * -----------------------------------------------------------------
+ *  15  14  13  12  11  10   9   8   7   6   5   4   3   2   1   0
+ *
+ * tp->pos = 22
+ * tp->bits = 3
+ * n->pos = 13
+ * n->bits = 4
+ *
+ * まず、親tpより前に来るビット、つまり(tp->pos + tp->bits)から31までの
+ * ビットを無視しましょう。これらは*既知*ですが、この時点では何にも
+ * 使用しません。
+ *
+ * (tp->pos)から(tp->pos + tp->bits - 1)までのビット - 上の"N" - は
+ * 親の子配列へのインデックスです。つまり、これらはtpの子の中から'n'を
+ * 見つけるために使用されます。
+ *
+ * (n->pos + n->bits)から(tp->pos - 1)までのビット - "S" - は
+ * ノードnのスキップビットです。
+ *
+ * これまでに見たすべてのビットは、ノードnにとって重要です。残りの
+ * ビットは実際にはn->keyでは必要ないか、実際に不明です。
+ *
+ * (n->pos)から(n->pos + n->bits - 1)までのビット - "C" - は
+ * nの子配列へのインデックスであり、もちろん各子で異なります。
+ *
+ * 残りのビット、0から(n->pos -1)まで - "u" - は、この時点では
+ * 完全に不明です。
+ */
+
+static const int halve_threshold = 25;
+static const int inflate_threshold = 50;
+static const int halve_threshold_root = 15;
+static const int inflate_threshold_root = 30;
+
+static inline void alias_free_mem_rcu(struct fib_alias *fa)
+{
+    kfree_rcu(fa, rcu);
+}
+
+#define TNODE_VMALLOC_MAX \
+    ilog2((SIZE_MAX - TNODE_SIZE(0)) / sizeof(struct key_vector *))
+
+static void __node_free_rcu(struct rcu_head *head)
+{
+    struct tnode *n = container_of(head, struct tnode, rcu);
+
+    if (!n->tn_bits)
+        kmem_cache_free(trie_leaf_kmem, n);
+    else
+        kvfree(n);
+}
+
+#define node_free(n) call_rcu(&tn_info(n)->rcu, __node_free_rcu)
+
+static struct tnode *tnode_alloc(int bits)
+{
+    size_t size;
+
+    /* ビット数が境界内であることを確認 */
+    if (bits > TNODE_VMALLOC_MAX)
+        return NULL;
+
+    /* サイズを決定し、非ゼロかつオーバーフローしていないことを確認 */
+    size = TNODE_SIZE(1ul << bits);
+
+    if (size <= PAGE_SIZE)
+        return kzalloc(size, GFP_KERNEL);
+    else
          return vzalloc(size);
  }
  
@@ -1215,8 +1227,25 @@
      key = ntohl(cfg->fc_dst);
  
      pr_debug("Insert table=%u %08x/%d\n", tb->tb_id, key, plen);
- 
- 
+     
+    //  fi = kzalloc(struct_size(fi, fib_nh, nhs), GFP_KERNEL); ソースコードのコード
+    fi = kzalloc(sizeof(*fi) + sizeof(struct fib_nh), GFP_KERNEL);
+    // if (!fi) {
+    //     err = -ENOMEM;
+    //     goto err;
+    // }
+    //  fi->fib_priority = cfg->fc_priority;
+    //  fi->fib_protocol = cfg->fc_protocol;
+    //  fi->fib_scope = cfg->fc_scope;
+    //  fi->fib_type = cfg->fc_type;
+    //  fi->fib_prefsrc = cfg->fc_prefsrc;
+    //  fi->fib_tb_id = tb->tb_id;
+    //  fi->fib_nhs = 1;
+    //  if (!fi->fib_metrics) {
+    //      err = -ENOMEM;
+    //      goto err;
+    //  }
+
      dscp = cfg->fc_dscp;
      l = fib_find_node(t, &tp, key);
      fa = l ? fib_find_alias(&l->leaf, slen, dscp, 0,
@@ -1278,10 +1307,12 @@
              if (!new_fa)
                  goto out;
  
+             new_fa ->fa_info =fi;
              fi_drop = fa->fa_info;
              new_fa->fa_dscp = fa->fa_dscp;
              new_fa->fa_type = cfg->fc_type;
              state = fa->fa_state;
+             new_fa->fa_id = cfg->fc_nh_id;
              new_fa->fa_state = state & ~FA_S_ACCESSED;
              new_fa->fa_slen = fa->fa_slen;
              new_fa->tb_id = tb->tb_id;
@@ -1340,6 +1371,7 @@
      if (!new_fa)
          goto out;
  
+     new_fa->fa_info =fi; 
      new_fa->fa_dscp = dscp;
      new_fa->fa_type = cfg->fc_type;
      new_fa->fa_state = 0;
@@ -1347,6 +1379,7 @@
      new_fa->tb_id = tb->tb_id;
      new_fa->fa_default = -1;
      new_fa->offload = 0;
+     new_fa->fa_id = cfg->fc_nh_id;
      new_fa->trap = 0;
      new_fa->offload_failed = 0;
  
@@ -1376,7 +1409,7 @@
      if (!plen)
          tb->tb_num_default++;
  
-     rt_cache_flush(cfg->fc_nlinfo.nl_net);
+    //  rt_cache_flush(cfg->fc_nlinfo.nl_net);
     //  rtmsg_fib(RTM_NEWROUTE, htonl(key), new_fa, plen, new_fa->tb_id,
         //    &cfg->fc_nlinfo, nlflags);
  succeeded:
@@ -1586,7 +1619,7 @@
  #ifdef CONFIG_IP_FIB_TRIE_STATS
              this_cpu_inc(stats->semantic_match_passed);
  #endif
-             trace_fib_table_lookup(tb->tb_id, flp, NULL, err);
+            //  trace_fib_table_lookup(tb->tb_id, flp, NULL, err);
              return err;
          }
          if (fi->fib_flags & RTNH_F_DEAD)
@@ -1605,14 +1638,14 @@
              goto miss;
          }
  
-         for (nhsel = 0; nhsel < fib_info_num_path(fi); nhsel++) {
+         for (nhsel = 0; nhsel < 1; nhsel++) {
              nhc = fib_info_nhc(fi, nhsel);
  
-             if (!fib_lookup_good_nhc(nhc, fib_flags, flp))
-                 continue;
+//              if (!fib_lookup_good_nhc(nhc, fib_flags, flp))
+//                  continue;
  set_result:
-             if (!(fib_flags & FIB_LOOKUP_NOREF))
-                 refcount_inc(&fi->fib_clntref);
+//              if (!(fib_flags & FIB_LOOKUP_NOREF))
+//                  refcount_inc(&fi->fib_clntref);
  
              res->prefix = htonl(n->key);
              res->prefixlen = KEYLENGTH - fa->fa_slen;
@@ -1624,12 +1657,13 @@
              res->fi = fi;
              res->table = tb;
              res->fa_head = &n->leaf;
+             res->tclassid = fa->fa_id;
  #ifdef CONFIG_IP_FIB_TRIE_STATS
              this_cpu_inc(stats->semantic_match_passed);
  #endif
-             trace_fib_table_lookup(tb->tb_id, flp, nhc, err);
+            //  trace_fib_table_lookup(tb->tb_id, flp, nhc, err);
  
-             return err;
+             return 0;
          }
      }
  miss:

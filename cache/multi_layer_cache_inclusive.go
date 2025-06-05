@@ -2,7 +2,6 @@ package cache
 
 import (
 	"fmt"
-	"strings"
 	"test-module/ipaddress"
 	"test-module/routingtable"
 )

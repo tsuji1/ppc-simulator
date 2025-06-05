@@ -24,6 +24,7 @@ struct fib_alias {
 	u8			offload;
 	u8			trap;
 	u8			offload_failed;
+	uint32_t           fa_id; 
 	struct rcu_head		rcu;
 };
 
