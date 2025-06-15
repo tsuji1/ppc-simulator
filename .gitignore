@@ -1,4 +1,4 @@
-#一般的なファイル
+a#一般的なファイル
 .vscode
 *.exe
 main
@@ -8,6 +8,7 @@ main
 *.pcap
 /simulator-settings
 /result
+cachehitrace/*
 
 #個人のファイル
 exec.sh
@@ -32,3 +33,8 @@ pcap/*
 vendor/
 
 memorytrace-*
+*.so
+quick_test
+*.a
+*.o
+

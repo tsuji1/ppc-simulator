@@ -2,9 +2,12 @@ package routingtable
 
 import (
 	"bufio"
+	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math/rand"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -25,6 +28,7 @@ type RoutingTablePatriciaTrie struct {
 	SearchIpCacheHit         int
 	SearchIpCacheTotal       int
 	LpcTrie                  *lpctrie.Trie
+	LcTrieC                  lpctrie.LctrieC
 }
 
 // Data は、ルーティング情報を深さとネクストホップで保持するデータ構造です。
@@ -53,7 +57,7 @@ func (routingtable *RoutingTablePatriciaTrie) ReturnIPsInRule(prefix patricia.Pr
 }
 
 // EnumerateSubPrefixes は、指定されたプレフィックスに含まれるすべてのプレフィクスを返します。
-func (routingtable *RoutingTablePatriciaTrie) EnumerateSubPrefixes(prefix patricia.Prefix,srcRefbit uint, upperRefbit uint) (ans []string) {
+func (routingtable *RoutingTablePatriciaTrie) EnumerateSubPrefixes(prefix patricia.Prefix, srcRefbit uint, upperRefbit uint) (ans []string) {
 
 	prefix_length := uint(len(prefix))
 	fillLength := upperRefbit - prefix_length
@@ -72,7 +76,7 @@ func (routingtable *RoutingTablePatriciaTrie) EnumerateSubPrefixes(prefix patric
 	// 最後にシフトを戻す
 	baseIpUint = baseIpUint >> suffixLength
 
-	for i = 0; i < (1 << fillLength) ; i++ {
+	for i = 0; i < (1 << fillLength); i++ {
 		cacheIp := baseIpUint + uint32(i)
 		cacheIp = cacheIp << uint32(suffixLength)
 		cacheIpAddress := ipaddress.NewIPaddress(cacheIp)
@@ -88,7 +92,6 @@ func (routingtable *RoutingTablePatriciaTrie) GroupChildPrefixesByRefBits(prefix
 	tmpPrefix := ipaddress.NewIPaddress(prefix).String()
 	_ = tmpPrefix
 
-
 	countchild := func(p patricia.Prefix, i patricia.Item) error {
 		if prefix != string(p) {
 			p_length := uint(len(p))
@@ -97,7 +100,7 @@ func (routingtable *RoutingTablePatriciaTrie) GroupChildPrefixesByRefBits(prefix
 				upperRefbit := upperRefbits[i]
 				// 正確には，3相とかある場合はupperRefbitは消していくべき？違うか，17のルールは18に入れればいいし，19のルールは24に入れればいいだけのことか
 				if p_length <= upperRefbit {
-					cache_prefix_list := routingtable.EnumerateSubPrefixes(p, srcRefbit,upperRefbit)
+					cache_prefix_list := routingtable.EnumerateSubPrefixes(p, srcRefbit, upperRefbit)
 					ans[i] = append(ans[i], cache_prefix_list...)
 					tmp := ipaddress.NewIPaddress(string(p)).String()
 					_ = tmp
@@ -116,7 +119,7 @@ func (routingtable *RoutingTablePatriciaTrie) GroupChildPrefixesByRefBits(prefix
 }
 
 // CountIPsInChildrenRule は、指定されたIPアドレスと参照ビットに一致するルールの子ノードに含まれるIPアドレスの数を返します。
-var ErrStopWalk = errors.New("patricia: stop walk")  // 独自 sentinel
+var ErrStopWalk = errors.New("patricia: stop walk") // 独自 sentinel
 func (routingtable *RoutingTablePatriciaTrie) CountMatchingSubtreeRules(ip ipaddress.IPaddress, srcRefbit uint, upperRefbits []uint, limit int) (ans uint, prefix string) {
 	path, _, leftover := routingtable.RoutingTablePatriciaTrie.FindSubtreePath(patricia.Prefix(ip.MaskedBitString(int(srcRefbit))))
 	prefix = ""
@@ -283,6 +286,29 @@ func (routingtable *RoutingTablePatriciaTrie) ResetTreeDepth() {
 
 	routingtable.RoutingTablePatriciaTrie.VisitSubtree(patricia.Prefix(""), storeans)
 }
+func nextHopToUint32(s string) (uint32, error) {
+	// 1) IPv4 の場合
+	if strings.Count(s, ".") == 3 {
+		ip := net.ParseIP(s).To4()
+		if ip == nil {
+			return 0, fmt.Errorf("invalid IPv4 address: %q", s)
+		}
+		return binary.BigEndian.Uint32(ip), nil
+	}
+
+	// 2) UUID v4 の場合（例: "550e8400-e29b-41d4-a716-446655440000"）
+	//    ハイフンを除去して 32 文字の 16 進数にし、バイト列を得る
+	compact := strings.ReplaceAll(s, "-", "")
+	if len(compact) != 32 {
+		return 0, fmt.Errorf("invalid UUID v4 format: %q", s)
+	}
+	raw, err := hex.DecodeString(compact)
+	if err != nil {
+		return 0, fmt.Errorf("failed to decode UUID hex: %w", err)
+	}
+	// raw は長さ 16 の []byte なので、先頭 4 バイトを取り出して uint32 化する
+	return binary.BigEndian.Uint32(raw[0:4]), nil
+}
 
 // ReadRule は、ファイルからルーティングルールを読み取り、Patricia Trieに挿入します。
 func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
@@ -299,6 +325,9 @@ func (routingtable *RoutingTablePatriciaTrie) ReadRule(fp *os.File) {
 		fibalias := &lpctrie.FibAlias{FaSlen: uint8(i)}
 
 		lpctrie.FibInsert(routingtable.LpcTrie, lpctrie.Key(ip.Uint32()), fibalias)
+
+		nextHopInt32, _ := nextHopToUint32(item.NextHop)
+		lpctrie.LctrieInsert(routingtable.LcTrieC, ip.Uint32(), uint8(i), nextHopInt32)
 		// routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(refbits)), nil)
 		routingtable.RoutingTablePatriciaTrie.Insert(patricia.Prefix(ip.MaskedBitString(i)), item)
 	}
@@ -313,7 +342,8 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 	trie := patricia.NewTrie(patricia.MaxPrefixPerNode(33), patricia.MaxChildrenPerSparseNode(257))
 	l, _ := lru.New[string, bool](2048)
 	s, _ := lru.New[string, Result](2048)
-	lpctrie := lpctrie.NewTrie()
+	lpcRoutingTrie := lpctrie.NewTrie()
+	lcTrieC := lpctrie.InitLctrie()
 
 	return &RoutingTablePatriciaTrie{
 		RoutingTablePatriciaTrie: trie,
@@ -323,7 +353,8 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 		SearchIpCache:            s,
 		SearchIpCacheHit:         0,
 		SearchIpCacheTotal:       0,
-		LpcTrie:                  lpctrie,
+		LpcTrie:                  lpcRoutingTrie,
+		LcTrieC:                  lcTrieC,
 	}
 }
 
