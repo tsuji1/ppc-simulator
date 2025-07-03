@@ -26,6 +26,7 @@ import (
 	. "test-module/cache"
 	"test-module/db"
 	"test-module/ipaddress"
+	"test-module/memorytrace"
 	"test-module/routingtable"
 	"test-module/simulator"
 	"time"
@@ -802,6 +803,11 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 	}
 	stat := sim.GetSimulatorResult()
 	fmt.Printf("%v\n", stat)
+	if sim.Tracer != nil {
+		sim.Tracer.Reset()
+	} else {
+		memorytrace.Reset()
+	}
 	return stat
 
 }
