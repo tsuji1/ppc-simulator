@@ -14,6 +14,7 @@ type SimpleCacheSimulator struct {
 	cache.Cache
 	Stat          CacheSimulatorStat
 	SimDefinition SimulatorDefinition
+	Tracer        *memorytrace.Tracer
 }
 
 // CacheInitInfo はキャッシュ構築時の追加情報を保持します。
@@ -36,7 +37,11 @@ func NewAddtionalInfoBuildCache(routingTable *routingtable.RoutingTablePatriciaT
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
 // パケットがキャッシュにヒットしたかどうかを返します。
 func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
-	memorytrace.IncrementCycleCounter()
+	if sim.Tracer != nil {
+		sim.Tracer.IncrementCycleCounter()
+	} else {
+		memorytrace.IncrementCycleCounter()
+	}
 	switch pkt := p.(type) {
 	case *cache.Packet:
 		// キャッシュを検索
@@ -322,6 +327,7 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 			cache.Parameter(),
 		),
 		SimDefinition: simulatorDefinition,
+		Tracer:        memorytrace.NewTracer(),
 	}
 
 	return sim, nil
