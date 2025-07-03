@@ -92,6 +92,13 @@ type InclusiveCacheParameter struct {
 	OnceCacheLimit int
 }
 
+type UnifiedCacheLineParameter struct {
+	Type          string
+	Size          int
+	CacheTagLength [][]int
+	CacheIndexType  int // キャッシュインデックスのタイプ
+}
+
 // FullAssociativeParameter の GetParameterString 実装
 func (p FullAssociativeParameter) GetParameterString() map[string]interface{} {
 	return map[string]interface{}{
@@ -146,6 +153,17 @@ func (p InclusiveCacheParameter) GetParameterString() map[string]interface{} {
 		"OnceCacheLimit": p.OnceCacheLimit,
 	}
 }
+
+func (p UnifiedCacheLineParameter) GetParameterString() map[string]interface{} {
+	return map[string]interface{}{
+		"Type":          p.Type,
+		"Size":          p.Size,
+		"CacheTagLength": p.CacheTagLength,
+		"CacheIndexType": p.CacheIndexType,
+	}
+}
+
+
 // FullAssociativeParameter の GetBson 実装
 func (p FullAssociativeParameter) GetBson() bson.M {
 	return bson.M{
@@ -181,6 +199,14 @@ func (p NbitSetAssociativeParameter) GetBson() bson.M {
 		"refbits": p.Refbits,
 	}
 }
+func (p UnifiedCacheLineParameter) GetBson() bson.M {
+	return bson.M{
+		"type":          p.Type,
+		"size":          p.Size,
+		"cachetaglength": p.CacheTagLength,
+		"cacheindextype": p.CacheIndexType,
+	}
+}
 
 // MultiCacheParameter の GetBson 実装
 func (p MultiCacheParameter) GetBson() bson.M {
@@ -196,6 +222,7 @@ func (p MultiCacheParameter) GetBson() bson.M {
 		"cachepolicies": p.CachePolicies,
 	}
 }
+
 
 func (p *MultiCacheParameter) GetParameterType() string {
 	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
@@ -247,6 +274,10 @@ func (p *FullAssociativeParameter) GetParameterType() string {
 	return p.Type
 }
 func (p *NbitSetAssociativeParameter) GetParameterType() string {
+	return p.Type
+}
+
+func (p *UnifiedCacheLineParameter) GetParameterType() string {
 	return p.Type
 }
 

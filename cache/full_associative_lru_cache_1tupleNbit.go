@@ -118,10 +118,13 @@ func (cache *FullAssociativeDstipNbitLRUCache) CacheFiveTuple(f *FiveTuple) []*F
 	}
 
 	oldestElem := cache.evictList.Back()
+	// fmt.Println(oldestElem)
 
 	replacedEntry := cache.evictList.Remove(oldestElem).(fullAssociativeLRUCacheEntry)
+	// fmt.Println(replacedEntry)
 
 	delete(cache.Entries, cache.ReturnMaskedIP(replacedEntry.FiveTuple.DstIP))
+	// fmt.Println(cache.Entries)
 
 	var newEntry fullAssociativeLRUCacheEntry
 	if cache.debugMode {
