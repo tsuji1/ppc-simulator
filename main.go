@@ -54,6 +54,9 @@ var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
+var recordCacheHit = flag.Bool("recordcachehit", false, "record cache hit dstIP and related info")
+
+// Enable recording of cache hit dstIP and related info
 
 func init() {
 	// routingtable.Data 型の登録
@@ -712,7 +715,7 @@ func runSimpleCacheSimulatorWithGoRoutine(fp *os.File, sim *simulator.SimpleCach
 			continue
 		}
 		start := time.Now()
-		sim.Process(packet)
+		sim.Process(packet, *recordCacheHit)
 		elapsed := time.Since(start)
 
 		if sim.GetStat().Processed%printInterval == 0 {
@@ -764,7 +767,7 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 			continue
 		}
 		start := time.Now()
-		sim.Process(packet)
+		sim.Process(packet, *recordCacheHit)
 		elapsed := time.Since(start)
 
 		if sim.GetStat().Processed%printInterval == 0 {
@@ -778,21 +781,98 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
-func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, maxProccess uint64, bench bool) simulator.SimulatorResult {
+func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, maxProccess uint64, bench bool, recordCacheHit bool) simulator.SimulatorResult {
+
+	var file *os.File
+	if recordCacheHit {
+		fmt.Print("recordCacheHit is true\n")
+		paramString := sim.Parameter().GetParameterString()
+		// hasCacheLayers := false
+		// if _, ok := paramString["CacheLayers"]; ok {
+		// 	hasCacheLayers = true
+		// }
+		var paramStringStr = ""
+
+		for k, p := range paramString {
+			if k == "Type" {
+				// paramStringStr += fmt.Sprintf("%s-", p)
+				continue
+			} else if k == "CacheLayers" {
+				for _, cacheparam := range p.([]Parameter) {
+					cp := cacheparam.GetParameterString()
+					for kk, pp := range cp {
+						if kk == "Type" {
+							paramStringStr += fmt.Sprintf("%s-", pp.(string)[:5])
+						} else {
+							paramStringStr += fmt.Sprintf("%s-", pp)
+						}
+					}
+
+				}
+			} else if k == "CachePolicies" {
+				continue
+			} else {
+				paramStringStr += fmt.Sprintf("%s-", p)
+			}
+		}
+
+		// ファイル名に使えない文字をハイフンに置換
+		safeParamString := strings.Map(func(r rune) rune {
+			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+				return r
+			}
+			return '-'
+		}, paramStringStr)
+
+		// 連続するハイフンを1つにまとめる
+		safeParamString = strings.ReplaceAll(safeParamString, "--", "-")
+		for strings.Contains(safeParamString, "--") {
+			safeParamString = strings.ReplaceAll(safeParamString, "--", "-")
+		}
+		// 先頭のハイフンを取り除く
+		safeParamString = strings.TrimLeft(safeParamString, "-")
+
+		var err error
+		filePath := filepath.Join("cachehitrace", safeParamString+".txt")
+		// Ensure the directory exists
+		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+			panic(err)
+		}
+		file, err = os.Create(filePath)
+		if err != nil {
+			panic(err)
+		}
+		defer file.Close()
+	}
 
 	for _, p := range *packetList {
 
 		start := time.Now()
-		sim.Process(&p)
+		hit := sim.Process(&p, recordCacheHit)
 		elapsed := time.Since(start)
+
+		if recordCacheHit {
+			dstIp := ipaddress.NewIPaddress(p.DstIP).String()
+
+			if hit {
+				// hit or miss とdstipを書き込む
+				_, err := file.WriteString(fmt.Sprintf("hit %v\n", dstIp))
+				if err != nil {
+					panic(err)
+				}
+			} else {
+				// miss とdstipを書き込む
+				_, err := file.WriteString(fmt.Sprintf("miss %v\n", dstIp))
+				if err != nil {
+					panic(err)
+				}
+			}
+		}
 
 		if sim.GetStat().Processed%printInterval == 0 {
 
 			fmt.Printf("sim process time: %s\n", elapsed)
 			fmt.Printf("%v\n", sim.GetStatString())
-			if bench {
-				break
-			}
 		}
 		if sim.GetStat().Processed == 10000 && bench {
 			break
@@ -808,6 +888,7 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 	} else {
 		memorytrace.Reset()
 	}
+	fmt.Printf("stat %v\n", stat)
 	return stat
 
 }
@@ -932,7 +1013,8 @@ func main() {
 			panic(err)
 		}
 
-		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench)
+		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
+		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
 		wg := new(sync.WaitGroup)
@@ -991,7 +1073,7 @@ func main() {
 		var totalDuration time.Duration
 		var mu sync.Mutex // 進捗状況を守るためのMutex
 
-		for i := 0; i < runtime.NumCPU()-3; i++ {
+		for i := 0; i < runtime.NumCPU(); i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -1022,10 +1104,17 @@ func main() {
 
 					if ex == nil || *forceupdate {
 
+						if *forceupdate {
+							fmt.Print("forceupdate is true\n")
+						} else {
+							fmt.Print("data not found\n")
+						}
 						// 実際のシミュレーション処理
-						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
+						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench, *recordCacheHit)
 						sim.SimDefinition.Print()
 						stat.Print()
+						fmt.Println(param.GetParameterString())
+
 						err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
 						if err != nil {
 							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
@@ -1089,7 +1178,7 @@ func main() {
 
 			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
-			for i := 2; i < *cachenum; i++ {
+			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
 			// refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
@@ -1147,7 +1236,7 @@ func main() {
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheInclusive")
 			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
-			for i := 2; i < *cachenum; i++ {
+			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
 			for i := 16; i <= 24; i++ {
@@ -1155,7 +1244,7 @@ func main() {
 			}
 
 			onceCacheLimits := make([]int, 0, 128)
-			for i := 8; i <= 64; i += 8 {
+			for i := 0; i <= 8; i += 2 {
 				onceCacheLimits = append(onceCacheLimits, i)
 			}
 
@@ -1196,6 +1285,30 @@ func main() {
 					}
 				}
 			}
+		} else if "UnifiedCache" == cachetype {
+
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("UnifiedCache")
+
+			debugmodeEnv := os.Getenv("DEBUG_MODE")
+			debugmode := false
+			if debugmodeEnv == "true" || debugmodeEnv == "1" {
+				debugmode = true
+			}
+			settings := capacity
+
+			for i, setting := range settings {
+				if i > *skip {
+					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, setting)
+					newSim.DebugMode = debugmode
+					newSim.Interval = 100000000000
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					if err != nil {
+						panic(err)
+					}
+					queue <- *cacheSim
+				}
+			}
+
 		} else {
 			panic("not supported cache type")
 		}

@@ -20,10 +20,12 @@ type SimpleCacheSimulator struct {
 // CacheInitInfo はキャッシュ構築時の追加情報を保持します。
 // 上位キャッシュやデバッグモードなどの情報が含まれます。
 type CacheInitInfo struct {
-	RoutingTable *routingtable.RoutingTablePatriciaTrie
-	DebugMode    bool
-	ParentCache  cache.Cache // 必要に応じて上位キャッシュなども追加可能
-	CacheIndex   int         // ParentCache内で自分が何番目か（親がいる場合のみ有効）
+	RoutingTable   *routingtable.RoutingTablePatriciaTrie
+	DebugMode      bool
+	ParentCache    cache.Cache // 必要に応じて上位キャッシュなども追加可能
+	CacheIndex     int         // ParentCache内で自分が何番目か（親がいる場合のみ有効）
+	CacheTagLength [][]int     //
+	CacheIndexType int
 }
 
 func NewAddtionalInfoBuildCache(routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool, parentCache cache.Cache) CacheInitInfo {
@@ -36,12 +38,8 @@ func NewAddtionalInfoBuildCache(routingTable *routingtable.RoutingTablePatriciaT
 
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
 // パケットがキャッシュにヒットしたかどうかを返します。
-func (sim *SimpleCacheSimulator) Process(p interface{}) bool {
-	if sim.Tracer != nil {
-		sim.Tracer.IncrementCycleCounter()
-	} else {
-		memorytrace.IncrementCycleCounter()
-	}
+func (sim *SimpleCacheSimulator) Process(p interface{}, recordCacheHit bool) bool {
+	memorytrace.IncrementCycleCounter()
 	switch pkt := p.(type) {
 	case *cache.Packet:
 		// キャッシュを検索
@@ -187,6 +185,17 @@ func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cach
 		indexInParentCache := additionalInfo.CacheIndex
 
 		c = cache.NewNWaySetAssociativeDstipNbitLRUCache(uint(refbits), uint(size), uint(way), routingTable, debugMode, parentCache, indexInParentCache)
+	case "UnifiedCache":
+		size := definitionCache.Size
+		way := definitionCache.Way
+
+		cacheTagLength := additionalInfo.CacheTagLength
+
+		debugMode := additionalInfo.DebugMode
+		cacheIndexType := additionalInfo.CacheIndexType
+		c = cache.NewUnifiedCache(uint(size), uint(way), routingTable, cacheIndexType, cacheTagLength, debugMode)
+
+		return c, nil
 	case "MultiLayerCacheExclusive":
 		cacheLayersPS := definitionCache.CacheLayers
 		cachePoliciesPS := definitionCache.CachePolicies
@@ -307,10 +316,12 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 
 	// CacheInitInfo を生成
 	additionalInfo := CacheInitInfo{
-		RoutingTable: r,
-		DebugMode:    simulatorDefinition.DebugMode,
-		ParentCache:  nil, // 上位キャッシュがない場合は nil
-		CacheIndex:   -1,  // 上位キャッシュがない場合は -1
+		RoutingTable:   r,
+		DebugMode:      simulatorDefinition.DebugMode,
+		ParentCache:    nil, // 上位キャッシュがない場合は nil
+		CacheIndex:     -1,  // 上位キャッシュがない場合は -1
+		CacheTagLength: simulatorDefinition.Cache.CacheTagLength,
+		CacheIndexType: simulatorDefinition.Cache.CacheIndexType,
 	}
 
 	// キャッシュを構築

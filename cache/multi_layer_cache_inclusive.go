@@ -208,6 +208,7 @@ func (c *MultiLayerCacheInclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	for _, p := range prefix {
 		c.MatchMap[len(p)] += 1
 	}
+
 	c.LongestMatchMap[len(prefix[prefix_size])] += 1
 
 	c.DepthSum += uint64(c.RoutingTable.GetDepth(f.DstIP))
@@ -260,7 +261,7 @@ func (c *MultiLayerCacheInclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 				}
 			}
 
-			fiveTuplesForUpperCaches := c.RoutingTable.GroupChildPrefixesByRefBits(matchingPrefix,targetRefbit, upperCacheRefbits)
+			fiveTuplesForUpperCaches := c.RoutingTable.GroupChildPrefixesByRefBits(matchingPrefix, targetRefbit, upperCacheRefbits)
 			c.DoInclusive += 1
 			tmpList := make([][]string, len(fiveTuplesForUpperCaches))
 
@@ -306,8 +307,8 @@ func (c *MultiLayerCacheInclusive) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 				// }
 
 				evictedFiveTuples = append(evictedFiveTuples, tempEvictedFiveTuples...)
-				break
 			}
+			break
 		}
 	}
 
@@ -354,6 +355,8 @@ func (c *MultiLayerCacheInclusive) ParameterString() string {
 
 		str += fmt.Sprintf("\"%s\"", cachePolicy.String())
 	}
+	
+	
 
 	str += "]}"
 	return str

@@ -1,0 +1,60 @@
++ LINUX=/home/tsuji/linux
++ PROJ=/home/tsuji/osada-ppc-simulator
+++ gcc -print-file-name=include
++ GCC_INC=/usr/lib/gcc/x86_64-linux-gnu/13/include
++ GLIBC_INC=/usr/include
+++ gcc -dumpmachine
++ GLIBC_ARCH_INC=/usr/include/x86_64-linux-gnu
++ KCFLAGS='
+ -nostdinc
+ -include /home/tsuji/linux/include/generated/autoconf.h
+ -include /home/tsuji/linux/include/linux/kconfig.h
+ -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include
+ -isystem /usr/include
+ -isystem /usr/include/x86_64-linux-gnu
+ -I/home/tsuji/linux/include -I/home/tsuji/linux/arch/x86/include
+ -I/home/tsuji/linux/include/generated -I/home/tsuji/linux/arch/x86/include/generated
+ -I/home/tsuji/linux/include/uapi      -I/home/tsuji/linux/arch/x86/include/uapi
+ -I/home/tsuji/linux/include/generated/uapi -I/home/tsuji/linux/arch/x86/include/generated/uapi
+ -I/home/tsuji/osada-ppc-simulator/c/include
+ -D__KERNEL__
+ -DKBUILD_MODNAME="fib_trie_user"
+ -O2 -g -Wall
+'
++ gcc -nostdinc -include /home/tsuji/linux/include/generated/autoconf.h -include /home/tsuji/linux/include/linux/kconfig.h -isystem /usr/lib/gcc/x86_64-linux-gnu/13/include -isystem /usr/include -isystem /usr/include/x86_64-linux-gnu -I/home/tsuji/linux/include -I/home/tsuji/linux/arch/x86/include -I/home/tsuji/linux/include/generated -I/home/tsuji/linux/arch/x86/include/generated -I/home/tsuji/linux/include/uapi -I/home/tsuji/linux/arch/x86/include/uapi -I/home/tsuji/linux/include/generated/uapi -I/home/tsuji/linux/arch/x86/include/generated/uapi -I/home/tsuji/osada-ppc-simulator/c/include -D__KERNEL__ '-DKBUILD_MODNAME="fib_trie_user"' -O2 -g -Wall -c /home/tsuji/osada-ppc-simulator/c/src/fib_trie.c -o fib_trie.user.o
++ gcc -I/home/tsuji/osada-ppc-simulator/c/include -O2 -g -Wall -c /home/tsuji/osada-ppc-simulator/c/src/wrapper.c -o wrapper.o
+In file included from /home/tsuji/osada-ppc-simulator/c/src/wrapper.c:8:
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:39:1: warning: multi-line comment [-Wcomment]
+   39 | // #define pr_debug(fmt, ...)  \
+      | ^
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:47:9: error: unknown type name ‘uint32_t’
+   47 | typedef uint32_t u32;
+      |         ^~~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:48:9: error: unknown type name ‘uint8_t’
+   48 | typedef uint8_t  u8;
+      |         ^~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:59:9: error: unknown type name ‘uint32_t’
+   59 |         uint32_t fc_dst;
+      |         ^~~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:60:9: error: unknown type name ‘uint8_t’
+   60 |         uint8_t  fc_dst_len;
+      |         ^~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:61:9: error: unknown type name ‘uint8_t’
+   61 |         uint8_t  fc_type;
+      |         ^~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:62:9: error: unknown type name ‘uint8_t’
+   62 |         uint8_t  fc_protocol;
+      |         ^~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:63:9: error: unknown type name ‘uint8_t’
+   63 |         uint8_t  fc_scope;
+      |         ^~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:64:9: error: unknown type name ‘uint32_t’
+   64 |         uint32_t fc_table;
+      |         ^~~~~~~~
+/home/tsuji/osada-ppc-simulator/c/include/lctrie_user.h:68:17: error: unknown type name ‘uint32_t’
+   68 | struct flowi4 { uint32_t daddr; };
+      |                 ^~~~~~~~
+/home/tsuji/osada-ppc-simulator/c/src/wrapper.c:15:10: fatal error: linux/byteorder/generic.h: No such file or directory
+   15 | #include <linux/byteorder/generic.h>
+      |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~
+compilation terminated.
