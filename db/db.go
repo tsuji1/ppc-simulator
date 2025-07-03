@@ -139,6 +139,18 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 		if err != nil {
 			return fmt.Errorf("failed to insert simulator result: %w", err)
 		}
+	} else if simulatorResult.Type == "UnifiedCache" {
+		// SimulatorResultWithMetadata 構造体を作成
+		var simulatorResultWithMetadata SimulatorResultWithMetadataWithRuleFileName
+		simulatorResultWithMetadata.SimulatorResult = simulatorResult
+		simulatorResultWithMetadata.Timestamp = time.Now()
+
+		simulatorResultWithMetadata.RuleFileName = ruleFileName
+		simulatorResultWithMetadata.TraceFileName = traceFileName
+		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		if err != nil {
+			return fmt.Errorf("failed to insert simulator result: %w", err)
+		}
 	} else {
 		panic("Unknown Simulator Type, Type: " + simulatorResult.Type)
 	}

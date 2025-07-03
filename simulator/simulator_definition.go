@@ -19,7 +19,9 @@ type Cache struct {
 	InnerCache     *Cache
 	Size           int
 	Way            int
-	Refbits        int `json:"Refbits"`
+	CacheTagLength [][]int `json:"CacheTagLength,omitempty"` // キャッシュタグの長さ
+	CacheIndexType int     `json:"CacheIndexType,omitempty"` // キャッシュインデックスのタイプ
+	Refbits        int     `json:"Refbits"`
 }
 
 type SimulatorDefinition struct {
@@ -293,6 +295,14 @@ func MakeParameter(c Cache) (cache.Parameter, error) {
 			param.(*cache.MultiCacheParameter).CachePolicies[i] = cache.StringToCachePolicy(policy)
 		}
 		param.(*cache.MultiCacheParameter).Type = cache.GetMultiLayerParameterTypeName(paramType, param.(*cache.MultiCacheParameter).CacheLayers)
+	case strings.HasPrefix(paramType, "UnifiedCache"):
+		param = &cache.UnifiedCacheLineParameter{
+			Type:           paramType,
+			Size:           int(c.Size),
+			CacheTagLength: c.CacheTagLength,
+			CacheIndexType: c.CacheIndexType,
+		}
+
 	default:
 		return nil, fmt.Errorf("unknown parameter type: %s", paramType)
 	}
@@ -464,11 +474,37 @@ func NewSimulatorDefinition(cachetype string) (SimulatorDefinition, error) {
 		return NewMultiLayerInclusiveCacheSimulatorDefinition(), nil
 	} else if cachetype == "LRU" {
 		return NewLRUSimulatorDefinition(), nil
+	} else if cachetype == "UnifiedCache" {
+		return NewUnifiedCacheSimulatorDefinition(), nil
 	} else {
 		return SimulatorDefinition{}, errors.New("invalid cache type")
 	}
 }
 
+func NewUnifiedCacheSimulatorDefinition() SimulatorDefinition {
+	return SimulatorDefinition{
+		Type: "SimpleCacheSimulator",
+		Cache: Cache{
+			Type:           "UnifiedCache",
+			Size:           64,
+			Way:            4,
+			CacheIndexType: 0,
+			CacheTagLength: [][]int{
+				[]int{16, 24},
+				[]int{16, 24},
+				[]int{16, 24},
+				[]int{16, 24},
+				// []int{24, 24},
+				// []int{24, 24},
+				// []int{24, 24},
+				// []int{24, 24},
+			},
+		},
+		Rule:      "rules/wide.rib.20240625.1400.unique.rule",
+		DebugMode: true,
+		Interval:  10000000000,
+	}
+}
 func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 	return SimulatorDefinition{
 		Type: "SimpleCacheSimulator",
@@ -481,15 +517,8 @@ func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 					Way:     4,
 					Refbits: 32,
 				},
-				{
-					// Type:    "NbitNWaySetAssociativeDstipLRUCache",
-					Type:    "NbitNWaySetAssociativeDstipLRUCache",
-					Size:    64,
-					Way:     4,
-					Refbits: 16,
-				},
 			},
-			CachePolicies: []string{"WriteThrough"},
+			CachePolicies: []string{},
 		},
 		Rule:      "rules/wide.rib.20240625.1400.unique.rule",
 		DebugMode: true,
@@ -552,7 +581,9 @@ func GenerateCapacityAndRefbitsPermutations(capacity []int, refbitsRange []int, 
 			// current のコピーを作成して結果に追加。直接追加すると current の参照が使われるため、コピーが必要。
 			combination := make([][2]int, layers)
 			copy(combination, current)
-			if layers == 2 {
+			if layers == 1 {
+				results = append(results, combination)
+			} else if layers == 2 {
 				if combination[0][1] >= 24 {
 					// refbits が 32 の場合は今のところは無効な組み合わせなので結果に追加しない。
 					results = append(results, combination)

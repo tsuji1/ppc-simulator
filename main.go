@@ -54,6 +54,7 @@ var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
 var recordCacheHit = flag.Bool("recordcachehit", false, "record cache hit dstIP and related info")
+
 // Enable recording of cache hit dstIP and related info
 
 func init() {
@@ -713,7 +714,7 @@ func runSimpleCacheSimulatorWithGoRoutine(fp *os.File, sim *simulator.SimpleCach
 			continue
 		}
 		start := time.Now()
-		sim.Process(packet)
+		sim.Process(packet, *recordCacheHit)
 		elapsed := time.Since(start)
 
 		if sim.GetStat().Processed%printInterval == 0 {
@@ -765,7 +766,7 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 			continue
 		}
 		start := time.Now()
-		sim.Process(packet)
+		sim.Process(packet, *recordCacheHit)
 		elapsed := time.Since(start)
 
 		if sim.GetStat().Processed%printInterval == 0 {
@@ -792,7 +793,7 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		var paramStringStr = ""
 
 		for k, p := range paramString {
-			if k == "Type"{
+			if k == "Type" {
 				// paramStringStr += fmt.Sprintf("%s-", p)
 				continue
 			} else if k == "CacheLayers" {
@@ -807,10 +808,10 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 					}
 
 				}
-			}else if k== "CachePolicies"{
+			} else if k == "CachePolicies" {
 				continue
 			} else {
-				paramStringStr += fmt.Sprintf("%s-",  p)
+				paramStringStr += fmt.Sprintf("%s-", p)
 			}
 		}
 
@@ -846,7 +847,7 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 	for _, p := range *packetList {
 
 		start := time.Now()
-		hit := sim.Process(&p)
+		hit := sim.Process(&p, recordCacheHit)
 		elapsed := time.Since(start)
 
 		if recordCacheHit {
@@ -871,9 +872,6 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 
 			fmt.Printf("sim process time: %s\n", elapsed)
 			fmt.Printf("%v\n", sim.GetStatString())
-			if bench {
-				break
-			}
 		}
 		if sim.GetStat().Processed == 10000 && bench {
 			break
@@ -883,7 +881,7 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		}
 	}
 	stat := sim.GetSimulatorResult()
-	fmt.Printf("%v\n", stat)
+	fmt.Printf("stat %v\n", stat)
 	return stat
 
 }
@@ -1009,6 +1007,7 @@ func main() {
 		}
 
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
+		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
 		wg := new(sync.WaitGroup)
@@ -1067,7 +1066,7 @@ func main() {
 		var totalDuration time.Duration
 		var mu sync.Mutex // 進捗状況を守るためのMutex
 
-		for i := 0; i < runtime.NumCPU()-3; i++ {
+		for i := 0; i < runtime.NumCPU(); i++ {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
@@ -1107,6 +1106,8 @@ func main() {
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench, *recordCacheHit)
 						sim.SimDefinition.Print()
 						stat.Print()
+						fmt.Println(param.GetParameterString())
+
 						err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
 						if err != nil {
 							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
@@ -1170,7 +1171,7 @@ func main() {
 
 			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
-			for i := 2; i < *cachenum; i++ {
+			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
 			// refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
@@ -1228,7 +1229,7 @@ func main() {
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheInclusive")
 			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
-			for i := 2; i < *cachenum; i++ {
+			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
 			for i := 16; i <= 24; i++ {
@@ -1277,6 +1278,30 @@ func main() {
 					}
 				}
 			}
+		} else if "UnifiedCache" == cachetype {
+
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("UnifiedCache")
+
+			debugmodeEnv := os.Getenv("DEBUG_MODE")
+			debugmode := false
+			if debugmodeEnv == "true" || debugmodeEnv == "1" {
+				debugmode = true
+			}
+			settings := capacity
+
+			for i, setting := range settings {
+				if i > *skip {
+					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, setting)
+					newSim.DebugMode = debugmode
+					newSim.Interval = 100000000000
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					if err != nil {
+						panic(err)
+					}
+					queue <- *cacheSim
+				}
+			}
+
 		} else {
 			panic("not supported cache type")
 		}
