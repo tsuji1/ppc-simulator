@@ -54,6 +54,7 @@ var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
+var routingTable *routingtable.RoutingTablePatriciaTrie
 
 func init() {
 	// routingtable.Data 型の登録
@@ -73,6 +74,13 @@ func init() {
 	gobPath := filepath.Join("gob-packet", filename+".gob")
 	gobdebugmode := false
 	ext := filepath.Ext(*trace)
+	fpRule, err := os.Open(*rulefile)
+	if err != nil {
+		panic(err)
+	}
+	routingTable = routingtable.NewRoutingTablePatriciaTrie()
+	routingTable.ReadRule(fpRule)
+	fpRule.Close()
 	// gobPathファイルが存在するか確認
 
 	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
@@ -104,14 +112,6 @@ func init() {
 				panic("Can't read input as valid tsv/csv file")
 			}
 
-			fp, err := os.Open(*rulefile)
-			if err != nil {
-				panic(err)
-			}
-			defer fp.Close()
-			r := routingtable.NewRoutingTablePatriciaTrie()
-			r.ReadRule(fp)
-
 			for i := 0; ; i += 1 {
 				record, err := reader.Read()
 
@@ -129,7 +129,7 @@ func init() {
 					}
 				}
 
-				packet, err := parseCSVRecordToMinPacket(record, r)
+				packet, err := parseCSVRecordToMinPacket(record, routingTable)
 
 				if err != nil {
 					fmt.Println("Error:", err)
@@ -181,14 +181,6 @@ func init() {
 
 			// パケットスライスを初期化
 			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
-			fp, err := os.Open(*rulefile)
-			if err != nil {
-				panic(err)
-			}
-			defer fp.Close()
-			r := routingtable.NewRoutingTablePatriciaTrie()
-			r.ReadRule(fp)
-
 			// メタデータを表示
 			fmt.Printf("PCAP File Metadata:\n")
 			fmt.Printf("LinkType: %v\n", handle.LinkType())
@@ -204,7 +196,7 @@ func init() {
 			// range over the channel (only one iteration variable is allowed)
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
-				minPacket, err := parsePcapPacketToMinPacket(packet, r, isLinkTypeRaw)
+				minPacket, err := parsePcapPacketToMinPacket(packet, routingTable, isLinkTypeRaw)
 				if err != nil {
 					fmt.Println("Error:", err) // かなりerrorが出るのでコメントアウト
 					// エラーでてもcontinueしない
@@ -926,7 +918,7 @@ func main() {
 		simDef.Rule = *rulefile
 		// fp, _ := os.Open(rulefile)
 
-		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile)
+		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile, routingTable)
 
 		if err != nil {
 			panic(err)
@@ -1065,7 +1057,7 @@ func main() {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
 					fmt.Print("newSim: ")
 					newSim.Interval = 100000000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 					fmt.Print("cacheSim: ")
 					if err != nil {
 						panic(err)
@@ -1134,7 +1126,7 @@ func main() {
 					newSim.DebugMode = debugmode
 
 					newSim.Interval = 100000000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 
 					if err != nil {
 						panic(err)
@@ -1187,7 +1179,7 @@ func main() {
 						newSim.Cache.OnceCacheLimit = onceCacheLimit
 
 						newSim.Interval = 1000000000000000
-						cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+						cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 
 						if err != nil {
 							panic(err)
