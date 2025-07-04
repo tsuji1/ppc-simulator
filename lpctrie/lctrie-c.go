@@ -9,7 +9,9 @@ package lpctrie
 // Declare the function if it's not in the header
 void init_lctrie(void);
 */
-import "C"
+import (
+	"C"
+)
 
 //reconfigreするとc側のinterfaceが自動生成される。
 
@@ -17,7 +19,12 @@ type LctrieC *C.struct_lctrie
 
 func InitLctrie() LctrieC {
 	// Initialize the C library for lctrie
-	return C.lctrie_new()
+	trie := C.lctrie_new()
+	// runtime.SetFinalizer(trie, func(trie *C.struct_lctrie) {
+	// 	LctrieFree(trie)
+	// })
+
+	return trie
 }
 
 func LctrieFree(trie *C.struct_lctrie) {
