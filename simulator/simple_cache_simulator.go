@@ -293,7 +293,7 @@ func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cach
 }
 
 // BuildSimpleCacheSimulator は、JSON 設定に基づいてシンプルなキャッシュシミュレータを構築します。
-func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile string) (*SimpleCacheSimulator, error) {
+func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile string, r *routingtable.RoutingTablePatriciaTrie) (*SimpleCacheSimulator, error) {
 
 	// シミュレータタイプを取得
 	simType := simulatorDefinition.Type
@@ -303,15 +303,17 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 	}
 
 	// ルーティングテーブルを初期化
-	r := routingtable.NewRoutingTablePatriciaTrie()
+	if r == nil {
+		r = routingtable.NewRoutingTablePatriciaTrie()
 
-	if rulefile != "" {
-		fp, err := os.Open(rulefile)
-		if err != nil {
-			panic(err)
+		if rulefile != "" {
+			fp, err := os.Open(rulefile)
+			if err != nil {
+				return nil, err
+			}
+			defer fp.Close()
+			r.ReadRule(fp)
 		}
-		defer fp.Close()
-		r.ReadRule(fp)
 	}
 
 	// CacheInitInfo を生成
