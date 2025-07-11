@@ -2,12 +2,11 @@ package cache
 
 import (
 	"fmt"
-
-	"testing"
-	"os"
 	"github.com/yosuke-furukawa/json5/encoding/json5"
+	"os"
+	"test-module/simulator"
+	"testing"
 )
-
 
 func TestMain(m *testing.M) {
 	// 初期化処理
@@ -24,7 +23,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 
-	cacheSim, err := simulator.BuildSimpleCacheSimulator(simlatorDefinition)
+	cacheSim, err := simulator.BuildSimpleCacheSimulator(simlatorDefinition, "", nil)
 
 	if err != nil {
 		panic(err)
