@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
 	"test-module/ipaddress"
@@ -344,8 +345,7 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 	s, _ := lru.New[string, Result](2048)
 	lpcRoutingTrie := lpctrie.NewTrie()
 	lcTrieC := lpctrie.InitLctrie()
-
-	return &RoutingTablePatriciaTrie{
+	rt := &RoutingTablePatriciaTrie{
 		RoutingTablePatriciaTrie: trie,
 		IsLeafCache:              l,
 		IsLeafCacheHit:           0,
@@ -356,6 +356,18 @@ func NewRoutingTablePatriciaTrie() *RoutingTablePatriciaTrie {
 		LpcTrie:                  lpcRoutingTrie,
 		LcTrieC:                  lcTrieC,
 	}
+
+	runtime.SetFinalizer(rt, func(t *RoutingTablePatriciaTrie) {
+		// デバッグ用に、ファイナライザが呼ばれたことを表示
+		fmt.Println("Finalizer called for RoutingTablePatriciaTrie, freeing LcTrieC...")
+
+		// ここでCのオブジェクトを解放する関数を呼び出す
+		// 関数名は、実際にCのメモリを解放する関数名に置き換えてください。
+		// lpctrieパッケージに解放用の関数があると仮定しています。
+		lpctrie.LctrieFree(t.LcTrieC)
+	})
+
+	return rt
 }
 
 // PrintTrie

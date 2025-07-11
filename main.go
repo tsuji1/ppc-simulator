@@ -26,6 +26,7 @@ import (
 	. "test-module/cache"
 	"test-module/db"
 	"test-module/ipaddress"
+	"test-module/memorytrace"
 	"test-module/routingtable"
 	"test-module/simulator"
 	"time"
@@ -53,9 +54,8 @@ var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
-var recordCacheHit = flag.Bool("recordcachehit", false, "record cache hit dstIP and related info")
-
-// Enable recording of cache hit dstIP and related info
+var recordCacheHit = flag.Bool("recordCachehit", false, " record cache hit")
+var routingTable *routingtable.RoutingTablePatriciaTrie
 
 func init() {
 	// routingtable.Data 型の登録
@@ -75,6 +75,13 @@ func init() {
 	gobPath := filepath.Join("gob-packet", filename+".gob")
 	gobdebugmode := false
 	ext := filepath.Ext(*trace)
+	fpRule, err := os.Open(*rulefile)
+	if err != nil {
+		panic(err)
+	}
+	routingTable = routingtable.NewRoutingTablePatriciaTrie()
+	routingTable.ReadRule(fpRule)
+	fpRule.Close()
 	// gobPathファイルが存在するか確認
 
 	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
@@ -106,14 +113,6 @@ func init() {
 				panic("Can't read input as valid tsv/csv file")
 			}
 
-			fp, err := os.Open(*rulefile)
-			if err != nil {
-				panic(err)
-			}
-			defer fp.Close()
-			r := routingtable.NewRoutingTablePatriciaTrie()
-			r.ReadRule(fp)
-
 			for i := 0; ; i += 1 {
 				record, err := reader.Read()
 
@@ -131,7 +130,7 @@ func init() {
 					}
 				}
 
-				packet, err := parseCSVRecordToMinPacket(record, r)
+				packet, err := parseCSVRecordToMinPacket(record, routingTable)
 
 				if err != nil {
 					fmt.Println("Error:", err)
@@ -183,14 +182,6 @@ func init() {
 
 			// パケットスライスを初期化
 			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
-			fp, err := os.Open(*rulefile)
-			if err != nil {
-				panic(err)
-			}
-			defer fp.Close()
-			r := routingtable.NewRoutingTablePatriciaTrie()
-			r.ReadRule(fp)
-
 			// メタデータを表示
 			fmt.Printf("PCAP File Metadata:\n")
 			fmt.Printf("LinkType: %v\n", handle.LinkType())
@@ -206,7 +197,7 @@ func init() {
 			// range over the channel (only one iteration variable is allowed)
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
-				minPacket, err := parsePcapPacketToMinPacket(packet, r, isLinkTypeRaw)
+				minPacket, err := parsePcapPacketToMinPacket(packet, routingTable, isLinkTypeRaw)
 				if err != nil {
 					fmt.Println("Error:", err) // かなりerrorが出るのでコメントアウト
 					// エラーでてもcontinueしない
@@ -881,6 +872,12 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		}
 	}
 	stat := sim.GetSimulatorResult()
+	fmt.Printf("%v\n", stat)
+	if sim.Tracer != nil {
+		sim.Tracer.Reset()
+	} else {
+		memorytrace.Reset()
+	}
 	fmt.Printf("stat %v\n", stat)
 	return stat
 
@@ -929,7 +926,6 @@ func main() {
 	var f *os.File
 	var err error
 
-	err = godotenv.Load()
 	if err != nil {
 		log.Fatal("Error loading .env file")
 	}
@@ -1000,7 +996,7 @@ func main() {
 		simDef.Rule = *rulefile
 		// fp, _ := os.Open(rulefile)
 
-		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile)
+		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile, routingTable)
 
 		if err != nil {
 			panic(err)
@@ -1050,6 +1046,7 @@ func main() {
 		var totalTask int
 
 		cachetype := os.Getenv("CACHE_TYPE")
+		fmt.Println("var cachetype: ", cachetype)
 		var baseSimulatorDefinition simulator.SimulatorDefinition
 
 		packetlen := uint64(len(packets))
@@ -1108,14 +1105,15 @@ func main() {
 						stat.Print()
 						fmt.Println(param.GetParameterString())
 
-						err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
-						if err != nil {
-							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
-							panic(err)
-						}
+						// err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
+						// if err != nil {
+						// 	// 挿入中にエラーが発生した場合、エラーハンドリングを行う
+						// 	panic(err)
+						// }
 
 					} else {
 						fmt.Print("skip because Data founded\n")
+						fmt.Println("param: ", param.GetParameterString())
 					}
 					mu.Lock()
 
@@ -1147,7 +1145,7 @@ func main() {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
 					fmt.Print("newSim: ")
 					newSim.Interval = 100000000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 					fmt.Print("cacheSim: ")
 					if err != nil {
 						panic(err)
@@ -1157,6 +1155,7 @@ func main() {
 			}
 
 		} else if cachetype == "MultiLayerCacheExclusive" {
+			fmt.Printf("cachetype: MultiLayerCacheExclusive\n")
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheExclusive")
 
 			// ruleFileName := filepath.Base(*rulefile)
@@ -1216,7 +1215,7 @@ func main() {
 					newSim.DebugMode = debugmode
 
 					newSim.Interval = 100000000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 
 					if err != nil {
 						panic(err)
@@ -1226,6 +1225,7 @@ func main() {
 			}
 
 		} else if cachetype == "MultiLayerCacheInclusive" {
+
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheInclusive")
 			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
@@ -1269,7 +1269,7 @@ func main() {
 						newSim.Cache.OnceCacheLimit = onceCacheLimit
 
 						newSim.Interval = 1000000000000000
-						cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+						cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 
 						if err != nil {
 							panic(err)
@@ -1279,6 +1279,7 @@ func main() {
 				}
 			}
 		} else if "UnifiedCache" == cachetype {
+			fmt.Printf("cachetype: UnifiedCache\n")
 
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("UnifiedCache")
 
@@ -1294,7 +1295,7 @@ func main() {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, setting)
 					newSim.DebugMode = debugmode
 					newSim.Interval = 100000000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 					if err != nil {
 						panic(err)
 					}

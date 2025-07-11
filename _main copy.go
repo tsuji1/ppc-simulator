@@ -53,6 +53,7 @@ var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
+var routingTable *routingtable.RoutingTablePatriciaTrie
 
 func init() {
 	// routingtable.Data 型の登録
@@ -68,6 +69,13 @@ func init() {
 	gobPath := filepath.Join("gob-packet", filename+".gob")
 	gobdebugmode := false
 	ext := filepath.Ext(*trace)
+	fpRule, err := os.Open(*rulefile)
+	if err != nil {
+		panic(err)
+	}
+	routingTable = routingtable.NewRoutingTablePatriciaTrie()
+	routingTable.ReadRule(fpRule)
+	fpRule.Close()
 	// gobPathファイルが存在するか確認
 
 	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
@@ -99,14 +107,6 @@ func init() {
 				panic("Can't read input as valid tsv/csv file")
 			}
 
-			fp, err := os.Open(*rulefile)
-			if err != nil {
-				panic(err)
-			}
-			defer fp.Close()
-			r := routingtable.NewRoutingTablePatriciaTrie()
-			r.ReadRule(fp)
-
 			for i := 0; ; i += 1 {
 				record, err := reader.Read()
 
@@ -124,7 +124,7 @@ func init() {
 					}
 				}
 
-				packet, err := parseCSVRecordToMinPacket(record, r)
+				packet, err := parseCSVRecordToMinPacket(record, routingTable)
 
 				if err != nil {
 					fmt.Println("Error:", err)
@@ -173,18 +173,10 @@ func init() {
 
 			// パケットスライスを初期化
 			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
-			fp, err := os.Open(*rulefile)
-			if err != nil {
-				panic(err)
-			}
-			defer fp.Close()
-			r := routingtable.NewRoutingTablePatriciaTrie()
-			r.ReadRule(fp)
-
 			// range over the channel (only one iteration variable is allowed)
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
-				minPacket, err := parsePcapPacketToMinPacket(packet, r)
+				minPacket, err := parsePcapPacketToMinPacket(packet, routingTable)
 				if err != nil {
 					// fmt.Println("Error:", err) かなりerrorが出るのでコメントアウト
 					continue
@@ -849,7 +841,7 @@ func main() {
 		simDef.Rule = *rulefile
 		// fp, _ := os.Open(rulefile)
 
-		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile)
+		cacheSim, err := simulator.BuildSimpleCacheSimulator(simDef, *rulefile, routingTable)
 
 		if err != nil {
 			panic(err)
@@ -901,9 +893,6 @@ func main() {
 		}
 
 		fmt.Printf("packetlen: %v\n", packetlen)
-		
-
-		
 
 		// タスクの総数に基づいてWaitGroupを設定
 
@@ -931,7 +920,7 @@ func main() {
 					fmt.Printf("param: %v\n", param.GetBson())
 
 					fmt.Printf("tempSim: %v\n", tempsim)
-			ruleFileName = filepath.Base(*rulefile)
+					ruleFileName = filepath.Base(*rulefile)
 
 					ex, err := mongoDB.IsResultExist(ctx,
 						param,
@@ -939,7 +928,7 @@ func main() {
 						tempsim.SimDefinition.Cache.Type,
 						ruleFileName,
 						traceFileName)
-					if err != nil  || ex==nil{
+					if err != nil || ex == nil {
 						// エラーが発生した場合、エラーハンドリングを行う
 						continue
 
@@ -948,49 +937,49 @@ func main() {
 
 					// if ex != nil || *forceupdate {
 
-						// 実際のシミュレーション処理
-						// if ex != nil {
+					// 実際のシミュレーション処理
+					// if ex != nil {
 
-							// statdetail := ex.SimulatorResult.StatDetail.(primitive.D) 
-							// exists := false
-							
-							// for _, v := range statdetail {
-							// 	if v.Key == "depthsum" {
-							// 		if v.Value.(int64) != 0 {
-							// 		exists = true
-							// 		}
-							// 		break
-							// 	}
+					// statdetail := ex.SimulatorResult.StatDetail.(primitive.D)
+					// exists := false
 
-							// }
+					// for _, v := range statdetail {
+					// 	if v.Key == "depthsum" {
+					// 		if v.Value.(int64) != 0 {
+					// 		exists = true
+					// 		}
+					// 		break
+					// 	}
 
-							// if ex.ThroughputSeries == 0 || exists{
-							// 	fmt.Printf("skip because ThroughputSeries is 0 or DepthSum exists\n")
-							// 	continue
-							// }
-							// fmt.Print("forceupdate\n")
-						
-						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
-						depthsum := stat.StatDetail.(cache.MultiLayerCacheExclusiveStat).DepthSum
+					// }
 
-						// err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
-						
-						filter := bson.M{ "_id": ex.ID }
-				
-						update := bson.M{
-    "$set": bson.M{
-        "simulator_result.statdetail.depthsum": depthsum,},
-}
-    // UpdateOne 実行
-    u, err := mongoDB.Collection.UpdateOne(ctx, filter, update)
-						if err != nil {
-							// 挿入中にエラーが発生した場合、エラーハンドリングを行う
-							panic(err)
-						}
-						fmt.Printf("Updated %v\n", u)
-						if u.MatchedCount == 0 {
-							fmt.Printf("skip because Data not founded\n")
-						}
+					// if ex.ThroughputSeries == 0 || exists{
+					// 	fmt.Printf("skip because ThroughputSeries is 0 or DepthSum exists\n")
+					// 	continue
+					// }
+					// fmt.Print("forceupdate\n")
+
+					stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench)
+					depthsum := stat.StatDetail.(cache.MultiLayerCacheExclusiveStat).DepthSum
+
+					// err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
+
+					filter := bson.M{"_id": ex.ID}
+
+					update := bson.M{
+						"$set": bson.M{
+							"simulator_result.statdetail.depthsum": depthsum},
+					}
+					// UpdateOne 実行
+					u, err := mongoDB.Collection.UpdateOne(ctx, filter, update)
+					if err != nil {
+						// 挿入中にエラーが発生した場合、エラーハンドリングを行う
+						panic(err)
+					}
+					fmt.Printf("Updated %v\n", u)
+					if u.MatchedCount == 0 {
+						fmt.Printf("skip because Data not founded\n")
+					}
 
 					// } else {
 					// 	fmt.Print("skip because Data not founded\n")
@@ -1023,7 +1012,7 @@ func main() {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
 					fmt.Print("newSim: ")
 					newSim.Interval = 1000000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 					fmt.Print("cacheSim: ")
 					if err != nil {
 						panic(err)
@@ -1044,7 +1033,6 @@ func main() {
 			// if err != nil {
 			// 	panic(err)
 			// }
-
 
 			refbitsRange := make([]int, 0, 32)
 			// cachenumを反映
@@ -1081,7 +1069,7 @@ func main() {
 					newSim.DebugMode = debugmode
 
 					newSim.Interval = 100000000
-					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile)
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
 
 					if err != nil {
 						panic(err)
