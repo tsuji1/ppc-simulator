@@ -38,3 +38,6 @@ quick_test
 *.a
 *.o
 
+
+cache_debug_size*
+output.txt
