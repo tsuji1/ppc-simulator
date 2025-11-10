@@ -55,7 +55,20 @@ var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
 var recordCacheHit = flag.Bool("recordCachehit", false, " record cache hit")
+var syntheticTrafficPattern = flag.String("synthetic", "", "synthetic traffic pattern (random|sequential|repeated|all|comma-separated list)")
 var routingTable *routingtable.RoutingTablePatriciaTrie
+
+var supportedSyntheticPatterns = map[string]struct{}{
+	"random":     {},
+	"sequential": {},
+	"repeated":   {},
+}
+
+const (
+	ipv4AddressSpace    = uint64(1) << 32
+	syntheticRepeats    = 16
+	defaultXorShiftSeed = 2463534242
+)
 
 func init() {
 	// routingtable.Data 型の登録
@@ -67,14 +80,7 @@ func init() {
 	debug.SetGCPercent(50)
 	gob.Register(routingtable.Data{})
 
-	// ファイル名から拡張子を外して取得する
-	base := filepath.Base(*trace)
-	filename := strings.TrimSuffix(base, filepath.Ext(base))
-
-	// 新しいパスを生成する
-	gobPath := filepath.Join("gob-packet", filename+".gob")
 	gobdebugmode := false
-	ext := filepath.Ext(*trace)
 	fpRule, err := os.Open(*rulefile)
 	if err != nil {
 		panic(err)
@@ -82,163 +88,172 @@ func init() {
 	routingTable = routingtable.NewRoutingTablePatriciaTrie()
 	routingTable.ReadRule(fpRule)
 	fpRule.Close()
-	// gobPathファイルが存在するか確認
+	if *trace != "" {
+		// gobPathファイルが存在するか確認
 
-	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
-		// gobファイルが存在する場合、デコードする
-		fmt.Println("gobファイルが見つかりました。デコード中...")
-		packets = decodeGobFile(gobPath)
-	} else if os.IsNotExist(err) || gobdebugmode {
-		// gobファイルが存在しない場合、通常の処理を行う
-		if !gobdebugmode {
-			fmt.Println("gobファイルが見つかりません。新しいファイルを生成中...")
-		} else {
-			fmt.Println("debugmode で実行中")
-		}
+		base := filepath.Base(*trace)
+		ext := filepath.Ext(*trace)
+		filename := strings.TrimSuffix(base, ext)
+		gobPath := filepath.Join("gob-packet", filename+".gob")
 
-		switch ext {
-		case ".csv", ".tsv", ".p7", ".data", ".txt":
-			// CSV/TSVファイル処理
-			fpCSV, err := os.Open(*trace)
-			if err != nil {
-				panic(err)
-			}
-			defer fpCSV.Close()
-
-			// パケットスライスを初期化
-			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
-			reader := deprecatedGetProperCSVReader(fpCSV)
-
-			if reader == nil {
-				panic("Can't read input as valid tsv/csv file")
+		if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
+			// gobファイルが存在する場合、デコードする
+			fmt.Println("gobファイルが見つかりました。デコード中...")
+			packets = decodeGobFile(gobPath)
+		} else if os.IsNotExist(err) || gobdebugmode {
+			// gobファイルが存在しない場合、通常の処理を行う
+			if !gobdebugmode {
+				fmt.Println("gobファイルが見つかりません。新しいファイルを生成中...")
+			} else {
+				fmt.Println("debugmode で実行中")
 			}
 
-			for i := 0; ; i += 1 {
-				record, err := reader.Read()
-
+			switch ext {
+			case ".csv", ".tsv", ".p7", ".data", ".txt":
+				// CSV/TSVファイル処理
+				fpCSV, err := os.Open(*trace)
 				if err != nil {
-					if err == io.EOF {
-						break
-					}
+					panic(err)
+				}
+				defer fpCSV.Close()
 
-					switch err.(type) {
-					case *csv.ParseError:
-						continue
-					default:
-						fmt.Println(reflect.TypeOf(err))
-						continue
-					}
+				// パケットスライスを初期化
+				packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
+				reader := deprecatedGetProperCSVReader(fpCSV)
+
+				if reader == nil {
+					panic("Can't read input as valid tsv/csv file")
 				}
 
-				packet, err := parseCSVRecordToMinPacket(record, routingTable)
+				for i := 0; ; i += 1 {
+					record, err := reader.Read()
 
-				if err != nil {
-					fmt.Println("Error:", err)
-					continue
-				}
-
-				if packet.FiveTuple() == nil {
-					continue
-				}
-				packets = append(packets, *packet)
-				if i%100000 == 0 {
-					if i != 0 {
-						fmt.Printf("i: %d\n", i)
-						if gobdebugmode {
+					if err != nil {
+						if err == io.EOF {
 							break
+						}
+
+						switch err.(type) {
+						case *csv.ParseError:
+							continue
+						default:
+							fmt.Println(reflect.TypeOf(err))
+							continue
+						}
+					}
+
+					packet, err := parseCSVRecordToMinPacket(record, routingTable)
+
+					if err != nil {
+						fmt.Println("Error:", err)
+						continue
+					}
+
+					if packet.FiveTuple() == nil {
+						continue
+					}
+					packets = append(packets, *packet)
+					if i%100000 == 0 {
+						if i != 0 {
+							fmt.Printf("i: %d\n", i)
+							if gobdebugmode {
+								break
+							}
 						}
 					}
 				}
-			}
 
-			// gobファイルに書き込む処理
-			if !gobdebugmode {
-				err = savePacketsToGob(gobPath, packets)
-				if err != nil {
-					fmt.Println("gobファイルへの保存に失敗しました:", err)
-				} else {
-					fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
-				}
-			}
-
-			runtime.GC()
-
-		case ".pcap":
-			fmt.Println("pcapファイルを処理中...")
-			traceBase := filepath.Base(*trace)
-			ruleBase := filepath.Base(*rulefile)
-			if extractDigits(traceBase) != extractDigits(ruleBase) {
-				// panic("rulefileとtracefileの文字が一致しません")
-				fmt.Printf("rulefileとtracefileの文字が一致しませんが無視します。")
-
-			}
-			handle, err := pcap.OpenOffline(*trace)
-			if err != nil {
-				panic(err)
-			}
-			defer handle.Close()
-
-			packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-
-			// パケットスライスを初期化
-			packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
-			// メタデータを表示
-			fmt.Printf("PCAP File Metadata:\n")
-			fmt.Printf("LinkType: %v\n", handle.LinkType())
-			fmt.Printf("SnapLen: %d\n", handle.SnapLen())
-
-			isLinkTypeRaw := false
-			if layers.LinkType(handle.LinkType()) == layers.LinkTypeRaw {
-				isLinkTypeRaw = true
-			}
-
-			fmt.Printf("isLinkTypeRaw: %v\n", isLinkTypeRaw)
-
-			// range over the channel (only one iteration variable is allowed)
-			num_minpackets := 0
-			for packet := range packetSource.Packets() {
-				minPacket, err := parsePcapPacketToMinPacket(packet, routingTable, isLinkTypeRaw)
-				if err != nil {
-					fmt.Println("Error:", err) // かなりerrorが出るのでコメントアウト
-					// エラーでてもcontinueしない
-					continue
-				}
-				if minPacket.FiveTuple() == nil {
-
-					continue
-				}
-
-				packets = append(packets, *minPacket)
-				num_minpackets++
-				if num_minpackets%100000 == 0 {
-					if num_minpackets != 0 {
-						fmt.Printf("num_minpacket %d\n", num_minpackets)
-						// if gobdebugmode {
-						// 	break
-						// }
+				// gobファイルに書き込む処理
+				if !gobdebugmode {
+					err = savePacketsToGob(gobPath, packets)
+					if err != nil {
+						fmt.Println("gobファイルへの保存に失敗しました:", err)
+					} else {
+						fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
 					}
 				}
 
-			}
+				runtime.GC()
 
-			// gobファイルに書き込む処理
-			if !gobdebugmode {
-				err = savePacketsToGob(gobPath, packets)
-				if err != nil {
-					fmt.Println("gobファイルへの保存に失敗しました:", err)
-				} else {
-					fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
+			case ".pcap":
+				fmt.Println("pcapファイルを処理中...")
+				traceBase := filepath.Base(*trace)
+				ruleBase := filepath.Base(*rulefile)
+				if extractDigits(traceBase) != extractDigits(ruleBase) {
+					// panic("rulefileとtracefileの文字が一致しません")
+					fmt.Printf("rulefileとtracefileの文字が一致しませんが無視します。")
+
 				}
+				handle, err := pcap.OpenOffline(*trace)
+				if err != nil {
+					panic(err)
+				}
+				defer handle.Close()
+
+				packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
+
+				// パケットスライスを初期化
+				packets = make([]MinPacket, 0, 230000000) // 2億個分の容量を初期確保
+				// メタデータを表示
+				fmt.Printf("PCAP File Metadata:\n")
+				fmt.Printf("LinkType: %v\n", handle.LinkType())
+				fmt.Printf("SnapLen: %d\n", handle.SnapLen())
+
+				isLinkTypeRaw := false
+				if layers.LinkType(handle.LinkType()) == layers.LinkTypeRaw {
+					isLinkTypeRaw = true
+				}
+
+				fmt.Printf("isLinkTypeRaw: %v\n", isLinkTypeRaw)
+
+				// range over the channel (only one iteration variable is allowed)
+				num_minpackets := 0
+				for packet := range packetSource.Packets() {
+					minPacket, err := parsePcapPacketToMinPacket(packet, routingTable, isLinkTypeRaw)
+					if err != nil {
+						fmt.Println("Error:", err) // かなりerrorが出るのでコメントアウト
+						// エラーでてもcontinueしない
+						continue
+					}
+					if minPacket.FiveTuple() == nil {
+
+						continue
+					}
+
+					packets = append(packets, *minPacket)
+					num_minpackets++
+					if num_minpackets%100000 == 0 {
+						if num_minpackets != 0 {
+							fmt.Printf("num_minpacket %d\n", num_minpackets)
+							// if gobdebugmode {
+							// 	break
+							// }
+						}
+					}
+
+				}
+
+				// gobファイルに書き込む処理
+				if !gobdebugmode {
+					err = savePacketsToGob(gobPath, packets)
+					if err != nil {
+						fmt.Println("gobファイルへの保存に失敗しました:", err)
+					} else {
+						fmt.Println("gobファイルにパケットデータを保存しました:", gobPath)
+					}
+				}
+
+				runtime.GC()
+
+			default:
+				panic("未対応のファイル形式です: " + ext)
 			}
-
-			runtime.GC()
-
-		default:
-			panic("未対応のファイル形式です: " + ext)
+		} else {
+			// その他のエラー
+			panic(err)
 		}
 	} else {
-		// その他のエラー
-		panic(err)
+		packets = nil
 	}
 }
 
@@ -771,64 +786,98 @@ func runSimpleCacheSimulatorWithCSV(fp *os.File, sim *simulator.SimpleCacheSimul
 	}
 }
 
-func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, maxProccess uint64, bench bool, recordCacheHit bool) simulator.SimulatorResult {
+func sanitizeFileComponent(value string) string {
+	sanitized := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return '-'
+	}, value)
+
+	sanitized = strings.ReplaceAll(sanitized, "--", "-")
+	for strings.Contains(sanitized, "--") {
+		sanitized = strings.ReplaceAll(sanitized, "--", "-")
+	}
+
+	sanitized = strings.Trim(sanitized, "-")
+
+	return sanitized
+}
+
+func prepareCacheHitLogger(sim *simulator.SimpleCacheSimulator, suffix string) (*os.File, error) {
+	fmt.Print("recordCacheHit is true\n")
+	paramString := sim.Parameter().GetParameterString()
+	var paramStringStr string
+
+	for k, p := range paramString {
+		switch k {
+		case "Type", "CachePolicies":
+			continue
+		case "CacheLayers":
+			for _, cacheparam := range p.([]Parameter) {
+				cp := cacheparam.GetParameterString()
+				for kk, pp := range cp {
+					if kk == "Type" {
+						paramStringStr += fmt.Sprintf("%s-", pp.(string)[:5])
+					} else {
+						paramStringStr += fmt.Sprintf("%s-", pp)
+					}
+				}
+			}
+		default:
+			paramStringStr += fmt.Sprintf("%s-", p)
+		}
+	}
+
+	safeParamString := sanitizeFileComponent(paramStringStr)
+	safeSuffix := sanitizeFileComponent(suffix)
+
+	if safeSuffix != "" {
+		if safeParamString != "" {
+			safeParamString = fmt.Sprintf("%s-%s", safeParamString, safeSuffix)
+		} else {
+			safeParamString = safeSuffix
+		}
+	}
+
+	if safeParamString == "" {
+		safeParamString = "cache"
+	}
+
+	filePath := filepath.Join("cachehitrace", safeParamString+".txt")
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return nil, err
+	}
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return file, nil
+}
+
+func writeCacheHitRecord(file *os.File, hit bool, dstIP uint32) error {
+	if file == nil {
+		return nil
+	}
+
+	status := "miss"
+	if hit {
+		status = "hit"
+	}
+
+	dstIp := ipaddress.NewIPaddress(dstIP).String()
+	_, err := file.WriteString(fmt.Sprintf("%s %v\n", status, dstIp))
+	return err
+}
+
+func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.SimpleCacheSimulator, printInterval int, maxProcess uint64, bench bool, recordCacheHit bool) simulator.SimulatorResult {
 
 	var file *os.File
+	var err error
 	if recordCacheHit {
-		fmt.Print("recordCacheHit is true\n")
-		paramString := sim.Parameter().GetParameterString()
-		// hasCacheLayers := false
-		// if _, ok := paramString["CacheLayers"]; ok {
-		// 	hasCacheLayers = true
-		// }
-		var paramStringStr = ""
-
-		for k, p := range paramString {
-			if k == "Type" {
-				// paramStringStr += fmt.Sprintf("%s-", p)
-				continue
-			} else if k == "CacheLayers" {
-				for _, cacheparam := range p.([]Parameter) {
-					cp := cacheparam.GetParameterString()
-					for kk, pp := range cp {
-						if kk == "Type" {
-							paramStringStr += fmt.Sprintf("%s-", pp.(string)[:5])
-						} else {
-							paramStringStr += fmt.Sprintf("%s-", pp)
-						}
-					}
-
-				}
-			} else if k == "CachePolicies" {
-				continue
-			} else {
-				paramStringStr += fmt.Sprintf("%s-", p)
-			}
-		}
-
-		// ファイル名に使えない文字をハイフンに置換
-		safeParamString := strings.Map(func(r rune) rune {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) {
-				return r
-			}
-			return '-'
-		}, paramStringStr)
-
-		// 連続するハイフンを1つにまとめる
-		safeParamString = strings.ReplaceAll(safeParamString, "--", "-")
-		for strings.Contains(safeParamString, "--") {
-			safeParamString = strings.ReplaceAll(safeParamString, "--", "-")
-		}
-		// 先頭のハイフンを取り除く
-		safeParamString = strings.TrimLeft(safeParamString, "-")
-
-		var err error
-		filePath := filepath.Join("cachehitrace", safeParamString+".txt")
-		// Ensure the directory exists
-		if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
-			panic(err)
-		}
-		file, err = os.Create(filePath)
+		file, err = prepareCacheHitLogger(sim, "")
 		if err != nil {
 			panic(err)
 		}
@@ -842,24 +891,12 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		elapsed := time.Since(start)
 
 		if recordCacheHit {
-			dstIp := ipaddress.NewIPaddress(p.DstIP).String()
-
-			if hit {
-				// hit or miss とdstipを書き込む
-				_, err := file.WriteString(fmt.Sprintf("hit %v\n", dstIp))
-				if err != nil {
-					panic(err)
-				}
-			} else {
-				// miss とdstipを書き込む
-				_, err := file.WriteString(fmt.Sprintf("miss %v\n", dstIp))
-				if err != nil {
-					panic(err)
-				}
+			if err := writeCacheHitRecord(file, hit, p.DstIP); err != nil {
+				panic(err)
 			}
 		}
 
-		if sim.GetStat().Processed%printInterval == 0 {
+		if printInterval > 0 && sim.GetStat().Processed%printInterval == 0 {
 
 			fmt.Printf("sim process time: %s\n", elapsed)
 			fmt.Printf("%v\n", sim.GetStatString())
@@ -881,6 +918,171 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 	fmt.Printf("stat %v\n", stat)
 	return stat
 
+}
+
+func limitIterations(total, maxProcess uint64) uint64 {
+	if maxProcess == 0 || maxProcess > total {
+		return total
+	}
+	return maxProcess
+}
+
+func selectedSyntheticPatterns() []string {
+	option := strings.TrimSpace(*syntheticTrafficPattern)
+	if option == "" {
+		return nil
+	}
+
+	option = strings.ToLower(option)
+	if option == "all" {
+		return []string{"random", "sequential", "repeated"}
+	}
+
+	parts := strings.Split(option, ",")
+	patterns := make([]string, 0, len(parts))
+	seen := make(map[string]struct{}, len(parts))
+
+	for _, rawPart := range parts {
+		part := strings.ToLower(strings.TrimSpace(rawPart))
+		if part == "" {
+			continue
+		}
+		if part == "all" {
+			return []string{"random", "sequential", "repeated"}
+		}
+
+		if _, ok := supportedSyntheticPatterns[part]; ok {
+			if _, exists := seen[part]; !exists {
+				patterns = append(patterns, part)
+				seen[part] = struct{}{}
+			}
+		} else {
+			fmt.Printf("Unknown synthetic pattern '%s', skipping.\n", part)
+		}
+	}
+
+	return patterns
+}
+
+type xorShift32 struct {
+	state uint32
+}
+
+func newXorShift32(seed uint32) *xorShift32 {
+	if seed == 0 {
+		seed = defaultXorShiftSeed
+	}
+
+	return &xorShift32{state: seed}
+}
+
+func (x *xorShift32) Next() uint32 {
+	x.state ^= x.state << 13
+	x.state ^= x.state >> 17
+	x.state ^= x.state << 5
+	return x.state
+}
+
+func runSimpleCacheSimulatorSyntheticTrace(sim *simulator.SimpleCacheSimulator, printInterval int, maxProcess uint64, bench bool, recordCacheHit bool) {
+	patterns := selectedSyntheticPatterns()
+	if len(patterns) == 0 {
+		return
+	}
+
+	for _, pattern := range patterns {
+		syntheticSim, err := simulator.BuildSimpleCacheSimulator(sim.SimDefinition, *rulefile, routingTable)
+		if err != nil {
+			panic(err)
+		}
+
+		var file *os.File
+		if recordCacheHit {
+			file, err = prepareCacheHitLogger(syntheticSim, pattern)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		fmt.Printf("=== synthetic pattern: %s ===\n", pattern)
+		startTime := time.Now()
+
+		switch pattern {
+		case "random":
+			runSyntheticRandomTraffic(syntheticSim, printInterval, limitIterations(ipv4AddressSpace, maxProcess), bench, recordCacheHit, file)
+		case "sequential":
+			runSyntheticSequentialTraffic(syntheticSim, printInterval, limitIterations(ipv4AddressSpace, maxProcess), bench, recordCacheHit, file)
+		case "repeated":
+			runSyntheticRepeatedTraffic(syntheticSim, printInterval, limitIterations(ipv4AddressSpace*syntheticRepeats, maxProcess), bench, recordCacheHit, file)
+		default:
+			fmt.Printf("Unsupported synthetic pattern: %s\n", pattern)
+		}
+
+		duration := time.Since(startTime)
+		stat := syntheticSim.GetSimulatorResult()
+		fmt.Printf("pattern %s completed in %s\n", pattern, duration)
+		fmt.Printf("%v\n", stat)
+
+		if syntheticSim.Tracer != nil {
+			syntheticSim.Tracer.Reset()
+		} else {
+			memorytrace.Reset()
+		}
+
+		if file != nil {
+			file.Close()
+		}
+	}
+}
+
+func runSyntheticRandomTraffic(sim *simulator.SimpleCacheSimulator, printInterval int, limit uint64, bench bool, recordCacheHit bool, file *os.File) {
+	rng := newXorShift32(defaultXorShiftSeed)
+	processSyntheticTraffic(sim, printInterval, limit, bench, recordCacheHit, file, func(uint64) uint32 {
+		return rng.Next()
+	})
+}
+
+func runSyntheticSequentialTraffic(sim *simulator.SimpleCacheSimulator, printInterval int, limit uint64, bench bool, recordCacheHit bool, file *os.File) {
+	processSyntheticTraffic(sim, printInterval, limit, bench, recordCacheHit, file, func(i uint64) uint32 {
+		return uint32(i)
+	})
+}
+
+func runSyntheticRepeatedTraffic(sim *simulator.SimpleCacheSimulator, printInterval int, limit uint64, bench bool, recordCacheHit bool, file *os.File) {
+	rng := newXorShift32(defaultXorShiftSeed)
+	current := rng.Next()
+	processSyntheticTraffic(sim, printInterval, limit, bench, recordCacheHit, file, func(i uint64) uint32 {
+		if i%syntheticRepeats == 0 {
+			current = rng.Next()
+		}
+		return current
+	})
+}
+
+func processSyntheticTraffic(sim *simulator.SimpleCacheSimulator, printInterval int, limit uint64, bench bool, recordCacheHit bool, file *os.File, generator func(uint64) uint32) {
+	for i := uint64(0); i < limit; i++ {
+		dst := generator(i)
+		pkt := MinPacket{Proto: "tcp", SrcIP: 0, DstIP: dst}
+
+		start := time.Now()
+		hit := sim.Process(&pkt, recordCacheHit)
+		elapsed := time.Since(start)
+
+		if recordCacheHit {
+			if err := writeCacheHitRecord(file, hit, pkt.DstIP); err != nil {
+				panic(err)
+			}
+		}
+
+		if printInterval > 0 && sim.GetStat().Processed%printInterval == 0 {
+			fmt.Printf("sim process time: %s\n", elapsed)
+			fmt.Printf("%v\n", sim.GetStatString())
+		}
+
+		if bench && sim.GetStat().Processed >= 10000 {
+			break
+		}
+
+	}
 }
 
 func generateFileName() string {
@@ -918,7 +1120,7 @@ func main() {
 		panic("Error loading .env file")
 	}
 
-	if *trace == "" {
+	if *trace == "" && strings.TrimSpace(*syntheticTrafficPattern) == "" {
 		fmt.Printf("You must specify the trace file\n")
 		os.Exit(1)
 	}
@@ -1003,7 +1205,7 @@ func main() {
 		}
 
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
-		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
+		runSimpleCacheSimulatorSyntheticTrace(cacheSim, int(interval), *maxProccess, *bench, *recordCacheHit)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
 	} else {
 		wg := new(sync.WaitGroup)
