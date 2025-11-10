@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"test-module/cache"
 	"test-module/simulator"
+
+	// "test-module/cache"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -94,6 +97,15 @@ type SimulatorResultWithMetadata struct {
 	Timestamp       time.Time                 `bson:"timestamp"`        // 挿入時のタイムスタンプ
 	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
+type SimulatorResultWithMetadataUnifiedCache struct {
+	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"`  // ネストされたSimulatorResult
+	RuleFileName    string                    `bson:"rule_file_name"`    // ルールファイル名
+	Timestamp       time.Time                 `bson:"timestamp"`         // 挿入時のタイムスタンプ
+	TraceFileName   string                    `bson:"trace_file_name"`   // トレースファイル名
+	HitCountList    [][32]uint32              `bson:"hit_count_list"`    // ヒットカウントリスト
+	FirstMissCount  [][32]uint32              `bson:"first_miss_count"`  // 初回ミスカウントリスト
+	SecondMissCount [][32]uint32              `bson:"second_miss_count"` // 2回目以降のミスカウントリスト
+}
 
 // InsertResult を実装。simulatorResult に timestamp を追加して挿入
 func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.SimulatorResult, ruleFileName string, traceFileName string) error {
@@ -141,15 +153,22 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 		}
 	} else if simulatorResult.Type == "UnifiedCache" {
 		// SimulatorResultWithMetadata 構造体を作成
-		var simulatorResultWithMetadata SimulatorResultWithMetadataWithRuleFileName
+		var simulatorResultWithMetadata SimulatorResultWithMetadataUnifiedCache
 		simulatorResultWithMetadata.SimulatorResult = simulatorResult
 		simulatorResultWithMetadata.Timestamp = time.Now()
 
 		simulatorResultWithMetadata.RuleFileName = ruleFileName
 		simulatorResultWithMetadata.TraceFileName = traceFileName
+		simulatorResultWithMetadata.HitCountList = simulatorResult.StatDetail.(cache.UnifiedCacheStat).CachelineHitCount
+		simulatorResultWithMetadata.FirstMissCount = simulatorResult.StatDetail.(cache.UnifiedCacheStat).CachelineFirstMissCount
+		simulatorResultWithMetadata.SecondMissCount = simulatorResult.StatDetail.(cache.UnifiedCacheStat).CachelineSecondMissCount
+		// データを挿入
 		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
 		if err != nil {
 			return fmt.Errorf("failed to insert simulator result: %w", err)
+		} else {
+			println("Inserted UnifiedCache result successfully")
+
 		}
 	} else {
 		panic("Unknown Simulator Type, Type: " + simulatorResult.Type)
@@ -240,7 +259,7 @@ func (db *MongoDB) GetForDepth(ctx context.Context,
 }
 
 func (db *MongoDB) IsResultExist(ctx context.Context,
-	simulatorParameter interface{},
+	simulatorParameter cache.Parameter,
 	simulatorProcessed uint64,
 	simulatorType string,
 	ruleFileName string,
@@ -272,6 +291,21 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 			// "simulator_result.statdetail.depthsum": bson.M{
 			// 	"$gte": 0, // Greater Than or Equal: 0以上
 			// },
+		}
+	} else if simulatorType == "UnifiedCache" {
+		fmt.Printf("UnifiedCache is selected in isResultExist\n")
+		fmt.Printf("Parameter: %+v\n", simulatorParameter)
+		param := simulatorParameter.(*cache.UnifiedCacheParameter)
+		filterQuery = bson.M{
+			"simulator_result.parameter.size":           param.Size,
+			"simulator_result.parameter.way":            param.Way,
+			"simulator_result.parameter.type":           param.Type,
+			"simulator_result.parameter.cacheindextype": param.CacheIndexType,
+			"simulator_result.parameter.cachetaglength": param.CacheTagLength,
+			"simulator_result.processed":                simulatorProcessed,
+			"simulator_result.type":                     simulatorType,
+			"rule_file_name":                            ruleFileName,
+			"trace_file_name":                           traceFileName, // depthsum が 0 以上である条件を追加
 		}
 	} else {
 		filterQuery = bson.M{

@@ -95,9 +95,17 @@ type InclusiveCacheParameter struct {
 type UnifiedCacheLineParameter struct {
 	Type          string
 	Size          int
-	CacheTagLength [][]int
+	CacheTagLength [][2]int
 	CacheIndexType  int // キャッシュインデックスのタイプ
 }
+
+type UnifiedCacheParameter struct {
+	Type          string
+	Way           uint
+	Size          uint
+	CacheIndexType int // キャッシュインデックスのタイプ
+	CacheTagLength [][2]int // キャッシュタグの長さを指定するスライス
+}	
 
 // FullAssociativeParameter の GetParameterString 実装
 func (p FullAssociativeParameter) GetParameterString() map[string]interface{} {
@@ -106,6 +114,18 @@ func (p FullAssociativeParameter) GetParameterString() map[string]interface{} {
 		"Size": p.Size,
 	}
 }
+
+func (p UnifiedCacheParameter) GetParameterString() map[string]interface{} {
+	return map[string]interface{}{
+		"Type":          p.Type,
+		"Way":           p.Way,
+		"Size":          p.Size,
+		"CacheIndexType": p.CacheIndexType,
+		"CacheTagLength": p.CacheTagLength,
+	}
+}
+
+
 
 // NbitFullAssociativeParameter の GetParameterString 実装
 func (p NbitFullAssociativeParameter) GetParameterString() map[string]interface{} {
@@ -207,6 +227,15 @@ func (p UnifiedCacheLineParameter) GetBson() bson.M {
 		"cacheindextype": p.CacheIndexType,
 	}
 }
+func (p UnifiedCacheParameter) GetBson() bson.M {
+	return bson.M{
+		"type":          p.Type,
+		"way":           p.Way,
+		"size":          p.Size,
+		"cacheindextype": p.CacheIndexType,
+		"cachetaglength": p.CacheTagLength,
+	}
+}
 
 // MultiCacheParameter の GetBson 実装
 func (p MultiCacheParameter) GetBson() bson.M {
@@ -228,6 +257,8 @@ func (p *MultiCacheParameter) GetParameterType() string {
 	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
 	return name
 }
+	
+
 
 // MultiCacheParameter の GetBson 実装
 func (p InclusiveCacheParameter) GetBson() bson.M {
@@ -278,6 +309,11 @@ func (p *NbitSetAssociativeParameter) GetParameterType() string {
 }
 
 func (p *UnifiedCacheLineParameter) GetParameterType() string {
+	return p.Type
+}
+
+
+func (p UnifiedCacheParameter) GetParameterType() string {
 	return p.Type
 }
 

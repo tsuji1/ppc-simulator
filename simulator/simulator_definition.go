@@ -19,9 +19,9 @@ type Cache struct {
 	InnerCache     *Cache
 	Size           int
 	Way            int
-	CacheTagLength [][]int `json:"CacheTagLength,omitempty"` // キャッシュタグの長さ
-	CacheIndexType int     `json:"CacheIndexType,omitempty"` // キャッシュインデックスのタイプ
-	Refbits        int     `json:"Refbits"`
+	CacheTagLength [][2]int `json:"CacheTagLength,omitempty"` // キャッシュタグの長さ
+	CacheIndexType int      `json:"CacheIndexType,omitempty"` // キャッシュインデックスのタイプ
+	Refbits        int      `json:"Refbits"`
 }
 
 type SimulatorDefinition struct {
@@ -296,9 +296,12 @@ func MakeParameter(c Cache) (cache.Parameter, error) {
 		}
 		param.(*cache.MultiCacheParameter).Type = cache.GetMultiLayerParameterTypeName(paramType, param.(*cache.MultiCacheParameter).CacheLayers)
 	case strings.HasPrefix(paramType, "UnifiedCache"):
-		param = &cache.UnifiedCacheLineParameter{
+		fmt.Printf("Creating UnifiedCacheParameter with Type: %s, Size: %d, Way: %d, CacheTagLength: %v, CacheIndexType: %d\n", paramType, c.Size, c.Way, c.CacheTagLength, c.CacheIndexType)
+		fmt.Println(c)
+		param = &cache.UnifiedCacheParameter{
 			Type:           paramType,
-			Size:           int(c.Size),
+			Size:           uint(c.Size),
+			Way:            uint(c.Way),
 			CacheTagLength: c.CacheTagLength,
 			CacheIndexType: c.CacheIndexType,
 		}
@@ -474,6 +477,8 @@ func NewSimulatorDefinition(cachetype string) (SimulatorDefinition, error) {
 		return NewMultiLayerInclusiveCacheSimulatorDefinition(), nil
 	} else if cachetype == "LRU" {
 		return NewLRUSimulatorDefinition(), nil
+	} else if cachetype == "FullLRU" {
+		return NewFullLRUSimulatorDefinition(), nil
 	} else if cachetype == "UnifiedCache" {
 		return NewUnifiedCacheSimulatorDefinition(), nil
 	} else {
@@ -488,16 +493,40 @@ func NewUnifiedCacheSimulatorDefinition() SimulatorDefinition {
 			Type:           "UnifiedCache",
 			Size:           64,
 			Way:            4,
-			CacheIndexType: 1,
-			CacheTagLength: [][]int{
+			CacheIndexType: 5,
+			CacheTagLength: [][2]int{
+				// []int{14, 32},
+				// []int{14, 32},
+				// []int{14, 32},
+				// []int{14, 32},
+
+				[2]int{9, 24},
+				[2]int{9, 24},
+				[2]int{9, 24},
+				[2]int{9, 24},
+				// []int{9, 24},
+				// []int{9, 24},
+				// []int{9, 24},
+				// []int{9, 24},
+
+				// []int{9, 24},
+				// []int{9, 24},
+				// []int{9, 24},
+				// []int{9, 24},
+
 				// []int{16, 24},
 				// []int{16, 24},
 				// []int{16, 24},
 				// []int{16, 24},
-				[]int{24, 24},
-				[]int{24, 24},
-				[]int{24, 24},
-				[]int{24, 24},
+
+				// []int{23, 24},
+				// []int{23, 24},
+				// []int{21, 22},
+				// []int{19, 20},
+				// []int{19, 20},
+				// []int{17, 18},
+				// []int{16, 17},
+				// []int{16, 17},
 			},
 		},
 		Rule:      "rules/wide.rib.20240625.1400.unique.rule",
@@ -514,7 +543,7 @@ func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 				{
 					Type:    "NbitNWaySetAssociativeDstipLRUCache",
 					Size:    64,
-					Way:     4,
+					Way:     1024,
 					Refbits: 32,
 				},
 			},
@@ -558,6 +587,16 @@ func NewLRUSimulatorDefinition() SimulatorDefinition {
 			Type: "NWaySetAssociativeLRUCache",
 			Size: 64,
 			Way:  4,
+		},
+	}
+}
+
+func NewFullLRUSimulatorDefinition() SimulatorDefinition {
+	return SimulatorDefinition{
+		Type: "SimpleCacheSimulator",
+		Cache: Cache{
+			Type: "FullAssociativeLRUCache",
+			Size: 1024,
 		},
 	}
 }
@@ -642,8 +681,21 @@ func CreateSimulatorWithCapacityAndRefbits(base SimulatorDefinition, settings []
 }
 
 // 各CacheLayerにCapacityとRefbitsを設定して新しいSimulatorDefinitionを作成
+
 func CreateSimulatorWithCapacity(base SimulatorDefinition, capacity int) SimulatorDefinition {
 	newSim := base.DeepCopy()
 	newSim.Cache.Size = capacity
+	return newSim
+}
+
+func EditSimulatorWithWay(base SimulatorDefinition, way int) SimulatorDefinition {
+	newSim := base.DeepCopy()
+	newSim.Cache.Way = way
+	if newSim.Cache.Type == "UnifiedCache" {
+		for i := 0; i < way; i++ {
+			newSim.Cache.CacheTagLength = make([][2]int, way)
+			newSim.Cache.CacheTagLength = append(newSim.Cache.CacheTagLength, [2]int{9, 24})
+		}
+	}
 	return newSim
 }
