@@ -53,6 +53,14 @@ func (hoge IPaddress) String() string {
 	return ip.String()
 }
 
+// Stringメソッドは、IPアドレスをドット区切りの文字列として返す。
+func (hoge IPaddress) DstNetworkString(prefix int) string {
+	ip := make(net.IP, 4)
+	dstNetwork := hoge.ipaddress << (32 - prefix)
+	binary.BigEndian.PutUint32(ip, dstNetwork)
+	return fmt.Sprintf("%s/%d", ip.String(), prefix)
+}
+
 // SetIPメソッドは、様々な入力形式からIPアドレスを設定する。
 func (hoge *IPaddress) SetIP(input interface{}) {
 	switch a := input.(type) {
@@ -125,6 +133,7 @@ func NewIPaddress(input interface{}) IPaddress {
 	default:
 		panic(fmt.Sprintf("NewIPaddress:%v (type:%T) is not IPaddress", input, a))
 	}
+
 	return IPaddress{
 		ipaddress: temp,
 	}
@@ -150,6 +159,6 @@ func GetRandomIP() IPaddress {
 
 func GetRandomPrefix() uint8 {
 	rand.NewSource(time.Now().UnixNano())
-	
-	return uint8(rand.Intn(32)+1)
+
+	return uint8(rand.Intn(32) + 1)
 }
