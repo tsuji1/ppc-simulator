@@ -57,6 +57,8 @@ var rulefile = flag.String("rulefile", "", "rule file")
 var recordCacheHit = flag.Bool("recordCachehit", false, " record cache hit")
 var routingTable *routingtable.RoutingTablePatriciaTrie
 
+const gobProgressInterval = 10_000_000
+
 func init() {
 	// routingtable.Data 型の登録
 
@@ -67,12 +69,7 @@ func init() {
 	debug.SetGCPercent(50)
 	gob.Register(routingtable.Data{})
 
-	// ファイル名から拡張子を外して取得する
-	base := filepath.Base(*trace)
-	filename := strings.TrimSuffix(base, filepath.Ext(base))
-
-	// 新しいパスを生成する
-	gobPath := filepath.Join("gob-packet", filename+".gob")
+	gobPath := buildGobPath(*rulefile, *trace)
 	gobdebugmode := false
 	ext := filepath.Ext(*trace)
 	fpRule, err := os.Open(*rulefile)
@@ -92,6 +89,7 @@ func init() {
 		// gobファイルが存在しない場合、通常の処理を行う
 		if !gobdebugmode {
 			fmt.Println("gobファイルが見つかりません。新しいファイルを生成中...")
+			fmt.Printf("作成するgobファイル名: %s\n", filepath.Base(gobPath))
 		} else {
 			fmt.Println("debugmode で実行中")
 		}
@@ -113,7 +111,8 @@ func init() {
 				panic("Can't read input as valid tsv/csv file")
 			}
 
-			for i := 0; ; i += 1 {
+			totalPackets := 0
+			for {
 				record, err := reader.Read()
 
 				if err != nil {
@@ -129,11 +128,17 @@ func init() {
 						continue
 					}
 				}
+				totalPackets++
+				if totalPackets%gobProgressInterval == 0 {
+					fmt.Printf("gob変換進捗: %d パケット処理済み (有効: %d)\n", totalPackets, len(packets))
+					if gobdebugmode {
+						break
+					}
+				}
 
 				packet, err := parseCSVRecordToMinPacket(record, routingTable)
 
 				if err != nil {
-					fmt.Println("Error:", err)
 					continue
 				}
 
@@ -141,14 +146,6 @@ func init() {
 					continue
 				}
 				packets = append(packets, *packet)
-				if i%100000 == 0 {
-					if i != 0 {
-						fmt.Printf("i: %d\n", i)
-						if gobdebugmode {
-							break
-						}
-					}
-				}
 			}
 
 			// gobファイルに書き込む処理
@@ -195,11 +192,15 @@ func init() {
 			fmt.Printf("isLinkTypeRaw: %v\n", isLinkTypeRaw)
 
 			// range over the channel (only one iteration variable is allowed)
+			totalPackets := 0
 			num_minpackets := 0
 			for packet := range packetSource.Packets() {
+				totalPackets++
+				if totalPackets%gobProgressInterval == 0 {
+					fmt.Printf("gob変換進捗: %d パケット処理済み (有効: %d)\n", totalPackets, num_minpackets)
+				}
 				minPacket, err := parsePcapPacketToMinPacket(packet, routingTable, isLinkTypeRaw)
 				if err != nil {
-					fmt.Println("Error:", err) // かなりerrorが出るのでコメントアウト
 					// エラーでてもcontinueしない
 					continue
 				}
@@ -210,15 +211,6 @@ func init() {
 
 				packets = append(packets, *minPacket)
 				num_minpackets++
-				if num_minpackets%100000 == 0 {
-					if num_minpackets != 0 {
-						fmt.Printf("num_minpacket %d\n", num_minpackets)
-						// if gobdebugmode {
-						// 	break
-						// }
-					}
-				}
-
 			}
 
 			// gobファイルに書き込む処理
@@ -250,6 +242,28 @@ func extractDigits(input string) string {
 		}
 	}
 	return result
+}
+
+func buildGobPath(rulePath string, tracePath string) string {
+	ruleName := strings.TrimSuffix(filepath.Base(rulePath), filepath.Ext(rulePath))
+	traceName := strings.TrimSuffix(filepath.Base(tracePath), filepath.Ext(tracePath))
+	gobFileName := fmt.Sprintf("%s_%s.gob", sanitizeFileName(ruleName), sanitizeFileName(traceName))
+	return filepath.Join("gob-packet", gobFileName)
+}
+
+func sanitizeFileName(name string) string {
+	sanitized := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' {
+			return r
+		}
+		return '-'
+	}, name)
+
+	sanitized = strings.Trim(sanitized, "-_")
+	if sanitized == "" {
+		return "unknown"
+	}
+	return sanitized
 }
 
 // gobファイルをデコードしてパケットデータを取得
@@ -872,13 +886,11 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		}
 	}
 	stat := sim.GetSimulatorResult()
-	fmt.Printf("%v\n", stat)
 	if sim.Tracer != nil {
 		sim.Tracer.Reset()
 	} else {
 		memorytrace.Reset()
 	}
-	fmt.Printf("stat %v\n", stat)
 	return stat
 
 }

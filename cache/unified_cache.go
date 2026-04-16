@@ -5,6 +5,7 @@ import (
 	"hash/crc32"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"test-module/ipaddress"
 	"test-module/routingtable"
@@ -52,6 +53,7 @@ func (cache *UnifiedCache) Stat() interface{} {
 	UnifiedCacheStat := UnifiedCacheStat{
 		DepthSum: cache.DepthSum,
 	}
+	debugDirPath := "debug"
 	for i := 0; i < len(cache.Sets); i++ {
 		cacheLineStat := cache.Sets[i].Stat()
 		UnifiedCacheStat.CachelineHitCount = append(UnifiedCacheStat.CachelineHitCount, cacheLineStat.(UnifiedCacheLineStat).HitCount)
@@ -75,8 +77,13 @@ func (cache *UnifiedCache) Stat() interface{} {
 
 			cache.writeCount++
 			save := uniqueDstIPHitCount[max_index]
+			if err := os.MkdirAll(debugDirPath, 0o755); err != nil {
+				fmt.Printf("Error creating debug directory: %v\n", err)
+				continue
+			}
 			// fileに保存
-			file, err := os.Create(fmt.Sprintf("cache_debug_size%d_%d_%d_100-200.txt", cache.Size, i, max_index))
+			filePath := filepath.Join(debugDirPath, fmt.Sprintf("cache_debug_size%d_%d_%d_100-200.txt", cache.Size, i, max_index))
+			file, err := os.Create(filePath)
 			if err != nil {
 				fmt.Printf("Error creating file: %v\n", err)
 			} else {
@@ -104,8 +111,13 @@ func (cache *UnifiedCache) Stat() interface{} {
 			fmt.Printf("Max second miss count exceeded: %d (index: %d)\n", max_secondMisscount, max_index)
 
 			save := uniqueDstIPHitCount[max_index]
+			if err := os.MkdirAll(debugDirPath, 0o755); err != nil {
+				fmt.Printf("Error creating debug directory: %v\n", err)
+				continue
+			}
 			// fileに保存
-			file, err := os.Create(fmt.Sprintf("cache_debug_size%d_%d_%d_%d_3000.txt", cache.Size, i, max_index,cache.writeCountMax))
+			filePath := filepath.Join(debugDirPath, fmt.Sprintf("cache_debug_size%d_%d_%d_%d_3000.txt", cache.Size, i, max_index, cache.writeCountMax))
+			file, err := os.Create(filePath)
 			cache.writeCountMax++
 			if err != nil {
 				fmt.Printf("Error creating file: %v\n", err)
