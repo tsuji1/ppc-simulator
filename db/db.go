@@ -2,10 +2,14 @@
 package db
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"test-module/cache"
 	"test-module/simulator"
 
@@ -17,6 +21,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
 // DB のインターフェース
@@ -33,39 +38,41 @@ type MongoDB struct {
 
 // MongoDBクライアントを作成
 func NewMongoDB() (*MongoDB, error) {
-	// mongo.NewClientの代わりにmongo.Connectを直接使用
-	if godotenv.Load(".env") != nil {
-		log.Fatal("Error loading .env file")
-	}
-	databaseUrl := os.Getenv("DATABASE_URL")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(databaseUrl))
-	if err != nil {
-		return nil, err
-	}
-
-	collection := client.Database("db").Collection("simulator_results")
-	return &MongoDB{Client: client, Collection: collection}, nil
+	return newMongoDB("db", "simulator_results")
 }
 
 // MongoDBクライアントを作成
 func NewTestMongoDB() (*MongoDB, error) {
-	// mongo.NewClientの代わりにmongo.Connectを直接使用
-	if godotenv.Load(".env") != nil {
-		log.Fatal("Error loading .env file")
-	}
-	databaseUrl := os.Getenv("DATABASE_URL")
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	return newMongoDB("testdb_test", "simulator_results_test")
+}
 
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(databaseUrl))
+func newMongoDB(databaseName string, collectionName string) (*MongoDB, error) {
+	if err := godotenv.Load(".env"); err != nil {
+		// .env が無くても環境変数が直接設定されていれば動作できるため、警告のみ。
+		log.Printf("warning: could not load .env: %v", err)
+	}
+
+	databaseURL := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+	if databaseURL == "" {
+		return nil, fmt.Errorf("DATABASE_URL is empty")
+	}
+
+	connectCtx, connectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer connectCancel()
+
+	client, err := mongo.Connect(connectCtx, options.Client().ApplyURI(databaseURL))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to connect MongoDB: %w", err)
 	}
 
-	collection := client.Database("testdb_test").Collection("simulator_results_test")
+	pingCtx, pingCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer pingCancel()
+	if err := client.Ping(pingCtx, readpref.Primary()); err != nil {
+		_ = client.Disconnect(context.Background())
+		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
+	}
+
+	collection := client.Database(databaseName).Collection(collectionName)
 	return &MongoDB{Client: client, Collection: collection}, nil
 }
 
@@ -98,82 +105,101 @@ type SimulatorResultWithMetadata struct {
 	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
 type SimulatorResultWithMetadataUnifiedCache struct {
-	SimulatorResult simulator.SimulatorResult `bson:"simulator_result"`  // ネストされたSimulatorResult
-	RuleFileName    string                    `bson:"rule_file_name"`    // ルールファイル名
-	Timestamp       time.Time                 `bson:"timestamp"`         // 挿入時のタイムスタンプ
-	TraceFileName   string                    `bson:"trace_file_name"`   // トレースファイル名
-	HitCountList    [][32]uint32              `bson:"hit_count_list"`    // ヒットカウントリスト
-	FirstMissCount  [][32]uint32              `bson:"first_miss_count"`  // 初回ミスカウントリスト
-	SecondMissCount [][32]uint32              `bson:"second_miss_count"` // 2回目以降のミスカウントリスト
+	SimulatorResult        simulator.SimulatorResult `bson:"simulator_result"`             // ネストされたSimulatorResult
+	RuleFileName           string                    `bson:"rule_file_name"`               // ルールファイル名
+	Timestamp              time.Time                 `bson:"timestamp"`                    // 挿入時のタイムスタンプ
+	TraceFileName          string                    `bson:"trace_file_name"`              // トレースファイル名
+	UnifiedStatEncoding    string                    `bson:"unified_stat_encoding"`        // 圧縮形式
+	UnifiedStatRows        int                       `bson:"unified_stat_rows"`            // 行数(=セット数)
+	HitCountListCompressed primitive.Binary          `bson:"hit_count_list_compressed"`    // ヒットカウントリスト(gzip圧縮)
+	FirstMissCompressed    primitive.Binary          `bson:"first_miss_count_compressed"`  // 初回ミスカウント(gzip圧縮)
+	SecondMissCompressed   primitive.Binary          `bson:"second_miss_count_compressed"` // 2回目以降ミス(gzip圧縮)
+}
+
+type UnifiedCacheStatSummary struct {
+	DepthSum uint64 `json:"DepthSum" bson:"depthsum"`
+}
+
+func compressUnifiedCounterRows(rows [][32]uint32) (primitive.Binary, error) {
+	raw := make([]byte, 0, len(rows)*32*4)
+	var buf [4]byte
+	for _, row := range rows {
+		for _, v := range row {
+			binary.LittleEndian.PutUint32(buf[:], v)
+			raw = append(raw, buf[:]...)
+		}
+	}
+
+	var zipped bytes.Buffer
+	zw := gzip.NewWriter(&zipped)
+	if _, err := zw.Write(raw); err != nil {
+		_ = zw.Close()
+		return primitive.Binary{}, err
+	}
+	if err := zw.Close(); err != nil {
+		return primitive.Binary{}, err
+	}
+
+	return primitive.Binary{
+		Subtype: 0x00,
+		Data:    zipped.Bytes(),
+	}, nil
 }
 
 // InsertResult を実装。simulatorResult に timestamp を追加して挿入
 func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.SimulatorResult, ruleFileName string, traceFileName string) error {
-	//もっといい方法があるとおもう。LRUを追加したときの僕より
-
-	// Timestamp を現在時刻に設定
-
-	if simulatorResult.Type == "MultiLayerCacheExclusive" {
-		// SimulatorResultWithMetadata 構造体を作成
-		var simulatorResultWithMetadata SimulatorResultWithMetadata
-		simulatorResultWithMetadata.SimulatorResult = simulatorResult
-		simulatorResultWithMetadata.Timestamp = time.Now()
-		simulatorResultWithMetadata.RuleFileName = ruleFileName
-		simulatorResultWithMetadata.TraceFileName = traceFileName
-
-		// データを挿入f
-		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
-		if err != nil {
-			return fmt.Errorf("failed to insert simulator result: %w", err)
+	// UnifiedCache は追加の統計情報を持つため専用ドキュメントで保存する。
+	if simulatorResult.Type == "UnifiedCache" {
+		unifiedStat, ok := simulatorResult.StatDetail.(cache.UnifiedCacheStat)
+		if !ok {
+			return fmt.Errorf("unexpected UnifiedCache stat detail type: %T", simulatorResult.StatDetail)
 		}
-	} else if simulatorResult.Type == "NWaySetAssociativeLRUCache" {
-		// SimulatorResultWithMetadata 構造体を作成
-		var simulatorResultWithMetadata SimulatorResultWithMetadata
-		simulatorResultWithMetadata.SimulatorResult = simulatorResult
-		simulatorResultWithMetadata.Timestamp = time.Now()
-		simulatorResultWithMetadata.TraceFileName = traceFileName
 
-		// データを挿入
-		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		hitCompressed, err := compressUnifiedCounterRows(unifiedStat.CachelineHitCount)
 		if err != nil {
-			return fmt.Errorf("failed to insert simulator result: %w", err)
+			return fmt.Errorf("failed to compress UnifiedCache hit_count_list: %w", err)
 		}
-	} else if simulatorResult.Type == "MultiLayerCacheInclusive" {
-		// SimulatorResultWithMetadata 構造体を作成
-		var simulatorResultWithMetadata SimulatorResultWithMetadata
-		simulatorResultWithMetadata.SimulatorResult = simulatorResult
-		simulatorResultWithMetadata.Timestamp = time.Now()
-		simulatorResultWithMetadata.RuleFileName = ruleFileName
-		simulatorResultWithMetadata.TraceFileName = traceFileName
-
-		// データを挿入f
-		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		firstMissCompressed, err := compressUnifiedCounterRows(unifiedStat.CachelineFirstMissCount)
 		if err != nil {
-			return fmt.Errorf("failed to insert simulator result: %w", err)
+			return fmt.Errorf("failed to compress UnifiedCache first_miss_count: %w", err)
 		}
-	} else if simulatorResult.Type == "UnifiedCache" {
-		// SimulatorResultWithMetadata 構造体を作成
-		var simulatorResultWithMetadata SimulatorResultWithMetadataUnifiedCache
-		simulatorResultWithMetadata.SimulatorResult = simulatorResult
-		simulatorResultWithMetadata.Timestamp = time.Now()
-
-		simulatorResultWithMetadata.RuleFileName = ruleFileName
-		simulatorResultWithMetadata.TraceFileName = traceFileName
-		simulatorResultWithMetadata.HitCountList = simulatorResult.StatDetail.(cache.UnifiedCacheStat).CachelineHitCount
-		simulatorResultWithMetadata.FirstMissCount = simulatorResult.StatDetail.(cache.UnifiedCacheStat).CachelineFirstMissCount
-		simulatorResultWithMetadata.SecondMissCount = simulatorResult.StatDetail.(cache.UnifiedCacheStat).CachelineSecondMissCount
-		// データを挿入
-		_, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata)
+		secondMissCompressed, err := compressUnifiedCounterRows(unifiedStat.CachelineSecondMissCount)
 		if err != nil {
-			return fmt.Errorf("failed to insert simulator result: %w", err)
-		} else {
-			println("Inserted UnifiedCache result successfully")
-
+			return fmt.Errorf("failed to compress UnifiedCache second_miss_count: %w", err)
 		}
-	} else {
-		panic("Unknown Simulator Type, Type: " + simulatorResult.Type)
+
+		// 大きな配列は圧縮フィールドに保存し、statdetail には要約のみ残す。
+		simulatorResult.StatDetail = UnifiedCacheStatSummary{
+			DepthSum: unifiedStat.DepthSum,
+		}
+
+		simulatorResultWithMetadata := SimulatorResultWithMetadataUnifiedCache{
+			SimulatorResult:        simulatorResult,
+			RuleFileName:           ruleFileName,
+			Timestamp:              time.Now(),
+			TraceFileName:          traceFileName,
+			UnifiedStatEncoding:    "gzip+uint32le[rows][32]",
+			UnifiedStatRows:        len(unifiedStat.CachelineHitCount),
+			HitCountListCompressed: hitCompressed,
+			FirstMissCompressed:    firstMissCompressed,
+			SecondMissCompressed:   secondMissCompressed,
+		}
+		if _, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata); err != nil {
+			return fmt.Errorf("failed to insert simulator result(type=%s): %w", simulatorResult.Type, err)
+		}
+		return nil
 	}
 
+	// それ以外のキャッシュタイプは共通形式で保存する。
+	simulatorResultWithMetadata := SimulatorResultWithMetadata{
+		SimulatorResult: simulatorResult,
+		RuleFileName:    ruleFileName,
+		Timestamp:       time.Now(),
+		TraceFileName:   traceFileName,
+	}
+	if _, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata); err != nil {
+		return fmt.Errorf("failed to insert simulator result(type=%s): %w", simulatorResult.Type, err)
+	}
 	return nil
 }
 
@@ -312,11 +338,8 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 			"simulator_result.parameter": simulatorParameter,
 			"simulator_result.processed": simulatorProcessed,
 			"simulator_result.type":      simulatorType,
+			"rule_file_name":             ruleFileName,
 			"trace_file_name":            traceFileName,
-			// depthsum が 0 以上である条件を追加
-			"simulator_result.statdetail.depthsum": bson.M{
-				"$gte": 0, // Greater Than or Equal: 0以上
-			},
 		}
 	}
 

@@ -24,7 +24,7 @@ type CacheInitInfo struct {
 	DebugMode      bool
 	ParentCache    cache.Cache // 必要に応じて上位キャッシュなども追加可能
 	CacheIndex     int         // ParentCache内で自分が何番目か（親がいる場合のみ有効）
-	CacheTagLength [][2]int     //
+	CacheTagLength [][2]int    //
 	CacheIndexType int
 }
 
@@ -171,7 +171,7 @@ func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cach
 		size := definitionCache.Size
 		way := definitionCache.Way
 
-		c = cache.NewNWaySetAssociativeLRUCache(uint(size), uint(way))
+		c = cache.NewNWaySetAssociativeLRUCache(uint(size), uint(way), routingTable)
 	case "NbitFullAssociativeDstipLRUCache":
 		size := definitionCache.Size
 		refbits := definitionCache.Refbits
@@ -331,8 +331,6 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 	if err != nil {
 		return nil, err
 	}
-
-
 
 	// シミュレータを初期化
 	sim := &SimpleCacheSimulator{

@@ -37,7 +37,6 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
-	"github.com/joho/godotenv"
 
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
@@ -55,6 +54,19 @@ var maxProccess = flag.Uint64("max", 0, "max process")
 var skip = flag.Int("skip", 0, "skip")
 var rulefile = flag.String("rulefile", "", "rule file")
 var recordCacheHit = flag.Bool("recordCachehit", false, " record cache hit")
+var cacheTypeFlag = flag.String("cachetype", "UnifiedCache", "cache type (LRU, FullLRU, FullAssociativeLRUCache, MultiLayerCacheExclusive, MultiLayerCacheInclusive, UnifiedCache)")
+var capacityStartFlag = flag.Int("capacity-start", 10, "start of log2 cache capacity range (inclusive)")
+var capacityEndFlag = flag.Int("capacity-end", 10, "end of log2 cache capacity range (inclusive)")
+var capacityStepFlag = flag.Int("capacity-step", 1, "step of log2 cache capacity range")
+var refbitsStartFlag = flag.Int("refbits-start", 32, "start of refbits range (inclusive)")
+var refbitsEndFlag = flag.Int("refbits-end", 32, "end of refbits range (inclusive)")
+var refbitsStepFlag = flag.Int("refbits-step", 1, "step of refbits range")
+var wayFlag = flag.Int("way", 4, "cache way for associative caches (UnifiedCache, MultiLayerCacheExclusive, MultiLayerCacheInclusive)")
+var cacheIndexTypeFlag = flag.Int("cache-index-type", 5, "cache index type for UnifiedCache")
+var cacheTagLengthFlag = flag.String("cache-tag-length", "9-24,9-24,9-24,9-24", "cache tag length ranges for UnifiedCache (comma separated, one per way: min-max,min-max,...)")
+var logIPFlag = flag.Bool("logip", false, "write UnifiedCache top second-miss IP/prefix CSV")
+var logIPTopFlag = flag.Int("logip-top", 100, "number of UnifiedCache second-miss IP/prefix records to write")
+var logIPOutputDirFlag = flag.String("logip-output-dir", "scripts/reports/unified_second_miss_ip", "output directory for -logip CSV files")
 var routingTable *routingtable.RoutingTablePatriciaTrie
 
 const gobProgressInterval = 10_000_000
@@ -62,9 +74,6 @@ const gobProgressInterval = 10_000_000
 func init() {
 	// routingtable.Data 型の登録
 
-	if godotenv.Load(".env") != nil {
-		panic("Error loading .env file")
-	}
 	flag.Parse()
 	debug.SetGCPercent(50)
 	gob.Register(routingtable.Data{})
@@ -895,6 +904,101 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 
 }
 
+func safeFileNamePart(value string) string {
+	safe := strings.Map(func(r rune) rune {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return r
+		}
+		return '-'
+	}, value)
+	for strings.Contains(safe, "--") {
+		safe = strings.ReplaceAll(safe, "--", "-")
+	}
+	safe = strings.Trim(safe, "-")
+	if safe == "" {
+		return "unknown"
+	}
+	return safe
+}
+
+func writeUnifiedSecondMissIPReport(sim *simulator.SimpleCacheSimulator, ruleFileName string, traceFileName string) (string, error) {
+	if *logIPTopFlag <= 0 {
+		return "", fmt.Errorf("-logip-top must be greater than 0")
+	}
+
+	unifiedCache, ok := sim.Cache.(*cache.UnifiedCache)
+	if !ok {
+		return "", nil
+	}
+
+	records := unifiedCache.TopSecondMissIPRecords(*logIPTopFlag)
+	if err := os.MkdirAll(*logIPOutputDirFlag, 0755); err != nil {
+		return "", err
+	}
+
+	fileName := fmt.Sprintf(
+		"second_miss_ip_%s_%s_cap%d_way%d_index%d_top%d_%s.csv",
+		safeFileNamePart(ruleFileName),
+		safeFileNamePart(traceFileName),
+		unifiedCache.Size,
+		unifiedCache.Way,
+		unifiedCache.CacheIndexType,
+		*logIPTopFlag,
+		time.Now().Format("20060102T150405.000000000"),
+	)
+	filePath := filepath.Join(*logIPOutputDirFlag, fileName)
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	header := []string{
+		"rank",
+		"capacity",
+		"way",
+		"cache_index_type",
+		"set_idx",
+		"prefix_len",
+		"network",
+		"network_key",
+		"second_miss_count",
+		"rule_file_name",
+		"trace_file_name",
+	}
+	if err := writer.Write(header); err != nil {
+		return "", err
+	}
+
+	for i, record := range records {
+		row := []string{
+			strconv.Itoa(i + 1),
+			strconv.FormatUint(uint64(unifiedCache.Size), 10),
+			strconv.FormatUint(uint64(unifiedCache.Way), 10),
+			strconv.Itoa(unifiedCache.CacheIndexType),
+			strconv.Itoa(record.SetIndex),
+			strconv.Itoa(record.PrefixLen),
+			record.NetworkCIDR,
+			strconv.FormatUint(uint64(record.Network), 10),
+			strconv.FormatUint(uint64(record.Count), 10),
+			ruleFileName,
+			traceFileName,
+		}
+		if err := writer.Write(row); err != nil {
+			return "", err
+		}
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
 func generateFileName() string {
 	// 現在時刻を取得
 	currentTime := time.Now()
@@ -923,13 +1027,65 @@ func generateRandomString(length int) string {
 	return string(b)
 }
 
+func buildRange(start int, end int, step int, rangeName string) ([]int, error) {
+	if step <= 0 {
+		return nil, fmt.Errorf("%s-step must be greater than 0", rangeName)
+	}
+	if start > end {
+		return nil, fmt.Errorf("%s-start must be less than or equal to %s-end", rangeName, rangeName)
+	}
+
+	result := make([]int, 0, ((end-start)/step)+1)
+	for i := start; i <= end; i += step {
+		result = append(result, i)
+	}
+	return result, nil
+}
+
+func parseCacheTagLengthSpec(spec string, way int) ([][2]int, error) {
+	if way <= 0 {
+		return nil, fmt.Errorf("way must be greater than 0")
+	}
+
+	parts := strings.Split(spec, ",")
+	if len(parts) != way {
+		return nil, fmt.Errorf("cache-tag-length item count (%d) must match way (%d)", len(parts), way)
+	}
+
+	result := make([][2]int, 0, way)
+	for _, raw := range parts {
+		part := strings.TrimSpace(raw)
+		if part == "" {
+			return nil, fmt.Errorf("cache-tag-length contains an empty item")
+		}
+
+		minMax := strings.Split(part, "-")
+		if len(minMax) != 2 {
+			return nil, fmt.Errorf("invalid cache-tag-length item %q: expected min-max", part)
+		}
+
+		minVal, err := strconv.Atoi(strings.TrimSpace(minMax[0]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid min value in cache-tag-length item %q: %w", part, err)
+		}
+		maxVal, err := strconv.Atoi(strings.TrimSpace(minMax[1]))
+		if err != nil {
+			return nil, fmt.Errorf("invalid max value in cache-tag-length item %q: %w", part, err)
+		}
+
+		if minVal < 0 || maxVal > 32 || minVal > maxVal {
+			return nil, fmt.Errorf("cache-tag-length item %q must satisfy 0 <= min <= max <= 32", part)
+		}
+
+		result = append(result, [2]int{minVal, maxVal})
+	}
+
+	return result, nil
+}
+
 // main は、シミュレーションを実行するエントリーポイントです。
 // コマンドライン引数でキャッシュ構成のコンフィグファイルとオプションの CSV ファイルを指定します。
 func main() {
-	if godotenv.Load(".env") != nil {
-		panic("Error loading .env file")
-	}
-
 	if *trace == "" {
 		fmt.Printf("You must specify the trace file\n")
 		os.Exit(1)
@@ -937,10 +1093,6 @@ func main() {
 
 	var f *os.File
 	var err error
-
-	if err != nil {
-		log.Fatal("Error loading .env file")
-	}
 
 	if *cpuprofile != "" {
 		f, err = os.Create(*cpuprofile)
@@ -964,9 +1116,13 @@ func main() {
 	// Create a new test MongoDB instance
 	mongoDB, err := db.NewMongoDB()
 	if err != nil {
-		fmt.Printf("Failed to create test MongoDB instance: %v", err)
+		log.Fatalf("Failed to initialize MongoDB: %v", err)
 	}
-	defer mongoDB.Client.Disconnect(ctx)
+	defer func() {
+		if err := mongoDB.Client.Disconnect(ctx); err != nil {
+			log.Printf("Failed to disconnect MongoDB: %v", err)
+		}
+	}()
 
 	// プロファイルの停止処理をシグナル受信時に行う
 	go func() {
@@ -1021,30 +1177,15 @@ func main() {
 		wg := new(sync.WaitGroup)
 		queue := make(chan simulator.SimpleCacheSimulator, 4)
 
-		// キャッシュ容量の範囲を取得
-
-		// キャッシュ容量のスタートを定義
-		capacityStart, err := strconv.Atoi(os.Getenv("CAPACITY_START"))
-		if err != nil {
-			panic(err)
-		}
-
-		// キャッシュ容量のエンドを定義
-		capacityEnd, err := strconv.Atoi(os.Getenv("CAPACITY_END"))
-		if err != nil {
-			panic(err)
-		}
-
-		// キャッシュ容量の倍率を定義
-		capacityMultiplier, err := strconv.Atoi(os.Getenv("CAPACITY_MULTIPLIER"))
+		capacityRange, err := buildRange(*capacityStartFlag, *capacityEndFlag, *capacityStepFlag, "capacity")
 		if err != nil {
 			panic(err)
 		}
 
 		// キャッシュ容量のリストを生成
-		capacity := make([]int, 0, 30)
-		for i := capacityStart; i <= capacityEnd; i = i + capacityMultiplier {
-			capacity = append(capacity, 1<<uint(i))
+		capacity := make([]int, 0, len(capacityRange))
+		for _, c := range capacityRange {
+			capacity = append(capacity, 1<<uint(c))
 		}
 
 		fmt.Print("capacity: ")
@@ -1054,10 +1195,10 @@ func main() {
 
 		traceFileName := filepath.Base(*trace)
 
-		var ruleFileName string
+		ruleFileName := filepath.Base(*rulefile)
 		var totalTask int
 
-		cachetype := os.Getenv("CACHE_TYPE")
+		cachetype := strings.TrimSpace(*cacheTypeFlag)
 		fmt.Println("var cachetype: ", cachetype)
 		var baseSimulatorDefinition simulator.SimulatorDefinition
 
@@ -1087,8 +1228,6 @@ func main() {
 						panic(err)
 					}
 
-					ruleFileName = filepath.Base(*rulefile)
-
 					ex, err := mongoDB.IsResultExist(ctx,
 						param,
 						packetlen,
@@ -1104,24 +1243,42 @@ func main() {
 					startTime := time.Now()
 					// resultが存在する場合にはスキップ
 
-					if ex == nil || *forceupdate {
+					shouldRun := ex == nil || *forceupdate || *logIPFlag
+					shouldInsert := ex == nil || *forceupdate
+
+					if shouldRun {
 
 						if *forceupdate {
 							fmt.Print("forceupdate is true\n")
+						} else if *logIPFlag && ex != nil {
+							fmt.Print("data found; rerun simulation for -logip without DB insert\n")
 						} else {
 							fmt.Print("data not found\n")
 						}
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench, *recordCacheHit)
+						if *logIPFlag {
+							reportPath, err := writeUnifiedSecondMissIPReport(&sim, ruleFileName, traceFileName)
+							if err != nil {
+								panic(err)
+							}
+							if reportPath != "" {
+								fmt.Printf("Saved second-miss IP report: %s\n", reportPath)
+							}
+						}
 						sim.SimDefinition.Print()
 						stat.Print()
 						fmt.Println(param.GetParameterString())
 
-						// err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
-						// if err != nil {
-						// 	// 挿入中にエラーが発生した場合、エラーハンドリングを行う
-						// 	panic(err)
-						// }
+						if shouldInsert {
+							err = mongoDB.InsertResult(ctx, stat, ruleFileName, traceFileName)
+							if err != nil {
+								// 挿入中にエラーが発生した場合、エラーハンドリングを行う
+								panic(err)
+							}
+						} else {
+							fmt.Print("skip DB insert because Data founded and -dbupdate is false\n")
+						}
 
 					} else {
 						fmt.Print("skip because Data founded\n")
@@ -1166,9 +1323,36 @@ func main() {
 				}
 			}
 
+		} else if cachetype == "FullLRU" || cachetype == "FullAssociativeLRUCache" {
+			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("FullLRU")
+			if err != nil {
+				panic(err)
+			}
+
+			totalTask = len(capacity)
+
+			for i, c := range capacity {
+				if i > *skip {
+					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
+					fmt.Print("newSim: ")
+					newSim.Interval = 100000000000
+					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
+					fmt.Print("cacheSim: ")
+					if err != nil {
+						panic(err)
+					}
+					queue <- *cacheSim
+				}
+			}
 		} else if cachetype == "MultiLayerCacheExclusive" {
 			fmt.Printf("cachetype: MultiLayerCacheExclusive\n")
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheExclusive")
+			if err != nil {
+				panic(err)
+			}
+			if *wayFlag <= 0 {
+				panic("way must be greater than 0")
+			}
 
 			// ruleFileName := filepath.Base(*rulefile)
 			// settings,err := mongoDB.GetForDepth(
@@ -1180,33 +1364,16 @@ func main() {
 			// 	panic(err)
 			// }
 
-			refbitsRange := make([]int, 0, 32)
+			refbitsRange, err := buildRange(*refbitsStartFlag, *refbitsEndFlag, *refbitsStepFlag, "refbits")
+			if err != nil {
+				panic(err)
+			}
 			// cachenumを反映
 			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
-			// refbitsStart, err := strconv.Atoi(os.Getenv("REFBITS_START"))
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// refbitsEnd, err := strconv.Atoi(os.Getenv("REFBITS_END"))
-			// if err != nil {
-			// 	panic(err)
-			// }
-
-			// refbitsMultiplier, err := strconv.Atoi(os.Getenv("REFBITS_MULTIPLIER"))
-			// if err != nil {
-			// 	panic(err)
-			// }
-			// for i := 8; i <= 15; i = i + 3 {
-			// 	refbitsRange = append(refbitsRange, i)
-			// }
-			// for i := 16; i <=24; i++ {
-			// 	refbitsRange = append(refbitsRange, i)
-			// }
-			// refbitsRange = append(refbitsRange, 32)
-			for i := 16; i <= 24; i++ {
-				refbitsRange = append(refbitsRange, i)
+			for i := range baseSimulatorDefinition.Cache.CacheLayers {
+				baseSimulatorDefinition.Cache.CacheLayers[i].Way = *wayFlag
 			}
 
 			fmt.Printf("refbitsRange: %v\n", refbitsRange)
@@ -1239,13 +1406,22 @@ func main() {
 		} else if cachetype == "MultiLayerCacheInclusive" {
 
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("MultiLayerCacheInclusive")
-			refbitsRange := make([]int, 0, 32)
+			if err != nil {
+				panic(err)
+			}
+			if *wayFlag <= 0 {
+				panic("way must be greater than 0")
+			}
+			refbitsRange, err := buildRange(*refbitsStartFlag, *refbitsEndFlag, *refbitsStepFlag, "refbits")
+			if err != nil {
+				panic(err)
+			}
 			// cachenumを反映
 			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
-			for i := 16; i <= 24; i++ {
-				refbitsRange = append(refbitsRange, i)
+			for i := range baseSimulatorDefinition.Cache.CacheLayers {
+				baseSimulatorDefinition.Cache.CacheLayers[i].Way = *wayFlag
 			}
 
 			onceCacheLimits := make([]int, 0, 128)
@@ -1294,6 +1470,21 @@ func main() {
 			fmt.Printf("cachetype: UnifiedCache\n")
 
 			baseSimulatorDefinition, err = simulator.NewSimulatorDefinition("UnifiedCache")
+			if err != nil {
+				panic(err)
+			}
+
+			if *wayFlag <= 0 {
+				panic("way must be greater than 0")
+			}
+
+			cacheTagLength, err := parseCacheTagLengthSpec(*cacheTagLengthFlag, *wayFlag)
+			if err != nil {
+				panic(err)
+			}
+			baseSimulatorDefinition.Cache.Way = *wayFlag
+			baseSimulatorDefinition.Cache.CacheIndexType = *cacheIndexTypeFlag
+			baseSimulatorDefinition.Cache.CacheTagLength = cacheTagLength
 
 			debugmodeEnv := os.Getenv("DEBUG_MODE")
 			debugmode := false
@@ -1301,9 +1492,13 @@ func main() {
 				debugmode = true
 			}
 			settings := capacity
+			totalTask = len(settings)
 
 			for i, setting := range settings {
 				if i > *skip {
+					if setting%*wayFlag != 0 {
+						panic(fmt.Sprintf("capacity (%d) must be divisible by way (%d) for UnifiedCache", setting, *wayFlag))
+					}
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, setting)
 					newSim.DebugMode = debugmode
 					newSim.Interval = 100000000000

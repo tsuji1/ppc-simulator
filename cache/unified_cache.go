@@ -20,6 +20,8 @@ const (
 	CACHE_INDEX_TYPE_PREFIX18        // 5
 )
 
+const cacheDebugFileOutputEnabled = false
+
 type UnifiedCache struct {
 	Sets            []UnifiedCacheLine // len(Sets) = Size / Way, each size == Way
 	Way             uint
@@ -49,6 +51,53 @@ type UnifiedCacheStat struct {
 	CachelineSecondMissCount [][32]uint32
 }
 
+type UnifiedSecondMissIPRecord struct {
+	SetIndex    int
+	PrefixLen   int
+	Network     uint32
+	NetworkCIDR string
+	Count       uint32
+}
+
+func (cache *UnifiedCache) TopSecondMissIPRecords(limit int) []UnifiedSecondMissIPRecord {
+	records := make([]UnifiedSecondMissIPRecord, 0)
+	for setIdx := range cache.Sets {
+		cacheLine := &cache.Sets[setIdx]
+		for prefixLen, countsByNetwork := range cacheLine.SecondMissIPCount {
+			for network, count := range countsByNetwork {
+				if count == 0 {
+					continue
+				}
+				records = append(records, UnifiedSecondMissIPRecord{
+					SetIndex:    setIdx,
+					PrefixLen:   prefixLen,
+					Network:     network,
+					NetworkCIDR: ipaddress.NewIPaddress(network).DstNetworkString(prefixLen),
+					Count:       count,
+				})
+			}
+		}
+	}
+
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].Count != records[j].Count {
+			return records[i].Count > records[j].Count
+		}
+		if records[i].PrefixLen != records[j].PrefixLen {
+			return records[i].PrefixLen < records[j].PrefixLen
+		}
+		if records[i].Network != records[j].Network {
+			return records[i].Network < records[j].Network
+		}
+		return records[i].SetIndex < records[j].SetIndex
+	})
+
+	if limit > 0 && len(records) > limit {
+		return records[:limit]
+	}
+	return records
+}
+
 func (cache *UnifiedCache) Stat() interface{} {
 	UnifiedCacheStat := UnifiedCacheStat{
 		DepthSum: cache.DepthSum,
@@ -71,7 +120,7 @@ func (cache *UnifiedCache) Stat() interface{} {
 			}
 		}
 
-		if cache.Size > 4096 && max_secondMisscount < 200 && max_secondMisscount > 100 && cache.writeCount == 0 {
+		if cacheDebugFileOutputEnabled && cache.Size > 4096 && max_secondMisscount < 200 && max_secondMisscount > 100 && cache.writeCount == 0 {
 			uniqueDstIPHitCount := cacheLineStat.(UnifiedCacheLineStat).UniqueDstIPHitCount
 			fmt.Printf("Max second miss count exceeded: %d (index: %d)\n", max_secondMisscount, max_index)
 
@@ -106,7 +155,7 @@ func (cache *UnifiedCache) Stat() interface{} {
 			}
 
 		}
-		if cache.Size > 4096 && max_secondMisscount > 3000 {
+		if cacheDebugFileOutputEnabled && cache.Size > 4096 && max_secondMisscount > 3000 {
 			uniqueDstIPHitCount := cacheLineStat.(UnifiedCacheLineStat).UniqueDstIPHitCount
 			fmt.Printf("Max second miss count exceeded: %d (index: %d)\n", max_secondMisscount, max_index)
 

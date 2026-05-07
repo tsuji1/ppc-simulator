@@ -543,7 +543,7 @@ func NewMultiLayerExclusiveCacheSimulatorDefinition() SimulatorDefinition {
 				{
 					Type:    "NbitNWaySetAssociativeDstipLRUCache",
 					Size:    64,
-					Way:     1024,
+					Way:     4,
 					Refbits: 32,
 				},
 			},

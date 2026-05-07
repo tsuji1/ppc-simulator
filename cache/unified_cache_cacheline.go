@@ -23,8 +23,9 @@ type UnifiedCacheLine struct {
 	UniqueDstIP         [32][]uint32
 	UniqueDstIPHitCount [32]map[uint32]uint32
 	// 2回目以降の参照性ミス数
-	SecondMissCount [32]uint32
-	parentIndex     uint
+	SecondMissCount   [32]uint32
+	SecondMissIPCount [32]map[uint32]uint32
+	parentIndex       uint
 }
 
 type UnifiedCacheLineEntry struct {
@@ -40,6 +41,7 @@ type UnifiedCacheLineStat struct {
 	FirstMissCount      [32]uint32
 	SecondMissCount     [32]uint32
 	UniqueDstIPHitCount [32]map[uint32]uint32
+	SecondMissIPCount   [32]map[uint32]uint32
 }
 
 func (cache *UnifiedCacheLine) ReturnMaskedIP(IP uint32, prefix uint8) uint32 {
@@ -61,6 +63,7 @@ func (cache *UnifiedCacheLine) Stat() interface{} {
 		FirstMissCount:      cache.FirstMissCount,
 		SecondMissCount:     cache.SecondMissCount,
 		UniqueDstIPHitCount: cache.UniqueDstIPHitCount,
+		SecondMissIPCount:   cache.SecondMissIPCount,
 	}
 
 }
@@ -163,7 +166,7 @@ func (cache *UnifiedCacheLine) IsCachedWithFiveTuple(f *FiveTuple, update bool) 
 			found := false
 			for _, ip := range cache.UniqueDstIP[cacheLength] {
 				if ip == dstNetwork {
-					found = true  // dstNetworkで判断
+					found = true // dstNetworkで判断
 					break
 				}
 			}
@@ -176,23 +179,27 @@ func (cache *UnifiedCacheLine) IsCachedWithFiveTuple(f *FiveTuple, update bool) 
 				cache.FirstMissCount[f.IsLeafIndex]++
 			} else {
 				cache.SecondMissCount[f.IsLeafIndex]++
+				if cache.SecondMissIPCount[cacheLength] == nil {
+					cache.SecondMissIPCount[cacheLength] = make(map[uint32]uint32)
+				}
+				cache.SecondMissIPCount[cacheLength][dstNetwork]++
 			}
-		if cache.debugMode && update {
-			dstIpAddress := ipaddress.NewIPaddress(f.DstIP)
-			hitIP, item := cache.routingTable.SearchLongestIP(dstIpAddress, 32)
+			if cache.debugMode && update {
+				dstIpAddress := ipaddress.NewIPaddress(f.DstIP)
+				hitIP, item := cache.routingTable.SearchLongestIP(dstIpAddress, 32)
 
-			// ヒットしていないのにNextHopが同じなことはありえない,逆の部分も見る
-			if item.(routingtable.Data).NextHop == hitElem.Value.(UnifiedCacheLineEntry).NextHop {
-				println("hitIP: ", ipaddress.BitStringToIP(hitIP), "dstIP: ", dstIpAddress.String())
+				// ヒットしていないのにNextHopが同じなことはありえない,逆の部分も見る
+				if item.(routingtable.Data).NextHop == hitElem.Value.(UnifiedCacheLineEntry).NextHop {
+					println("hitIP: ", ipaddress.BitStringToIP(hitIP), "dstIP: ", dstIpAddress.String())
 
-				println("hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP: ", ipaddress.NewIPaddress(hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP).String())
-				println("(UnifiedCacheLineEntry).NextHop: ", hitElem.Value.(UnifiedCacheLineEntry).NextHop)
-				println("(routingtable.Data).NextHop: ", item.(routingtable.Data).NextHop)
-				dstIpAddressString := dstIpAddress.String()
-				_ = dstIpAddressString
-				panic("NextHop is different")
+					println("hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP: ", ipaddress.NewIPaddress(hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP).String())
+					println("(UnifiedCacheLineEntry).NextHop: ", hitElem.Value.(UnifiedCacheLineEntry).NextHop)
+					println("(routingtable.Data).NextHop: ", item.(routingtable.Data).NextHop)
+					dstIpAddressString := dstIpAddress.String()
+					_ = dstIpAddressString
+					panic("NextHop is different")
+				}
 			}
-		}
 
 			// if _, exists := cache.EvictedCache[dstNetwork]; !exists {
 			// 	cache.SecondMissCount[f.IsLeafIndex]++
