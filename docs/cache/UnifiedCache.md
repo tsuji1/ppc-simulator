@@ -125,6 +125,12 @@
 - セットごとの `HitCount`
 - セットごとの `FirstMissCount`
 - セットごとの `SecondMissCount`
+- キャッシュ全体基準の `WholeCacheFirstMissCount`
+- キャッシュ全体基準の `WholeCacheSecondMissCount`
+
+`FirstMissCount` / `SecondMissCount` はセット（cacheline）ごとに既出判定するため、同じ prefix/network が別セットで初めて現れた場合も first miss として数えます。
+キャッシュ全体の傾向を見る場合は、`WholeCacheFirstMissCount` / `WholeCacheSecondMissCount` を使います。
+こちらは UnifiedCache 全体で同じ prefix/network を一度だけ first miss とし、2回目以降を second-or-later miss とします。
 
 `cacheDebugFileOutputEnabled` が有効なときは、条件に応じて `debug/` 配下へ補助ログを書きます（デフォルトは無効）。
 
@@ -140,8 +146,15 @@ MongoDB 保存時（`db.InsertResult`）は、`UnifiedCache` の大きい配列�
 `unified_stat_rows` は行数（セット数）です。
 
 `simulator_result.statdetail` は要約のみ（`depthsum`）を保存します。
+現行形式では、要約に加えて whole-cache 基準の miss count も保存します。
+
+- `simulator_result.statdetail.wholecachefirstmisscount`
+- `simulator_result.statdetail.wholecachesecondmisscount`
 
 この仕様により、`capacity` が大きいケースでもドキュメント肥大を抑えます。
+
+古い UnifiedCache ドキュメントには whole-cache カウンタが無い場合があります。
+`db.IsResultExist` は UnifiedCache について `wholecachefirstmisscount` の存在も確認するため、古い結果だけがある場合は `--no-dbupdate` でも再計測して新形式を保存します。
 
 ## 8.1 second miss IP/prefixログ
 
@@ -190,4 +203,36 @@ CSVには `capacity`, `way`, `cache_index_type`, `set_idx`, `prefix_len`, `netwo
   --cachetype UnifiedCache \
   --way 8 \
   --cache-tag-length "9-24,9-24,10-24,10-24,11-24,11-24,12-24,12-24"
+```
+
+### whole-cache miss の 2^6..2^17 解析
+
+通常比較は `2^6..2^14` を主領域とし、`2^14..2^17` は容量が大きすぎるため傾向確認用として扱います。
+グラフ化では `--tail-start-exp 14` を指定し、`2^14` 以降を薄い点線で描き分けます。
+
+追加計測は既存範囲を重複実行しないよう、足りない範囲だけを指定します。
+
+```bash
+./exec.sh \
+  --config scripts/env/unified-way8-2p6-2p14.env \
+  --capacity-start 15 \
+  --capacity-end 17 \
+  --no-dbupdate
+```
+
+初期参照ミス付近を絶対値で見る例:
+
+```bash
+MPLCONFIGDIR=/tmp/matplotlib UV_CACHE_DIR=/tmp/uv-cache uv run --script scripts/plot_unified_miss_ratio_2p6_2p14.py \
+  --start-exp 6 \
+  --end-exp 17 \
+  --miss-scope whole-cache \
+  --plot-unit absolute \
+  --ymin 0 \
+  --ymax 10000 \
+  --tail-start-exp 14 \
+  --way 8 \
+  --cache-index-type 5 \
+  --output scripts/unified_whole_cache_first_second_miss_counts_way8_index5_2p6_2p17_y0_10000_tail14.png \
+  --csv-output scripts/unified_whole_cache_first_second_miss_counts_way8_index5_2p6_2p17_y0_10000_tail14.csv
 ```

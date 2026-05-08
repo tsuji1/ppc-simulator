@@ -117,7 +117,9 @@ type SimulatorResultWithMetadataUnifiedCache struct {
 }
 
 type UnifiedCacheStatSummary struct {
-	DepthSum uint64 `json:"DepthSum" bson:"depthsum"`
+	DepthSum                  uint64     `json:"DepthSum" bson:"depthsum"`
+	WholeCacheFirstMissCount  [32]uint32 `json:"WholeCacheFirstMissCount" bson:"wholecachefirstmisscount"`
+	WholeCacheSecondMissCount [32]uint32 `json:"WholeCacheSecondMissCount" bson:"wholecachesecondmisscount"`
 }
 
 func compressUnifiedCounterRows(rows [][32]uint32) (primitive.Binary, error) {
@@ -170,7 +172,9 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 
 		// 大きな配列は圧縮フィールドに保存し、statdetail には要約のみ残す。
 		simulatorResult.StatDetail = UnifiedCacheStatSummary{
-			DepthSum: unifiedStat.DepthSum,
+			DepthSum:                  unifiedStat.DepthSum,
+			WholeCacheFirstMissCount:  unifiedStat.WholeCacheFirstMissCount,
+			WholeCacheSecondMissCount: unifiedStat.WholeCacheSecondMissCount,
 		}
 
 		simulatorResultWithMetadata := SimulatorResultWithMetadataUnifiedCache{
@@ -332,6 +336,9 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 			"simulator_result.type":                     simulatorType,
 			"rule_file_name":                            ruleFileName,
 			"trace_file_name":                           traceFileName, // depthsum が 0 以上である条件を追加
+			"simulator_result.statdetail.wholecachefirstmisscount": bson.M{
+				"$exists": true,
+			},
 		}
 	} else {
 		filterQuery = bson.M{

@@ -37,6 +37,10 @@ type UnifiedCache struct {
 	minCacheIndex   uint8
 	writeCount      uint64
 	writeCountMax   uint64
+	// Whole-cache first/second miss tracking is separate from per-set counters.
+	WholeCacheFirstMissCount   [32]uint32
+	WholeCacheSecondMissCount  [32]uint32
+	wholeCacheSeenMissNetworks [32]map[uint32]struct{}
 }
 
 func (c *UnifiedCache) StatString() string {
@@ -45,10 +49,12 @@ func (c *UnifiedCache) StatString() string {
 }
 
 type UnifiedCacheStat struct {
-	DepthSum                 uint64
-	CachelineHitCount        [][32]uint32
-	CachelineFirstMissCount  [][32]uint32
-	CachelineSecondMissCount [][32]uint32
+	DepthSum                  uint64
+	CachelineHitCount         [][32]uint32
+	CachelineFirstMissCount   [][32]uint32
+	CachelineSecondMissCount  [][32]uint32
+	WholeCacheFirstMissCount  [32]uint32
+	WholeCacheSecondMissCount [32]uint32
 }
 
 type UnifiedSecondMissIPRecord struct {
@@ -100,7 +106,9 @@ func (cache *UnifiedCache) TopSecondMissIPRecords(limit int) []UnifiedSecondMiss
 
 func (cache *UnifiedCache) Stat() interface{} {
 	UnifiedCacheStat := UnifiedCacheStat{
-		DepthSum: cache.DepthSum,
+		DepthSum:                  cache.DepthSum,
+		WholeCacheFirstMissCount:  cache.WholeCacheFirstMissCount,
+		WholeCacheSecondMissCount: cache.WholeCacheSecondMissCount,
 	}
 	debugDirPath := "debug"
 	for i := 0; i < len(cache.Sets); i++ {
@@ -258,7 +266,39 @@ func (cache *UnifiedCache) setIdx(f *FiveTuple) uint {
 
 func (cache *UnifiedCache) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
 	setIdx := cache.setIdx(f)
-	return cache.Sets[setIdx].IsCachedWithFiveTuple(f, update)
+	hit, entryIndexPtr := cache.Sets[setIdx].IsCachedWithFiveTuple(f, update)
+	if update && !hit {
+		cache.recordWholeCacheMiss(f)
+	}
+	return hit, entryIndexPtr
+}
+
+func (cache *UnifiedCache) wholeCacheMissNetwork(f *FiveTuple) (int8, uint32, bool) {
+	cacheLength := f.IsLeafIndex
+	if cacheLength < int8(cache.minCacheIndex) {
+		cacheLength = int8(cache.minCacheIndex)
+	}
+	if f.IsLeafIndex < 0 || f.IsLeafIndex >= 32 || cacheLength < 0 || cacheLength >= 32 {
+		return 0, 0, false
+	}
+	dstNetwork := f.DstIP >> (32 - uint8(cacheLength))
+	return cacheLength, dstNetwork, true
+}
+
+func (cache *UnifiedCache) recordWholeCacheMiss(f *FiveTuple) {
+	cacheLength, dstNetwork, ok := cache.wholeCacheMissNetwork(f)
+	if !ok {
+		return
+	}
+	if cache.wholeCacheSeenMissNetworks[cacheLength] == nil {
+		cache.wholeCacheSeenMissNetworks[cacheLength] = make(map[uint32]struct{})
+	}
+	if _, found := cache.wholeCacheSeenMissNetworks[cacheLength][dstNetwork]; found {
+		cache.WholeCacheSecondMissCount[f.IsLeafIndex]++
+		return
+	}
+	cache.wholeCacheSeenMissNetworks[cacheLength][dstNetwork] = struct{}{}
+	cache.WholeCacheFirstMissCount[f.IsLeafIndex]++
 }
 
 func (cache *UnifiedCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
