@@ -1,0 +1,5 @@
+case,before_prefix16,after_prefix16,packets,packet_share_percent,before_child_nodes,after_child_nodes,before_lpm_entries,after_lpm_entries,before_set,after_set,before_set_second_miss,after_set_second_miss
+wide09,150.65.0.0/16,150.108.0.0/16,2444100,24.441000000,0,92,1,93,902,1011,0,1453002
+wide09,203.178.0.0/16,203.159.0.0/16,1498641,14.986410000,15,104,1,65,825,844,0,901698
+wide12,150.65.0.0/16,150.108.0.0/16,2787976,27.879760000,0,91,1,92,902,1011,0,1776750
+wide12,203.178.0.0/16,203.159.0.0/16,933338,9.333380000,15,106,2,68,825,844,2,1089268
