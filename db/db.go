@@ -105,21 +105,47 @@ type SimulatorResultWithMetadata struct {
 	TraceFileName   string                    `bson:"trace_file_name"`  // トレースファイル名
 }
 type SimulatorResultWithMetadataUnifiedCache struct {
-	SimulatorResult        simulator.SimulatorResult `bson:"simulator_result"`             // ネストされたSimulatorResult
-	RuleFileName           string                    `bson:"rule_file_name"`               // ルールファイル名
-	Timestamp              time.Time                 `bson:"timestamp"`                    // 挿入時のタイムスタンプ
-	TraceFileName          string                    `bson:"trace_file_name"`              // トレースファイル名
-	UnifiedStatEncoding    string                    `bson:"unified_stat_encoding"`        // 圧縮形式
-	UnifiedStatRows        int                       `bson:"unified_stat_rows"`            // 行数(=セット数)
-	HitCountListCompressed primitive.Binary          `bson:"hit_count_list_compressed"`    // ヒットカウントリスト(gzip圧縮)
-	FirstMissCompressed    primitive.Binary          `bson:"first_miss_count_compressed"`  // 初回ミスカウント(gzip圧縮)
-	SecondMissCompressed   primitive.Binary          `bson:"second_miss_count_compressed"` // 2回目以降ミス(gzip圧縮)
+	SimulatorResult          simulator.SimulatorResult `bson:"simulator_result"`             // ネストされたSimulatorResult
+	RuleFileName             string                    `bson:"rule_file_name"`               // ルールファイル名
+	Timestamp                time.Time                 `bson:"timestamp"`                    // 挿入時のタイムスタンプ
+	TraceFileName            string                    `bson:"trace_file_name"`              // トレースファイル名
+	UnifiedStatEncoding      string                    `bson:"unified_stat_encoding"`        // 圧縮形式
+	UnifiedStatRows          int                       `bson:"unified_stat_rows"`            // 行数(=セット数)
+	HitCountListCompressed   primitive.Binary          `bson:"hit_count_list_compressed"`    // ヒットカウントリスト(gzip圧縮)
+	FirstMissCompressed      primitive.Binary          `bson:"first_miss_count_compressed"`  // 初回ミスカウント(gzip圧縮)
+	SecondMissCompressed     primitive.Binary          `bson:"second_miss_count_compressed"` // 2回目以降ミス(gzip圧縮)
+	ExtensionCountCompressed primitive.Binary          `bson:"extension_count_by_set_compressed,omitempty"`
+	ExtensionStatEncoding    string                    `bson:"extension_stat_encoding,omitempty"`
+	ExtensionStatItems       int                       `bson:"extension_stat_items,omitempty"`
 }
 
 type UnifiedCacheStatSummary struct {
-	DepthSum                  uint64     `json:"DepthSum" bson:"depthsum"`
-	WholeCacheFirstMissCount  [32]uint32 `json:"WholeCacheFirstMissCount" bson:"wholecachefirstmisscount"`
-	WholeCacheSecondMissCount [32]uint32 `json:"WholeCacheSecondMissCount" bson:"wholecachesecondmisscount"`
+	DepthSum                         uint64     `json:"DepthSum" bson:"depthsum"`
+	WholeCacheFirstMissCount         [32]uint32 `json:"WholeCacheFirstMissCount" bson:"wholecachefirstmisscount"`
+	WholeCacheSecondMissCount        [32]uint32 `json:"WholeCacheSecondMissCount" bson:"wholecachesecondmisscount"`
+	ExclusiveRejectedFirstMissCount  [32]uint32 `json:"ExclusiveRejectedFirstMissCount" bson:"exclusiverejectedfirstmisscount"`
+	ExclusiveRejectedSecondMissCount [32]uint32 `json:"ExclusiveRejectedSecondMissCount" bson:"exclusiverejectedsecondmisscount"`
+	InclusiveNonLeafInsertedCount    [32]uint32 `json:"InclusiveNonLeafInsertedCount" bson:"inclusivenonleafinsertedcount"`
+	AdaptiveLookupCount              [32]uint64 `json:"AdaptiveLookupCount" bson:"adaptivelookupcount"`
+	AdaptiveSelectionCount           [32]uint64 `json:"AdaptiveSelectionCount" bson:"adaptiveselectioncount"`
+	AdaptiveSwitchCount              uint64     `json:"AdaptiveSwitchCount" bson:"adaptiveswitchcount"`
+	AdaptiveFinalIndexLength         int        `json:"AdaptiveFinalIndexLength" bson:"adaptivefinalindexlength"`
+	AdaptiveEpochAccessCount         uint64     `json:"AdaptiveEpochAccessCount" bson:"adaptiveepochaccesscount"`
+	AdaptiveEpochDecisionCount       [32]uint64 `json:"AdaptiveEpochDecisionCount" bson:"adaptiveepochdecisioncount"`
+	AdaptiveCompletedEpochs          uint64     `json:"AdaptiveCompletedEpochs" bson:"adaptivecompletedepochs"`
+	SetProbeCount                    uint64     `json:"SetProbeCount" bson:"setprobecount"`
+	MaxSetProbeCount                 uint64     `json:"MaxSetProbeCount" bson:"maxsetprobecount"`
+	ExtensionEpochAccessCount        uint64     `json:"ExtensionEpochAccessCount" bson:"extensionepochaccesscount"`
+	ExtensionCompletedEpochs         uint64     `json:"ExtensionCompletedEpochs" bson:"extensioncompletedepochs"`
+	ExtensionAllocationCount         uint64     `json:"ExtensionAllocationCount" bson:"extensionallocationcount"`
+	ExtensionAllocationByEpoch       []uint32   `json:"ExtensionAllocationByEpoch" bson:"extensionallocationbyepoch"`
+	ExtensionPoolRemainingSets       uint64     `json:"ExtensionPoolRemainingSets" bson:"extensionpoolremainingsets"`
+	ExtensionPoolExhaustedEpochs     uint64     `json:"ExtensionPoolExhaustedEpochs" bson:"extensionpoolexhaustedepochs"`
+	ExtensionSetProbeCount           uint64     `json:"ExtensionSetProbeCount" bson:"extensionsetprobecount"`
+	MainHitCount                     uint64     `json:"MainHitCount" bson:"mainhitcount"`
+	ExtensionHitCount                uint64     `json:"ExtensionHitCount" bson:"extensionhitcount"`
+	MainWriteCount                   uint64     `json:"MainWriteCount" bson:"mainwritecount"`
+	ExtensionWriteCount              uint64     `json:"ExtensionWriteCount" bson:"extensionwritecount"`
 }
 
 func compressUnifiedCounterRows(rows [][32]uint32) (primitive.Binary, error) {
@@ -148,6 +174,14 @@ func compressUnifiedCounterRows(rows [][32]uint32) (primitive.Binary, error) {
 	}, nil
 }
 
+func compressUnifiedCounterVector(values []uint32) (primitive.Binary, error) {
+	rows := make([][32]uint32, (len(values)+31)/32)
+	for i, value := range values {
+		rows[i/32][i%32] = value
+	}
+	return compressUnifiedCounterRows(rows)
+}
+
 // InsertResult を実装。simulatorResult に timestamp を追加して挿入
 func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.SimulatorResult, ruleFileName string, traceFileName string) error {
 	// UnifiedCache は追加の統計情報を持つため専用ドキュメントで保存する。
@@ -169,24 +203,54 @@ func (db *MongoDB) InsertResult(ctx context.Context, simulatorResult simulator.S
 		if err != nil {
 			return fmt.Errorf("failed to compress UnifiedCache second_miss_count: %w", err)
 		}
+		extensionCountCompressed, err := compressUnifiedCounterVector(unifiedStat.ExtensionSetCountBySet)
+		if err != nil {
+			return fmt.Errorf("failed to compress UnifiedCache extension_count_by_set: %w", err)
+		}
 
 		// 大きな配列は圧縮フィールドに保存し、statdetail には要約のみ残す。
 		simulatorResult.StatDetail = UnifiedCacheStatSummary{
-			DepthSum:                  unifiedStat.DepthSum,
-			WholeCacheFirstMissCount:  unifiedStat.WholeCacheFirstMissCount,
-			WholeCacheSecondMissCount: unifiedStat.WholeCacheSecondMissCount,
+			DepthSum:                         unifiedStat.DepthSum,
+			WholeCacheFirstMissCount:         unifiedStat.WholeCacheFirstMissCount,
+			WholeCacheSecondMissCount:        unifiedStat.WholeCacheSecondMissCount,
+			ExclusiveRejectedFirstMissCount:  unifiedStat.ExclusiveRejectedFirstMissCount,
+			ExclusiveRejectedSecondMissCount: unifiedStat.ExclusiveRejectedSecondMissCount,
+			InclusiveNonLeafInsertedCount:    unifiedStat.InclusiveNonLeafInsertedCount,
+			AdaptiveLookupCount:              unifiedStat.AdaptiveLookupCount,
+			AdaptiveSelectionCount:           unifiedStat.AdaptiveSelectionCount,
+			AdaptiveSwitchCount:              unifiedStat.AdaptiveSwitchCount,
+			AdaptiveFinalIndexLength:         unifiedStat.AdaptiveFinalIndexLength,
+			AdaptiveEpochAccessCount:         unifiedStat.AdaptiveEpochAccessCount,
+			AdaptiveEpochDecisionCount:       unifiedStat.AdaptiveEpochDecisionCount,
+			AdaptiveCompletedEpochs:          unifiedStat.AdaptiveCompletedEpochs,
+			SetProbeCount:                    unifiedStat.SetProbeCount,
+			MaxSetProbeCount:                 unifiedStat.MaxSetProbeCount,
+			ExtensionEpochAccessCount:        unifiedStat.ExtensionEpochAccessCount,
+			ExtensionCompletedEpochs:         unifiedStat.ExtensionCompletedEpochs,
+			ExtensionAllocationCount:         unifiedStat.ExtensionAllocationCount,
+			ExtensionAllocationByEpoch:       unifiedStat.ExtensionAllocationByEpoch,
+			ExtensionPoolRemainingSets:       unifiedStat.ExtensionPoolRemainingSets,
+			ExtensionPoolExhaustedEpochs:     unifiedStat.ExtensionPoolExhaustedEpochs,
+			ExtensionSetProbeCount:           unifiedStat.ExtensionSetProbeCount,
+			MainHitCount:                     unifiedStat.MainHitCount,
+			ExtensionHitCount:                unifiedStat.ExtensionHitCount,
+			MainWriteCount:                   unifiedStat.MainWriteCount,
+			ExtensionWriteCount:              unifiedStat.ExtensionWriteCount,
 		}
 
 		simulatorResultWithMetadata := SimulatorResultWithMetadataUnifiedCache{
-			SimulatorResult:        simulatorResult,
-			RuleFileName:           ruleFileName,
-			Timestamp:              time.Now(),
-			TraceFileName:          traceFileName,
-			UnifiedStatEncoding:    "gzip+uint32le[rows][32]",
-			UnifiedStatRows:        len(unifiedStat.CachelineHitCount),
-			HitCountListCompressed: hitCompressed,
-			FirstMissCompressed:    firstMissCompressed,
-			SecondMissCompressed:   secondMissCompressed,
+			SimulatorResult:          simulatorResult,
+			RuleFileName:             ruleFileName,
+			Timestamp:                time.Now(),
+			TraceFileName:            traceFileName,
+			UnifiedStatEncoding:      "gzip+uint32le[rows][32]",
+			UnifiedStatRows:          len(unifiedStat.CachelineHitCount),
+			HitCountListCompressed:   hitCompressed,
+			FirstMissCompressed:      firstMissCompressed,
+			SecondMissCompressed:     secondMissCompressed,
+			ExtensionCountCompressed: extensionCountCompressed,
+			ExtensionStatEncoding:    "gzip+uint32le[items]",
+			ExtensionStatItems:       len(unifiedStat.ExtensionSetCountBySet),
 		}
 		if _, err := db.Collection.InsertOne(ctx, simulatorResultWithMetadata); err != nil {
 			return fmt.Errorf("failed to insert simulator result(type=%s): %w", simulatorResult.Type, err)
@@ -327,18 +391,40 @@ func (db *MongoDB) IsResultExist(ctx context.Context,
 		fmt.Printf("Parameter: %+v\n", simulatorParameter)
 		param := simulatorParameter.(*cache.UnifiedCacheParameter)
 		filterQuery = bson.M{
-			"simulator_result.parameter.size":           param.Size,
-			"simulator_result.parameter.way":            param.Way,
-			"simulator_result.parameter.type":           param.Type,
-			"simulator_result.parameter.cacheindextype": param.CacheIndexType,
-			"simulator_result.parameter.cachetaglength": param.CacheTagLength,
-			"simulator_result.processed":                simulatorProcessed,
-			"simulator_result.type":                     simulatorType,
-			"rule_file_name":                            ruleFileName,
-			"trace_file_name":                           traceFileName, // depthsum が 0 以上である条件を追加
+			"simulator_result.parameter.size":            param.Size,
+			"simulator_result.parameter.way":             param.Way,
+			"simulator_result.parameter.type":            param.Type,
+			"simulator_result.parameter.cacheindextype":  param.CacheIndexType,
+			"simulator_result.parameter.cachetaglength":  param.CacheTagLength,
+			"simulator_result.parameter.insertionpolicy": param.InsertionPolicy,
+			"simulator_result.processed":                 simulatorProcessed,
+			"simulator_result.type":                      simulatorType,
+			"rule_file_name":                             ruleFileName,
+			"trace_file_name":                            traceFileName, // depthsum が 0 以上である条件を追加
 			"simulator_result.statdetail.wholecachefirstmisscount": bson.M{
 				"$exists": true,
 			},
+		}
+		if cache.IsAdaptiveUnifiedCacheIndexPolicy(param.IndexPolicy) {
+			filterQuery["simulator_result.parameter.indexpolicy"] = param.IndexPolicy
+			filterQuery["simulator_result.parameter.adaptiveinitial"] = param.AdaptiveInitial
+			filterQuery["simulator_result.parameter.adaptivemin"] = param.AdaptiveMin
+			filterQuery["simulator_result.parameter.adaptivemax"] = param.AdaptiveMax
+			if param.IndexPolicy == cache.UnifiedCacheIndexPolicyEpochFrequent {
+				filterQuery["simulator_result.parameter.adaptiveepochlength"] = param.AdaptiveEpochLength
+			}
+		}
+		if param.SetExtensionPolicy != "" && param.SetExtensionPolicy != cache.UnifiedCacheSetExtensionOff {
+			filterQuery["simulator_result.parameter.setextensionpolicy"] = param.SetExtensionPolicy
+			filterQuery["simulator_result.parameter.setextensioncapacitymode"] = param.SetExtensionCapacityMode
+			filterQuery["simulator_result.parameter.setextensionpoolratio"] = param.SetExtensionPoolRatio
+			filterQuery["simulator_result.parameter.setextensionepochlength"] = param.SetExtensionEpochLength
+			filterQuery["simulator_result.parameter.setextensionpressurethreshold"] = param.SetExtensionPressureThreshold
+			filterQuery["simulator_result.parameter.setextensionmaxperset"] = param.SetExtensionMaxPerSet
+			filterQuery["simulator_result.parameter.mainsize"] = param.MainSize
+			filterQuery["simulator_result.parameter.extensionsize"] = param.ExtensionSize
+			filterQuery["simulator_result.parameter.totalphysicalsize"] = param.TotalPhysicalSize
+			filterQuery["simulator_result.statdetail.extensionallocationbyepoch"] = bson.M{"$exists": true}
 		}
 	} else {
 		filterQuery = bson.M{
