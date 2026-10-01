@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha1"
 	"encoding/csv"
 	"flag"
 	"fmt"
@@ -58,15 +59,38 @@ var cacheTypeFlag = flag.String("cachetype", "UnifiedCache", "cache type (LRU, F
 var capacityStartFlag = flag.Int("capacity-start", 10, "start of log2 cache capacity range (inclusive)")
 var capacityEndFlag = flag.Int("capacity-end", 10, "end of log2 cache capacity range (inclusive)")
 var capacityStepFlag = flag.Int("capacity-step", 1, "step of log2 cache capacity range")
+var capacityValuesFlag = flag.String("capacity-values", "", "comma-separated exact cache capacities; overrides capacity range")
 var refbitsStartFlag = flag.Int("refbits-start", 32, "start of refbits range (inclusive)")
 var refbitsEndFlag = flag.Int("refbits-end", 32, "end of refbits range (inclusive)")
 var refbitsStepFlag = flag.Int("refbits-step", 1, "step of refbits range")
-var wayFlag = flag.Int("way", 4, "cache way for associative caches (UnifiedCache, MultiLayerCacheExclusive, MultiLayerCacheInclusive)")
+var mpRefbitsFlag = flag.String("mp-refbits", "", "comma-separated fixed refbits for MultiLayerCacheExclusive, for example 24,20,16")
+var mpCapacitiesFlag = flag.String("mp-capacities", "", "comma-separated fixed capacities for MultiLayerCacheExclusive, for example 2048,2048,2048")
+var wayFlag = flag.String("way", "4", "cache way for associative caches; UnifiedCache also accepts full")
 var cacheIndexTypeFlag = flag.Int("cache-index-type", 5, "cache index type for UnifiedCache")
-var cacheTagLengthFlag = flag.String("cache-tag-length", "9-24,9-24,9-24,9-24", "cache tag length ranges for UnifiedCache (comma separated, one per way: min-max,min-max,...)")
+var cacheTagLengthFlag = flag.String("cache-tag-length", "9-24", "cache tag length ranges for UnifiedCache (min-max, /N, or comma separated one per way)")
+var cacheInsertionPolicyFlag = flag.String("cache-insertion-policy", cache.UnifiedCacheInsertionPolicyExclusive, "UnifiedCache insertion policy (exclusive or inclusive)")
+var cacheIndexPolicyFlag = flag.String("cache-index-policy", cache.UnifiedCacheIndexPolicyFixed, "UnifiedCache index policy (fixed, last-inserted-prefix, or epoch-most-frequent-prefix)")
+var adaptiveIndexInitialFlag = flag.Int("adaptive-index-initial", 18, "initial index prefix length for adaptive UnifiedCache index policy")
+var adaptiveIndexMinFlag = flag.Int("adaptive-index-min", 6, "minimum index prefix length for adaptive UnifiedCache index policy")
+var adaptiveIndexMaxFlag = flag.Int("adaptive-index-max", 24, "maximum index prefix length for adaptive UnifiedCache index policy")
+var adaptiveIndexEpochLengthFlag = flag.Int("adaptive-index-epoch-length", 1024, "accesses per epoch for epoch-most-frequent-prefix policy")
+var lengthAwareMultiProbeFlag = flag.Bool("length-aware-multi-probe", false, "probe length-specific UnifiedCache sets in parallel")
+var multiProbeLengthsFlag = flag.String("multi-probe-lengths", "18,20,22,24", "comma-separated prefix lengths for length-aware multi-probe")
+var wayQuotaWideMaxFlag = flag.Int("way-quota-wide-max", 18, "largest prefix length in the reserved wide-prefix way group")
+var wayQuotaWideWaysFlag = flag.Int("way-quota-wide-ways", 0, "ways reserved for wide prefixes; zero disables way quota")
+var skewedAssociativeFlag = flag.Bool("skewed-associative", false, "use two independent candidate-set hashes and insert into the emptier set")
+var setExtensionPolicyFlag = flag.String("set-extension-policy", cache.UnifiedCacheSetExtensionOff, "UnifiedCache set extension policy (off or epoch-full-repeat-miss)")
+var setExtensionCapacityModeFlag = flag.String("set-extension-capacity-mode", cache.UnifiedCacheSetExtensionAdditive, "UnifiedCache set extension capacity mode (fixed-total or additive)")
+var setExtensionPoolRatioFlag = flag.Float64("set-extension-pool-ratio", 0.125, "fraction of nominal capacity reserved/added as extension sets")
+var setExtensionEpochLengthFlag = flag.Int("set-extension-epoch-length", 4096, "lookups per set-extension pressure epoch")
+var setExtensionPressureThresholdFlag = flag.Uint64("set-extension-pressure-threshold", 8, "full repeat misses required to allocate an extension set")
+var setExtensionMaxPerSetFlag = flag.Int("set-extension-max-per-set", 2, "maximum extension sets assigned to one logical set")
 var logIPFlag = flag.Bool("logip", false, "write UnifiedCache top second-miss IP/prefix CSV")
 var logIPTopFlag = flag.Int("logip-top", 100, "number of UnifiedCache second-miss IP/prefix records to write")
 var logIPOutputDirFlag = flag.String("logip-output-dir", "scripts/reports/unified_second_miss_ip", "output directory for -logip CSV files")
+var logLengthFlag = flag.Bool("loglength", false, "write UnifiedCache resident entry Length distribution CSV")
+var logLengthOutputDirFlag = flag.String("loglength-output-dir", "scripts/reports/unified_cache_length", "output directory for -loglength CSV files")
+var dramRequestTraceOutputDirFlag = flag.String("dram-request-trace-dir", "", "write request-level DRAM trace CSV files into this directory")
 var routingTable *routingtable.RoutingTablePatriciaTrie
 
 const gobProgressInterval = 10_000_000
@@ -257,7 +281,11 @@ func buildGobPath(rulePath string, tracePath string) string {
 	ruleName := strings.TrimSuffix(filepath.Base(rulePath), filepath.Ext(rulePath))
 	traceName := strings.TrimSuffix(filepath.Base(tracePath), filepath.Ext(tracePath))
 	gobFileName := fmt.Sprintf("%s_%s.gob", sanitizeFileName(ruleName), sanitizeFileName(traceName))
-	return filepath.Join("gob-packet", gobFileName)
+	gobDir := strings.TrimSpace(os.Getenv("GOB_PACKET_DIR"))
+	if gobDir == "" {
+		gobDir = "gob-packet"
+	}
+	return filepath.Join(gobDir, gobFileName)
 }
 
 func sanitizeFileName(name string) string {
@@ -844,6 +872,10 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		}
 		// 先頭のハイフンを取り除く
 		safeParamString = strings.TrimLeft(safeParamString, "-")
+		if len(safeParamString) > 180 {
+			sum := sha1.Sum([]byte(safeParamString))
+			safeParamString = strings.TrimRight(safeParamString[:160], "-") + fmt.Sprintf("-%x", sum[:6])
+		}
 
 		var err error
 		filePath := filepath.Join("cachehitrace", safeParamString+".txt")
@@ -896,6 +928,21 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 	}
 	stat := sim.GetSimulatorResult()
 	if sim.Tracer != nil {
+		traceEnabled := sim.Tracer.Enabled()
+		traceStats := sim.Tracer.Stats()
+		if traceEnabled {
+			if err := sim.Tracer.Close(); err != nil {
+				panic(err)
+			}
+			fmt.Printf(
+				"DRAM request trace stats: accesses=%d reads=%d writes=%d first_cycle=%d last_cycle=%d\n",
+				traceStats.Accesses,
+				traceStats.Reads,
+				traceStats.Writes,
+				traceStats.FirstCycle,
+				traceStats.LastCycle,
+			)
+		}
 		sim.Tracer.Reset()
 	} else {
 		memorytrace.Reset()
@@ -919,6 +966,34 @@ func safeFileNamePart(value string) string {
 		return "unknown"
 	}
 	return safe
+}
+
+func dramRequestTraceRequested() bool {
+	return strings.TrimSpace(*dramRequestTraceOutputDirFlag) != ""
+}
+
+func configureDRAMRequestTrace(sim *simulator.SimpleCacheSimulator, ruleFileName string, traceFileName string) (string, error) {
+	outputDir := strings.TrimSpace(*dramRequestTraceOutputDirFlag)
+	if outputDir == "" {
+		return "", nil
+	}
+	if sim.Tracer == nil {
+		sim.Tracer = memorytrace.NewTracer()
+	}
+
+	paramName := safeFileNamePart(sim.Cache.ParameterString())
+	fileName := fmt.Sprintf(
+		"dram_requests_%s_%s_%s_%s.csv",
+		safeFileNamePart(ruleFileName),
+		safeFileNamePart(traceFileName),
+		paramName,
+		time.Now().Format("20060102T150405.000000000"),
+	)
+	filePath := filepath.Join(outputDir, fileName)
+	if err := sim.Tracer.OpenCSV(filePath); err != nil {
+		return "", err
+	}
+	return filePath, nil
 }
 
 func writeUnifiedSecondMissIPReport(sim *simulator.SimpleCacheSimulator, ruleFileName string, traceFileName string) (string, error) {
@@ -999,6 +1074,88 @@ func writeUnifiedSecondMissIPReport(sim *simulator.SimpleCacheSimulator, ruleFil
 	return filePath, nil
 }
 
+func writeUnifiedCacheLengthReport(sim *simulator.SimpleCacheSimulator, ruleFileName string, traceFileName string) (string, error) {
+	unifiedCache, ok := sim.Cache.(*cache.UnifiedCache)
+	if !ok {
+		return "", nil
+	}
+
+	if err := os.MkdirAll(*logLengthOutputDirFlag, 0755); err != nil {
+		return "", err
+	}
+
+	fileName := fmt.Sprintf(
+		"cache_length_%s_%s_cap%d_way%d_index%d_%s.csv",
+		safeFileNamePart(ruleFileName),
+		safeFileNamePart(traceFileName),
+		unifiedCache.Size,
+		unifiedCache.Way,
+		unifiedCache.CacheIndexType,
+		time.Now().Format("20060102T150405.000000000"),
+	)
+	filePath := filepath.Join(*logLengthOutputDirFlag, fileName)
+
+	file, err := os.Create(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	header := []string{
+		"scope",
+		"capacity",
+		"way",
+		"cache_index_type",
+		"set_idx",
+		"length",
+		"entry_count",
+		"refered_sum",
+		"rule_file_name",
+		"trace_file_name",
+	}
+	if err := writer.Write(header); err != nil {
+		return "", err
+	}
+
+	writeRecord := func(scope string, record cache.UnifiedCacheLengthRecord) error {
+		setIndex := ""
+		if record.SetIndex >= 0 {
+			setIndex = strconv.Itoa(record.SetIndex)
+		}
+		return writer.Write([]string{
+			scope,
+			strconv.FormatUint(uint64(unifiedCache.Size), 10),
+			strconv.FormatUint(uint64(unifiedCache.Way), 10),
+			strconv.Itoa(unifiedCache.CacheIndexType),
+			setIndex,
+			strconv.Itoa(record.Length),
+			strconv.Itoa(record.EntryCount),
+			strconv.Itoa(record.ReferedSum),
+			ruleFileName,
+			traceFileName,
+		})
+	}
+
+	for _, record := range unifiedCache.LengthSummaryRecords() {
+		if err := writeRecord("summary", record); err != nil {
+			return "", err
+		}
+	}
+	for _, record := range unifiedCache.LengthBySetRecords() {
+		if err := writeRecord("set", record); err != nil {
+			return "", err
+		}
+	}
+	if err := writer.Error(); err != nil {
+		return "", err
+	}
+
+	return filePath, nil
+}
+
 func generateFileName() string {
 	// 現在時刻を取得
 	currentTime := time.Now()
@@ -1042,35 +1199,107 @@ func buildRange(start int, end int, step int, rangeName string) ([]int, error) {
 	return result, nil
 }
 
+func parseIntCSV(spec string, name string) ([]int, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	parts := strings.Split(spec, ",")
+	result := make([]int, 0, len(parts))
+	for _, raw := range parts {
+		part := strings.TrimSpace(raw)
+		if part == "" {
+			return nil, fmt.Errorf("%s contains an empty item", name)
+		}
+		value, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s item %q: %w", name, part, err)
+		}
+		if value <= 0 {
+			return nil, fmt.Errorf("%s item must be greater than 0: %d", name, value)
+		}
+		result = append(result, value)
+	}
+	return result, nil
+}
+
+func parseFixedMPSetting(refbitsSpec string, capacitiesSpec string, cacheNum int) ([][2]int, error) {
+	if strings.TrimSpace(refbitsSpec) == "" && strings.TrimSpace(capacitiesSpec) == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(refbitsSpec) == "" || strings.TrimSpace(capacitiesSpec) == "" {
+		return nil, fmt.Errorf("mp-refbits and mp-capacities must be specified together")
+	}
+	refbits, err := parseIntCSV(refbitsSpec, "mp-refbits")
+	if err != nil {
+		return nil, err
+	}
+	capacities, err := parseIntCSV(capacitiesSpec, "mp-capacities")
+	if err != nil {
+		return nil, err
+	}
+	if len(refbits) != cacheNum {
+		return nil, fmt.Errorf("mp-refbits item count (%d) must match cachenum (%d)", len(refbits), cacheNum)
+	}
+	if len(capacities) != cacheNum {
+		return nil, fmt.Errorf("mp-capacities item count (%d) must match cachenum (%d)", len(capacities), cacheNum)
+	}
+	for i := 1; i < len(refbits); i++ {
+		if refbits[i] >= refbits[i-1] {
+			return nil, fmt.Errorf("mp-refbits must be strictly descending: %v", refbits)
+		}
+	}
+	setting := make([][2]int, cacheNum)
+	for i := range setting {
+		setting[i] = [2]int{capacities[i], refbits[i]}
+	}
+	return setting, nil
+}
+
 func parseCacheTagLengthSpec(spec string, way int) ([][2]int, error) {
 	if way <= 0 {
 		return nil, fmt.Errorf("way must be greater than 0")
 	}
 
 	parts := strings.Split(spec, ",")
-	if len(parts) != way {
-		return nil, fmt.Errorf("cache-tag-length item count (%d) must match way (%d)", len(parts), way)
+	if len(parts) != 1 && len(parts) != way {
+		return nil, fmt.Errorf("cache-tag-length item count (%d) must be 1 or match way (%d)", len(parts), way)
 	}
 
-	result := make([][2]int, 0, way)
+	result := make([][2]int, 0, len(parts))
 	for _, raw := range parts {
 		part := strings.TrimSpace(raw)
 		if part == "" {
 			return nil, fmt.Errorf("cache-tag-length contains an empty item")
 		}
 
-		minMax := strings.Split(part, "-")
-		if len(minMax) != 2 {
-			return nil, fmt.Errorf("invalid cache-tag-length item %q: expected min-max", part)
+		if strings.HasPrefix(part, "/") {
+			part = strings.TrimPrefix(part, "/")
 		}
 
-		minVal, err := strconv.Atoi(strings.TrimSpace(minMax[0]))
-		if err != nil {
-			return nil, fmt.Errorf("invalid min value in cache-tag-length item %q: %w", part, err)
-		}
-		maxVal, err := strconv.Atoi(strings.TrimSpace(minMax[1]))
-		if err != nil {
-			return nil, fmt.Errorf("invalid max value in cache-tag-length item %q: %w", part, err)
+		var minVal int
+		var maxVal int
+		minMax := strings.Split(part, "-")
+		switch len(minMax) {
+		case 1:
+			value, err := strconv.Atoi(strings.TrimSpace(minMax[0]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid value in cache-tag-length item %q: %w", part, err)
+			}
+			minVal = value
+			maxVal = value
+		case 2:
+			var err error
+			minVal, err = strconv.Atoi(strings.TrimSpace(minMax[0]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid min value in cache-tag-length item %q: %w", part, err)
+			}
+			maxVal, err = strconv.Atoi(strings.TrimSpace(minMax[1]))
+			if err != nil {
+				return nil, fmt.Errorf("invalid max value in cache-tag-length item %q: %w", part, err)
+			}
+		default:
+			return nil, fmt.Errorf("invalid cache-tag-length item %q: expected min-max or /N", part)
 		}
 
 		if minVal < 0 || maxVal > 32 || minVal > maxVal {
@@ -1081,6 +1310,50 @@ func parseCacheTagLengthSpec(spec string, way int) ([][2]int, error) {
 	}
 
 	return result, nil
+}
+
+func isUnifiedFullAssociativeWaySpec(spec string) bool {
+	switch strings.ToLower(strings.TrimSpace(spec)) {
+	case "full", "full-associative", "full_associative":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseFixedWaySpec(spec string) (int, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return 0, fmt.Errorf("way must not be empty")
+	}
+	if isUnifiedFullAssociativeWaySpec(spec) {
+		return 0, fmt.Errorf("way=%s is only valid for UnifiedCache", spec)
+	}
+	way, err := strconv.Atoi(spec)
+	if err != nil {
+		return 0, fmt.Errorf("way must be an integer: %s", spec)
+	}
+	if way <= 0 {
+		return 0, fmt.Errorf("way must be greater than 0")
+	}
+	return way, nil
+}
+
+func resolveUnifiedCacheWaySpec(spec string, capacity int) (int, error) {
+	if capacity <= 0 {
+		return 0, fmt.Errorf("capacity must be greater than 0")
+	}
+	if isUnifiedFullAssociativeWaySpec(spec) {
+		return capacity, nil
+	}
+	way, err := parseFixedWaySpec(spec)
+	if err != nil {
+		return 0, err
+	}
+	if capacity%way != 0 {
+		return 0, fmt.Errorf("capacity (%d) must be divisible by way (%d) for UnifiedCache", capacity, way)
+	}
+	return way, nil
 }
 
 // main は、シミュレーションを実行するエントリーポイントです。
@@ -1170,6 +1443,12 @@ func main() {
 			panic(err)
 		}
 
+		if tracePath, err := configureDRAMRequestTrace(cacheSim, filepath.Base(*rulefile), filepath.Base(*trace)); err != nil {
+			panic(err)
+		} else if tracePath != "" {
+			fmt.Printf("Writing DRAM request trace: %s\n", tracePath)
+		}
+
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
@@ -1177,15 +1456,26 @@ func main() {
 		wg := new(sync.WaitGroup)
 		queue := make(chan simulator.SimpleCacheSimulator, 4)
 
-		capacityRange, err := buildRange(*capacityStartFlag, *capacityEndFlag, *capacityStepFlag, "capacity")
-		if err != nil {
-			panic(err)
-		}
-
-		// キャッシュ容量のリストを生成
-		capacity := make([]int, 0, len(capacityRange))
-		for _, c := range capacityRange {
-			capacity = append(capacity, 1<<uint(c))
+		capacity := []int{}
+		if strings.TrimSpace(*capacityValuesFlag) != "" {
+			capacity, err = parseIntCSV(*capacityValuesFlag, "capacity-values")
+			if err != nil {
+				panic(err)
+			}
+			for _, value := range capacity {
+				if value <= 0 {
+					panic(fmt.Sprintf("capacity-values must be positive, got %d", value))
+				}
+			}
+		} else {
+			capacityRange, rangeErr := buildRange(*capacityStartFlag, *capacityEndFlag, *capacityStepFlag, "capacity")
+			if rangeErr != nil {
+				panic(rangeErr)
+			}
+			capacity = make([]int, 0, len(capacityRange))
+			for _, c := range capacityRange {
+				capacity = append(capacity, 1<<uint(c))
+			}
 		}
 
 		fmt.Print("capacity: ")
@@ -1243,17 +1533,22 @@ func main() {
 					startTime := time.Now()
 					// resultが存在する場合にはスキップ
 
-					shouldRun := ex == nil || *forceupdate || *logIPFlag
+					shouldRun := ex == nil || *forceupdate || *logIPFlag || *logLengthFlag || dramRequestTraceRequested()
 					shouldInsert := ex == nil || *forceupdate
 
 					if shouldRun {
 
 						if *forceupdate {
 							fmt.Print("forceupdate is true\n")
-						} else if *logIPFlag && ex != nil {
-							fmt.Print("data found; rerun simulation for -logip without DB insert\n")
+						} else if (*logIPFlag || *logLengthFlag || dramRequestTraceRequested()) && ex != nil {
+							fmt.Print("data found; rerun simulation for report output without DB insert\n")
 						} else {
 							fmt.Print("data not found\n")
+						}
+						if tracePath, err := configureDRAMRequestTrace(&sim, ruleFileName, traceFileName); err != nil {
+							panic(err)
+						} else if tracePath != "" {
+							fmt.Printf("Writing DRAM request trace: %s\n", tracePath)
 						}
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench, *recordCacheHit)
@@ -1264,6 +1559,15 @@ func main() {
 							}
 							if reportPath != "" {
 								fmt.Printf("Saved second-miss IP report: %s\n", reportPath)
+							}
+						}
+						if *logLengthFlag {
+							reportPath, err := writeUnifiedCacheLengthReport(&sim, ruleFileName, traceFileName)
+							if err != nil {
+								panic(err)
+							}
+							if reportPath != "" {
+								fmt.Printf("Saved cache Length report: %s\n", reportPath)
 							}
 						}
 						sim.SimDefinition.Print()
@@ -1350,8 +1654,9 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if *wayFlag <= 0 {
-				panic("way must be greater than 0")
+			way, err := parseFixedWaySpec(*wayFlag)
+			if err != nil {
+				panic(err)
 			}
 
 			// ruleFileName := filepath.Base(*rulefile)
@@ -1373,12 +1678,22 @@ func main() {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
 			for i := range baseSimulatorDefinition.Cache.CacheLayers {
-				baseSimulatorDefinition.Cache.CacheLayers[i].Way = *wayFlag
+				baseSimulatorDefinition.Cache.CacheLayers[i].Way = way
 			}
 
 			fmt.Printf("refbitsRange: %v\n", refbitsRange)
 
-			settngs := simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
+			fixedMPSetting, err := parseFixedMPSetting(*mpRefbitsFlag, *mpCapacitiesFlag, *cachenum)
+			if err != nil {
+				panic(err)
+			}
+			var settngs [][][2]int
+			if fixedMPSetting != nil {
+				settngs = [][][2]int{fixedMPSetting}
+				fmt.Printf("fixedMPSetting: %v\n", fixedMPSetting)
+			} else {
+				settngs = simulator.GenerateCapacityAndRefbitsPermutations(capacity, refbitsRange, *cachenum)
+			}
 			fmt.Printf("%v \n", settngs)
 			debugmode := false
 			totalTask := len(settngs)
@@ -1409,8 +1724,9 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			if *wayFlag <= 0 {
-				panic("way must be greater than 0")
+			way, err := parseFixedWaySpec(*wayFlag)
+			if err != nil {
+				panic(err)
 			}
 			refbitsRange, err := buildRange(*refbitsStartFlag, *refbitsEndFlag, *refbitsStepFlag, "refbits")
 			if err != nil {
@@ -1421,7 +1737,7 @@ func main() {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
 			for i := range baseSimulatorDefinition.Cache.CacheLayers {
-				baseSimulatorDefinition.Cache.CacheLayers[i].Way = *wayFlag
+				baseSimulatorDefinition.Cache.CacheLayers[i].Way = way
 			}
 
 			onceCacheLimits := make([]int, 0, 128)
@@ -1474,17 +1790,44 @@ func main() {
 				panic(err)
 			}
 
-			if *wayFlag <= 0 {
-				panic("way must be greater than 0")
-			}
-
-			cacheTagLength, err := parseCacheTagLengthSpec(*cacheTagLengthFlag, *wayFlag)
+			cacheInsertionPolicy, err := cache.NormalizeUnifiedCacheInsertionPolicy(*cacheInsertionPolicyFlag)
 			if err != nil {
 				panic(err)
 			}
-			baseSimulatorDefinition.Cache.Way = *wayFlag
+			cacheIndexPolicy, err := cache.NormalizeUnifiedCacheIndexPolicy(*cacheIndexPolicyFlag)
+			if err != nil {
+				panic(err)
+			}
+			multiProbeLengths, err := parseIntCSV(*multiProbeLengthsFlag, "multi-probe-lengths")
+			if err != nil {
+				panic(err)
+			}
 			baseSimulatorDefinition.Cache.CacheIndexType = *cacheIndexTypeFlag
-			baseSimulatorDefinition.Cache.CacheTagLength = cacheTagLength
+			baseSimulatorDefinition.Cache.InsertionPolicy = cacheInsertionPolicy
+			baseSimulatorDefinition.Cache.IndexPolicy = cacheIndexPolicy
+			baseSimulatorDefinition.Cache.LengthAwareMultiProbe = *lengthAwareMultiProbeFlag
+			baseSimulatorDefinition.Cache.MultiProbeLengths = multiProbeLengths
+			baseSimulatorDefinition.Cache.WayQuotaWideMax = *wayQuotaWideMaxFlag
+			baseSimulatorDefinition.Cache.WayQuotaWideWays = *wayQuotaWideWaysFlag
+			baseSimulatorDefinition.Cache.SkewedAssociative = *skewedAssociativeFlag
+			baseSimulatorDefinition.Cache.AdaptiveInitial = *adaptiveIndexInitialFlag
+			baseSimulatorDefinition.Cache.AdaptiveMin = *adaptiveIndexMinFlag
+			baseSimulatorDefinition.Cache.AdaptiveMax = *adaptiveIndexMaxFlag
+			baseSimulatorDefinition.Cache.AdaptiveEpochLength = *adaptiveIndexEpochLengthFlag
+			setExtensionPolicy, err := cache.NormalizeUnifiedCacheSetExtensionPolicy(*setExtensionPolicyFlag)
+			if err != nil {
+				panic(err)
+			}
+			setExtensionCapacityMode, err := cache.NormalizeUnifiedCacheSetExtensionCapacityMode(*setExtensionCapacityModeFlag)
+			if err != nil {
+				panic(err)
+			}
+			baseSimulatorDefinition.Cache.SetExtensionPolicy = setExtensionPolicy
+			baseSimulatorDefinition.Cache.SetExtensionCapacityMode = setExtensionCapacityMode
+			baseSimulatorDefinition.Cache.SetExtensionPoolRatio = *setExtensionPoolRatioFlag
+			baseSimulatorDefinition.Cache.SetExtensionEpochLength = *setExtensionEpochLengthFlag
+			baseSimulatorDefinition.Cache.SetExtensionPressureThreshold = *setExtensionPressureThresholdFlag
+			baseSimulatorDefinition.Cache.SetExtensionMaxPerSet = *setExtensionMaxPerSetFlag
 
 			debugmodeEnv := os.Getenv("DEBUG_MODE")
 			debugmode := false
@@ -1496,10 +1839,17 @@ func main() {
 
 			for i, setting := range settings {
 				if i > *skip {
-					if setting%*wayFlag != 0 {
-						panic(fmt.Sprintf("capacity (%d) must be divisible by way (%d) for UnifiedCache", setting, *wayFlag))
+					way, err := resolveUnifiedCacheWaySpec(*wayFlag, setting)
+					if err != nil {
+						panic(err)
+					}
+					cacheTagLength, err := parseCacheTagLengthSpec(*cacheTagLengthFlag, way)
+					if err != nil {
+						panic(err)
 					}
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, setting)
+					newSim.Cache.Way = way
+					newSim.Cache.CacheTagLength = cacheTagLength
 					newSim.DebugMode = debugmode
 					newSim.Interval = 100000000000
 					cacheSim, err := simulator.BuildSimpleCacheSimulator(newSim, *rulefile, routingTable)
