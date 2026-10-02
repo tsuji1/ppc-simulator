@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/sha1"
 	"encoding/csv"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -38,6 +40,7 @@ import (
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
 	"github.com/google/gopacket/pcap"
+	"github.com/joho/godotenv"
 
 	"github.com/yosuke-furukawa/json5/encoding/json5"
 )
@@ -48,6 +51,7 @@ var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 var cacheparam = flag.String("cacheparam", "", "cache parameter file")
 var forceupdate = flag.Bool("dbupdate", false, "update db")
+var mongoEnabledFlag = flag.Bool("mongodb", true, "query and store simulation results in MongoDB; set false for local runs")
 var cachenum = flag.Int("cachenum", 2, "cache number")
 var trace = flag.String("trace", "", "network trace file")
 var bench = flag.Bool("bench", false, "to benchmark")
@@ -91,11 +95,199 @@ var logIPOutputDirFlag = flag.String("logip-output-dir", "scripts/reports/unifie
 var logLengthFlag = flag.Bool("loglength", false, "write UnifiedCache resident entry Length distribution CSV")
 var logLengthOutputDirFlag = flag.String("loglength-output-dir", "scripts/reports/unified_cache_length", "output directory for -loglength CSV files")
 var dramRequestTraceOutputDirFlag = flag.String("dram-request-trace-dir", "", "write request-level DRAM trace CSV files into this directory")
+var csvOutputDirFlag = flag.String("csv-output-dir", "output/csv", "directory for local result CSV files when MongoDB is disabled")
 var routingTable *routingtable.RoutingTablePatriciaTrie
 
 const gobProgressInterval = 10_000_000
 
+type localCSVRunResult struct {
+	Result     simulator.SimulatorResult
+	Definition simulator.SimulatorDefinition
+	Elapsed    time.Duration
+}
+
+func jsonCSVValue(value interface{}) (string, error) {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, records []localCSVRunResult) (string, string, error) {
+	sort.SliceStable(records, func(i, j int) bool {
+		left, right := records[i].Definition.Cache, records[j].Definition.Cache
+		if left.Size != right.Size {
+			return left.Size < right.Size
+		}
+		if left.Way != right.Way {
+			return left.Way < right.Way
+		}
+		return left.CacheIndexType < right.CacheIndexType
+	})
+
+	if err := os.MkdirAll(outputDir, 0o755); err != nil {
+		return "", "", fmt.Errorf("create CSV output directory: %w", err)
+	}
+
+	summaryPath := filepath.Join(outputDir, executionID+"_summary.csv")
+	summaryFile, err := os.Create(summaryPath)
+	if err != nil {
+		return "", "", fmt.Errorf("create summary CSV: %w", err)
+	}
+	summaryWriter := csv.NewWriter(summaryFile)
+	summaryHeader := []string{
+		"execution_id", "run_id", "trace", "rule", "cache_type", "capacity", "way", "cache_index_type",
+		"processed", "hit", "miss", "hit_rate", "elapsed_ms", "parameter_json", "stat_detail_json",
+	}
+	if err := summaryWriter.Write(summaryHeader); err != nil {
+		_ = summaryFile.Close()
+		return "", "", fmt.Errorf("write summary CSV header: %w", err)
+	}
+
+	hasUnifiedStats := false
+	for _, record := range records {
+		if _, ok := record.Result.StatDetail.(cache.UnifiedCacheStat); ok {
+			hasUnifiedStats = true
+			break
+		}
+	}
+	prefixPath := ""
+	var prefixFile *os.File
+	var prefixWriter *csv.Writer
+	if hasUnifiedStats {
+		prefixPath = filepath.Join(outputDir, executionID+"_unified_prefix_stats.csv")
+		prefixFile, err = os.Create(prefixPath)
+		if err != nil {
+			_ = summaryFile.Close()
+			return "", "", fmt.Errorf("create UnifiedCache prefix CSV: %w", err)
+		}
+		prefixWriter = csv.NewWriter(prefixFile)
+		prefixHeader := []string{
+			"execution_id", "run_id", "capacity", "way", "cache_index_type", "prefix_len",
+			"cacheline_hits", "cacheline_first_misses", "cacheline_second_misses",
+			"whole_cache_first_misses", "whole_cache_second_misses",
+			"exclusive_rejected_first_misses", "exclusive_rejected_second_misses",
+			"inclusive_nonleaf_inserted", "adaptive_lookups", "adaptive_selections", "adaptive_epoch_decisions",
+		}
+		if err := prefixWriter.Write(prefixHeader); err != nil {
+			_ = summaryFile.Close()
+			_ = prefixFile.Close()
+			return "", "", fmt.Errorf("write UnifiedCache prefix CSV header: %w", err)
+		}
+	}
+	closeOutputFiles := func() {
+		_ = summaryFile.Close()
+		if prefixFile != nil {
+			_ = prefixFile.Close()
+		}
+	}
+
+	for i, record := range records {
+		runID := fmt.Sprintf("%s-%04d", executionID, i+1)
+		parameterJSON, err := jsonCSVValue(record.Result.Parameter)
+		if err != nil {
+			closeOutputFiles()
+			return "", "", fmt.Errorf("encode run %s parameter: %w", runID, err)
+		}
+		statDetailJSON, err := jsonCSVValue(record.Result.StatDetail)
+		if err != nil {
+			closeOutputFiles()
+			return "", "", fmt.Errorf("encode run %s stat detail: %w", runID, err)
+		}
+		cacheConfig := record.Definition.Cache
+		miss := record.Result.Processed - record.Result.Hit
+		summaryRow := []string{
+			executionID,
+			runID,
+			traceName,
+			ruleName,
+			record.Result.Type,
+			strconv.Itoa(cacheConfig.Size),
+			strconv.Itoa(cacheConfig.Way),
+			strconv.Itoa(cacheConfig.CacheIndexType),
+			strconv.Itoa(record.Result.Processed),
+			strconv.Itoa(record.Result.Hit),
+			strconv.Itoa(miss),
+			strconv.FormatFloat(record.Result.HitRate, 'g', -1, 64),
+			strconv.FormatFloat(float64(record.Elapsed)/float64(time.Millisecond), 'f', 3, 64),
+			parameterJSON,
+			statDetailJSON,
+		}
+		if err := summaryWriter.Write(summaryRow); err != nil {
+			closeOutputFiles()
+			return "", "", fmt.Errorf("write run %s summary: %w", runID, err)
+		}
+
+		unifiedStat, ok := record.Result.StatDetail.(cache.UnifiedCacheStat)
+		if !ok {
+			continue
+		}
+		for prefixLen := 0; prefixLen < 32; prefixLen++ {
+			var lineHits, lineFirstMisses, lineSecondMisses uint64
+			for _, perSet := range unifiedStat.CachelineHitCount {
+				lineHits += uint64(perSet[prefixLen])
+			}
+			for _, perSet := range unifiedStat.CachelineFirstMissCount {
+				lineFirstMisses += uint64(perSet[prefixLen])
+			}
+			for _, perSet := range unifiedStat.CachelineSecondMissCount {
+				lineSecondMisses += uint64(perSet[prefixLen])
+			}
+			prefixRow := []string{
+				executionID,
+				runID,
+				strconv.Itoa(cacheConfig.Size),
+				strconv.Itoa(cacheConfig.Way),
+				strconv.Itoa(cacheConfig.CacheIndexType),
+				strconv.Itoa(prefixLen),
+				strconv.FormatUint(lineHits, 10),
+				strconv.FormatUint(lineFirstMisses, 10),
+				strconv.FormatUint(lineSecondMisses, 10),
+				strconv.FormatUint(uint64(unifiedStat.WholeCacheFirstMissCount[prefixLen]), 10),
+				strconv.FormatUint(uint64(unifiedStat.WholeCacheSecondMissCount[prefixLen]), 10),
+				strconv.FormatUint(uint64(unifiedStat.ExclusiveRejectedFirstMissCount[prefixLen]), 10),
+				strconv.FormatUint(uint64(unifiedStat.ExclusiveRejectedSecondMissCount[prefixLen]), 10),
+				strconv.FormatUint(uint64(unifiedStat.InclusiveNonLeafInsertedCount[prefixLen]), 10),
+				strconv.FormatUint(unifiedStat.AdaptiveLookupCount[prefixLen], 10),
+				strconv.FormatUint(unifiedStat.AdaptiveSelectionCount[prefixLen], 10),
+				strconv.FormatUint(unifiedStat.AdaptiveEpochDecisionCount[prefixLen], 10),
+			}
+			if err := prefixWriter.Write(prefixRow); err != nil {
+				closeOutputFiles()
+				return "", "", fmt.Errorf("write run %s prefix %d: %w", runID, prefixLen, err)
+			}
+		}
+	}
+
+	summaryWriter.Flush()
+	if prefixWriter != nil {
+		prefixWriter.Flush()
+	}
+	writeErr := summaryWriter.Error()
+	if writeErr == nil && prefixWriter != nil {
+		writeErr = prefixWriter.Error()
+	}
+	if err := summaryFile.Close(); writeErr == nil {
+		writeErr = err
+	}
+	if prefixFile != nil {
+		if err := prefixFile.Close(); writeErr == nil {
+			writeErr = err
+		}
+	}
+	if writeErr != nil {
+		return "", "", fmt.Errorf("flush local result CSV files: %w", writeErr)
+	}
+	return summaryPath, prefixPath, nil
+}
+
 func init() {
+	// Load local settings before buildGobPath reads environment variables.
+	if err := godotenv.Load(".env"); err != nil && !os.IsNotExist(err) {
+		log.Printf("warning: could not load .env: %v", err)
+	}
+
 	// routingtable.Data 型の登録
 
 	flag.Parse()
@@ -1386,16 +1578,20 @@ func main() {
 
 	ctx := context.Background()
 
-	// Create a new test MongoDB instance
-	mongoDB, err := db.NewMongoDB()
-	if err != nil {
-		log.Fatalf("Failed to initialize MongoDB: %v", err)
-	}
-	defer func() {
-		if err := mongoDB.Client.Disconnect(ctx); err != nil {
-			log.Printf("Failed to disconnect MongoDB: %v", err)
+	var mongoDB *db.MongoDB
+	if *mongoEnabledFlag {
+		mongoDB, err = db.NewMongoDB()
+		if err != nil {
+			log.Fatalf("Failed to initialize MongoDB: %v", err)
 		}
-	}()
+		defer func() {
+			if err := mongoDB.Client.Disconnect(ctx); err != nil {
+				log.Printf("Failed to disconnect MongoDB: %v", err)
+			}
+		}()
+	} else {
+		fmt.Println("MongoDB disabled: simulation results will not be queried or stored")
+	}
 
 	// プロファイルの停止処理をシグナル受信時に行う
 	go func() {
@@ -1449,9 +1645,35 @@ func main() {
 			fmt.Printf("Writing DRAM request trace: %s\n", tracePath)
 		}
 
+		executionID := ""
+		if !*mongoEnabledFlag {
+			executionID = time.Now().Format("20060102T150405") + "-" + generateRandomString(8)
+			fmt.Printf("Local CSV execution ID: %s\n", executionID)
+		}
+		runStartedAt := time.Now()
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
 		runSimpleCacheSimulatorWithPackets(&packets, cacheSim, int(interval), 0, *bench, *recordCacheHit)
 		fmt.Printf("%v\n", cacheSim.GetStatString())
+		if !*mongoEnabledFlag {
+			summaryPath, prefixPath, err := writeLocalCSVResults(
+				*csvOutputDirFlag,
+				executionID,
+				filepath.Base(*trace),
+				filepath.Base(*rulefile),
+				[]localCSVRunResult{{
+					Result:     cacheSim.GetSimulatorResult(),
+					Definition: simDef,
+					Elapsed:    time.Since(runStartedAt),
+				}},
+			)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("Saved local result summary CSV: %s\n", summaryPath)
+			if prefixPath != "" {
+				fmt.Printf("Saved local UnifiedCache prefix stats CSV: %s\n", prefixPath)
+			}
+		}
 	} else {
 		wg := new(sync.WaitGroup)
 		queue := make(chan simulator.SimpleCacheSimulator, 4)
@@ -1487,6 +1709,12 @@ func main() {
 
 		ruleFileName := filepath.Base(*rulefile)
 		var totalTask int
+		var localCSVResults []localCSVRunResult
+		executionID := ""
+		if !*mongoEnabledFlag {
+			executionID = time.Now().Format("20060102T150405") + "-" + generateRandomString(8)
+			fmt.Printf("Local CSV execution ID: %s\n", executionID)
+		}
 
 		cachetype := strings.TrimSpace(*cacheTypeFlag)
 		fmt.Println("var cachetype: ", cachetype)
@@ -1518,27 +1746,30 @@ func main() {
 						panic(err)
 					}
 
-					ex, err := mongoDB.IsResultExist(ctx,
-						param,
-						packetlen,
-						tempsim.SimDefinition.Cache.Type,
-						ruleFileName,
-						traceFileName)
-
-					// err の場合と
-					if err != nil {
-						// エラーが発生した場合、エラーハンドリングを行う
-						panic(err)
+					var ex *db.SimulatorResultWithMetadata
+					if *mongoEnabledFlag {
+						ex, err = mongoDB.IsResultExist(ctx,
+							param,
+							packetlen,
+							tempsim.SimDefinition.Cache.Type,
+							ruleFileName,
+							traceFileName)
+						if err != nil {
+							panic(err)
+						}
 					}
 					startTime := time.Now()
 					// resultが存在する場合にはスキップ
 
-					shouldRun := ex == nil || *forceupdate || *logIPFlag || *logLengthFlag || dramRequestTraceRequested()
-					shouldInsert := ex == nil || *forceupdate
+					shouldRun := !*mongoEnabledFlag || ex == nil || *forceupdate || *logIPFlag || *logLengthFlag || dramRequestTraceRequested()
+					shouldInsert := *mongoEnabledFlag && (ex == nil || *forceupdate)
+					var localResult simulator.SimulatorResult
 
 					if shouldRun {
 
-						if *forceupdate {
+						if !*mongoEnabledFlag {
+							fmt.Println("MongoDB disabled; running without result lookup")
+						} else if *forceupdate {
 							fmt.Print("forceupdate is true\n")
 						} else if (*logIPFlag || *logLengthFlag || dramRequestTraceRequested()) && ex != nil {
 							fmt.Print("data found; rerun simulation for report output without DB insert\n")
@@ -1552,6 +1783,7 @@ func main() {
 						}
 						// 実際のシミュレーション処理
 						stat := runSimpleCacheSimulatorWithPackets(&packets, &sim, int(tempsim.SimDefinition.Interval), packetlen, *bench, *recordCacheHit)
+						localResult = stat
 						if *logIPFlag {
 							reportPath, err := writeUnifiedSecondMissIPReport(&sim, ruleFileName, traceFileName)
 							if err != nil {
@@ -1580,6 +1812,8 @@ func main() {
 								// 挿入中にエラーが発生した場合、エラーハンドリングを行う
 								panic(err)
 							}
+						} else if !*mongoEnabledFlag {
+							fmt.Println("MongoDB disabled; result was not stored")
 						} else {
 							fmt.Print("skip DB insert because Data founded and -dbupdate is false\n")
 						}
@@ -1591,6 +1825,13 @@ func main() {
 					mu.Lock()
 
 					duration := time.Since(startTime)
+					if !*mongoEnabledFlag && shouldRun {
+						localCSVResults = append(localCSVResults, localCSVRunResult{
+							Result:     localResult,
+							Definition: tempsim.SimDefinition,
+							Elapsed:    duration,
+						})
+					}
 					completedTasks++
 					totalDuration += duration
 					avgDuration := totalDuration / time.Duration(completedTasks)
@@ -1867,6 +2108,16 @@ func main() {
 		// 全タスクの終了を待つ
 		close(queue)
 		wg.Wait()
+		if !*mongoEnabledFlag {
+			summaryPath, prefixPath, err := writeLocalCSVResults(*csvOutputDirFlag, executionID, traceFileName, ruleFileName, localCSVResults)
+			if err != nil {
+				panic(err)
+			}
+			fmt.Printf("Saved local result summary CSV: %s\n", summaryPath)
+			if prefixPath != "" {
+				fmt.Printf("Saved local UnifiedCache prefix stats CSV: %s\n", prefixPath)
+			}
+		}
 
 		if err != nil {
 			fmt.Println("ファイルへの書き込みエラー:", err)
