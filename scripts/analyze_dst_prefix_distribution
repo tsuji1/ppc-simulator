@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+uid="${EUID:-$(id -u)}"
+binary="${TMPDIR:-/tmp}/osada-ppc-simulator-tools/$uid/analyze_dst_prefix_distribution"
+source_file="$repo_root/cmd/analyze_dst_prefix_distribution/main.go"
+go_cmd="$(command -v go || true)"
+
+if [[ -z "$go_cmd" ]]; then
+  for candidate in /usr/local/go/bin/go /home/yuzugon/go/bin/go; do
+    if [[ -x "$candidate" ]]; then
+      go_cmd="$candidate"
+      break
+    fi
+  done
+fi
+
+if [[ -z "$go_cmd" ]]; then
+  echo "go command not found. Add Go to PATH or install it at /usr/local/go/bin/go." >&2
+  exit 1
+fi
+
+if [[ ! -x "$binary" || "$source_file" -nt "$binary" ]]; then
+  mkdir -p "$(dirname "$binary")"
+  (cd "$repo_root" && "$go_cmd" build -o "$binary" ./cmd/analyze_dst_prefix_distribution)
+fi
+
+exec "$binary" "$@"

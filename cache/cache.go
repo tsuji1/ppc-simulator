@@ -86,26 +86,46 @@ type MultiCacheParameter struct {
 	CachePolicies []CachePolicy
 }
 type InclusiveCacheParameter struct {
-	Type          string
-	CacheLayers   []Parameter
-	CachePolicies []CachePolicy
+	Type           string
+	CacheLayers    []Parameter
+	CachePolicies  []CachePolicy
 	OnceCacheLimit int
 }
 
 type UnifiedCacheLineParameter struct {
-	Type          string
-	Size          int
+	Type           string
+	Size           int
 	CacheTagLength [][2]int
-	CacheIndexType  int // キャッシュインデックスのタイプ
+	CacheIndexType int // キャッシュインデックスのタイプ
 }
 
 type UnifiedCacheParameter struct {
-	Type          string
-	Way           uint
-	Size          uint
-	CacheIndexType int // キャッシュインデックスのタイプ
-	CacheTagLength [][2]int // キャッシュタグの長さを指定するスライス
-}	
+	Type                          string
+	Way                           uint
+	Size                          uint
+	CacheIndexType                int      // キャッシュインデックスのタイプ
+	CacheTagLength                [][2]int // キャッシュタグの長さを指定するスライス
+	InsertionPolicy               string
+	IndexPolicy                   string
+	AdaptiveInitial               int
+	AdaptiveMin                   int
+	AdaptiveMax                   int
+	AdaptiveEpochLength           int
+	LengthAwareMultiProbe         bool
+	MultiProbeLengths             []int
+	WayQuotaWideMax               int
+	WayQuotaWideWays              int
+	SkewedAssociative             bool
+	SetExtensionPolicy            string
+	SetExtensionCapacityMode      string
+	SetExtensionPoolRatio         float64
+	SetExtensionEpochLength       int
+	SetExtensionPressureThreshold uint64
+	SetExtensionMaxPerSet         int
+	MainSize                      uint
+	ExtensionSize                 uint
+	TotalPhysicalSize             uint
+}
 
 // FullAssociativeParameter の GetParameterString 実装
 func (p FullAssociativeParameter) GetParameterString() map[string]interface{} {
@@ -116,16 +136,39 @@ func (p FullAssociativeParameter) GetParameterString() map[string]interface{} {
 }
 
 func (p UnifiedCacheParameter) GetParameterString() map[string]interface{} {
-	return map[string]interface{}{
-		"Type":          p.Type,
-		"Way":           p.Way,
-		"Size":          p.Size,
-		"CacheIndexType": p.CacheIndexType,
-		"CacheTagLength": p.CacheTagLength,
+	params := map[string]interface{}{
+		"Type":                          p.Type,
+		"Way":                           p.Way,
+		"Size":                          p.Size,
+		"CacheIndexType":                p.CacheIndexType,
+		"CacheTagLength":                p.CacheTagLength,
+		"InsertionPolicy":               p.InsertionPolicy,
+		"LengthAwareMultiProbe":         p.LengthAwareMultiProbe,
+		"MultiProbeLengths":             p.MultiProbeLengths,
+		"WayQuotaWideMax":               p.WayQuotaWideMax,
+		"WayQuotaWideWays":              p.WayQuotaWideWays,
+		"SkewedAssociative":             p.SkewedAssociative,
+		"SetExtensionPolicy":            p.SetExtensionPolicy,
+		"SetExtensionCapacityMode":      p.SetExtensionCapacityMode,
+		"SetExtensionPoolRatio":         p.SetExtensionPoolRatio,
+		"SetExtensionEpochLength":       p.SetExtensionEpochLength,
+		"SetExtensionPressureThreshold": p.SetExtensionPressureThreshold,
+		"SetExtensionMaxPerSet":         p.SetExtensionMaxPerSet,
+		"MainSize":                      p.MainSize,
+		"ExtensionSize":                 p.ExtensionSize,
+		"TotalPhysicalSize":             p.TotalPhysicalSize,
 	}
+	if IsAdaptiveUnifiedCacheIndexPolicy(p.IndexPolicy) {
+		params["IndexPolicy"] = p.IndexPolicy
+		params["AdaptiveInitial"] = p.AdaptiveInitial
+		params["AdaptiveMin"] = p.AdaptiveMin
+		params["AdaptiveMax"] = p.AdaptiveMax
+		if p.IndexPolicy == UnifiedCacheIndexPolicyEpochFrequent {
+			params["AdaptiveEpochLength"] = p.AdaptiveEpochLength
+		}
+	}
+	return params
 }
-
-
 
 // NbitFullAssociativeParameter の GetParameterString 実装
 func (p NbitFullAssociativeParameter) GetParameterString() map[string]interface{} {
@@ -167,22 +210,21 @@ func (p MultiCacheParameter) GetParameterString() map[string]interface{} {
 // MultiCacheParameter の GetParameterString 実装
 func (p InclusiveCacheParameter) GetParameterString() map[string]interface{} {
 	return map[string]interface{}{
-		"Type":          p.Type,
-		"CacheLayers":   p.CacheLayers,
-		"CachePolicies": p.CachePolicies,
+		"Type":           p.Type,
+		"CacheLayers":    p.CacheLayers,
+		"CachePolicies":  p.CachePolicies,
 		"OnceCacheLimit": p.OnceCacheLimit,
 	}
 }
 
 func (p UnifiedCacheLineParameter) GetParameterString() map[string]interface{} {
 	return map[string]interface{}{
-		"Type":          p.Type,
-		"Size":          p.Size,
+		"Type":           p.Type,
+		"Size":           p.Size,
 		"CacheTagLength": p.CacheTagLength,
 		"CacheIndexType": p.CacheIndexType,
 	}
 }
-
 
 // FullAssociativeParameter の GetBson 実装
 func (p FullAssociativeParameter) GetBson() bson.M {
@@ -221,20 +263,45 @@ func (p NbitSetAssociativeParameter) GetBson() bson.M {
 }
 func (p UnifiedCacheLineParameter) GetBson() bson.M {
 	return bson.M{
-		"type":          p.Type,
-		"size":          p.Size,
+		"type":           p.Type,
+		"size":           p.Size,
 		"cachetaglength": p.CacheTagLength,
 		"cacheindextype": p.CacheIndexType,
 	}
 }
 func (p UnifiedCacheParameter) GetBson() bson.M {
-	return bson.M{
-		"type":          p.Type,
-		"way":           p.Way,
-		"size":          p.Size,
-		"cacheindextype": p.CacheIndexType,
-		"cachetaglength": p.CacheTagLength,
+	params := bson.M{
+		"type":                          p.Type,
+		"way":                           p.Way,
+		"size":                          p.Size,
+		"cacheindextype":                p.CacheIndexType,
+		"cachetaglength":                p.CacheTagLength,
+		"insertionpolicy":               p.InsertionPolicy,
+		"lengthawaremultiprobe":         p.LengthAwareMultiProbe,
+		"multiprobelengths":             p.MultiProbeLengths,
+		"wayquotawidemax":               p.WayQuotaWideMax,
+		"wayquotawideways":              p.WayQuotaWideWays,
+		"skewedassociative":             p.SkewedAssociative,
+		"setextensionpolicy":            p.SetExtensionPolicy,
+		"setextensioncapacitymode":      p.SetExtensionCapacityMode,
+		"setextensionpoolratio":         p.SetExtensionPoolRatio,
+		"setextensionepochlength":       p.SetExtensionEpochLength,
+		"setextensionpressurethreshold": p.SetExtensionPressureThreshold,
+		"setextensionmaxperset":         p.SetExtensionMaxPerSet,
+		"mainsize":                      p.MainSize,
+		"extensionsize":                 p.ExtensionSize,
+		"totalphysicalsize":             p.TotalPhysicalSize,
 	}
+	if IsAdaptiveUnifiedCacheIndexPolicy(p.IndexPolicy) {
+		params["indexpolicy"] = p.IndexPolicy
+		params["adaptiveinitial"] = p.AdaptiveInitial
+		params["adaptivemin"] = p.AdaptiveMin
+		params["adaptivemax"] = p.AdaptiveMax
+		if p.IndexPolicy == UnifiedCacheIndexPolicyEpochFrequent {
+			params["adaptiveepochlength"] = p.AdaptiveEpochLength
+		}
+	}
+	return params
 }
 
 // MultiCacheParameter の GetBson 実装
@@ -252,13 +319,10 @@ func (p MultiCacheParameter) GetBson() bson.M {
 	}
 }
 
-
 func (p *MultiCacheParameter) GetParameterType() string {
 	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
 	return name
 }
-	
-
 
 // MultiCacheParameter の GetBson 実装
 func (p InclusiveCacheParameter) GetBson() bson.M {
@@ -269,10 +333,10 @@ func (p InclusiveCacheParameter) GetBson() bson.M {
 		}
 	}
 	return bson.M{
-		"type":          p.GetParameterType(),
-		"cachelayers":   cacheLayers,
-		"cachepolicies": p.CachePolicies,
-		"oncecachelimit": p.OnceCacheLimit, 
+		"type":           p.GetParameterType(),
+		"cachelayers":    cacheLayers,
+		"cachepolicies":  p.CachePolicies,
+		"oncecachelimit": p.OnceCacheLimit,
 	}
 }
 
@@ -280,7 +344,6 @@ func (p *InclusiveCacheParameter) GetParameterType() string {
 	name := GetMultiLayerParameterTypeName(p.Type, p.CacheLayers)
 	return name
 }
-
 
 func (p *NbitFullAssociativeParameter) GetParameterType() string {
 	return p.Type
@@ -311,7 +374,6 @@ func (p *NbitSetAssociativeParameter) GetParameterType() string {
 func (p *UnifiedCacheLineParameter) GetParameterType() string {
 	return p.Type
 }
-
 
 func (p UnifiedCacheParameter) GetParameterType() string {
 	return p.Type

@@ -1,157 +1,33 @@
-# README.md
+# osada-ppc-simulator
 
+IPv4 ルーティング検索用キャッシュを評価する Go シミュレータです。入力トレースをルーティングテーブルと照合し、複数のキャッシュ構成について hit/miss 統計を計測します。UnifiedCache、LRU、multi-layer cache を扱えます。
 
-## aloheart
+## はじめて使う方へ
 
+セットアップ、入力データの準備、実行例、結果の見方は [利用・引き継ぎガイド](docs/GETTING_STARTED.md) を参照してください。トレースや routing table はリポジトリに含めていません。
 
-
-### データ
-
-
-#### ルール
-/research/rulesにルールが存在し、普通の権限で読める
-/research/rules/wide.rib.20240625.1400.unique.rule
-/research/rules/rib.20260327.0600.unique.rule
-/research/rules/rib.20251227.0600.unique.rule
-/research/rules/rib.20160628.1200.bz2
-/research/rules/rib.20250927.0600.unique.rule
-
-
-#### トレース
-
-
-
-/research/traceにトレースデータが存在する.root権限でしか読めない
-/research/trace/wget-log
-/research/trace/2025-12-27.pcap.xz
-/research/trace/2025-09-27.pcap.zst
-/research/trace/202509271400.pcap
-/research/trace/202512271400.pcap.gz
-/research/trace/2025-12-27.pcap
-/research/trace/2026-03-27.pcap.xz
-/research/trace/202603271400-anon.pcap
-/research/trace/2025-09-27.pcap
-/research/trace/202512271400.pcap
-/research/trace/2026-03-27.pcap
-
-anonとついているものは匿名化されている.また1400(jst)など時刻が付いているものは匿名化されているものである.
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-## メモ
-
-ルーティングテーブルのルールは.ruleでruleディレクトリ以下
-
-go tool pprof -http=localhost:8080 cpu.prof
-
-キャッシュ実装の解説: [cache/CACHE_OVERVIEW.md](cache/CACHE_OVERVIEW.md)
-UnifiedCache 実装解説: [docs/cache/UnifiedCache.md](docs/cache/UnifiedCache.md)
-
-## exec.sh の使い方
-
-`exec.sh` は「デフォルト値 < `--config` の `.env` < CLI オプション」の順で設定を解決します。
-
-### 1. 実験設定ファイルを作る
-
-`simulator-settings/exp/*.env` に実験条件を書きます。
-
-例: `simulator-settings/exp/full-lru-20260327.env`
+最小限の準備は次のとおりです。
 
 ```bash
-RULEFILE="/research/rules/wide.rib.20240625.1400.unique.rule"
-TRACES=(
-  "/research/trace/2026-03-27.pcap"
-)
-
-CACHE_TYPE="FullAssociativeLRUCache"
-CAPACITY_START=10
-CAPACITY_END=15
-CAPACITY_STEP=1
+# MongoDB を利用する場合だけ作成
+cp .env.example .env
+go mod download
+go build -o bin/osada-ppc-simulator .
 ```
 
-### 2. 実行する
+MongoDB を使う場合は `.env` の `DATABASE_URL` を接続先に合わせます。MongoDB を使わない場合は、実行時に `-mongodb=false` を指定します。どちらの場合も trace と `.rule` は別途必要です。
+
+## 主なドキュメント
+
+- [利用・引き継ぎガイド](docs/GETTING_STARTED.md): セットアップ、実行、出力、トラブルシューティング
+- [UnifiedCache 実装メモ](docs/cache/UnifiedCache.md): UnifiedCache の構成と各種ポリシー
+- [DRAM 電力評価への統合計画](docs/dram-power-integration-plan.md): request-level DRAM trace と今後の連携方針
+
+## 開発
 
 ```bash
-./exec.sh --config simulator-settings/exp/full-lru-20260327.env
+gofmt -w main.go cache/*.go db/*.go memorytrace/*.go simulator/*.go
+go test ./...
 ```
 
-### 3. 一部だけ CLI で上書きする
-
-```bash
-./exec.sh --config simulator-settings/exp/full-lru-20260327.env --capacity-start 12 --capacity-end 13
-```
-
-### 4. 実行せずコマンドだけ確認する
-
-```bash
-./exec.sh --config simulator-settings/exp/full-lru-20260327.env --dry-run --no-build
-```
-
-### よく使うオプション
-
-- `--trace <path>`: 複数回指定可能
-- `--cachetype <name>`
-- `--way <int>`
-- `--cache-index-type <int>`
-- `--cache-index-types "<0,1,2,...>"` (`.env` で sweep したいとき)
-- `--cache-tag-length "<min-max,min-max,...>"`
-- `--capacity-start/end/step`
-- `--refbits-start/end/step`
-- `--cachenum <int>`
-- `--skip <int>`
-- `--max <int>`
-- `--dbupdate` / `--no-dbupdate`
-- `--bench` / `--no-bench`
-- `--record-cache-hit` / `--no-record-cache-hit`
-- `--logip` / `--no-logip`
-- `--logip-top <int>`: UnifiedCache の second miss IP/prefix 上位件数（default: 100）
-- `--logip-output-dir <path>`: second miss IP/prefix CSV の出力先
-- `--sudo` / `--no-sudo`
-- `--no-build`
-- `--help`
-
-`UnifiedCache` の初期値:
-
-- `WAY=4`
-- `CACHE_TAG_LENGTH="9-24,9-24,9-24,9-24"`
-- `CACHE_INDEX_TYPE=5`
-- `CACHE_INDEX_TYPES=""`（空で単一実行、例: `"0,1,2,3,4,5"` で sweep）
-- `CAPACITY_START=10`, `CAPACITY_END=10`（capacity=1024）
-
-
-## 長田さんメモ
-
-・環境
-windows 10
-GoLang ver.1.22.5
-
-・コンパイル方法
-このファイルがあるパスで下記コマンドを実行
-go build main.go
-生成されたmain.exeが実行ファイル
-
-・実行方法
-下記コマンドを上記パスで実行
-main.exe ほげ.json ふが.txt
-ほげ.jsonはキャッシュ構成のコンフィグファイル(test2.jsonがサンプル,長田の提案手法の構成)
-	長田の提案手法のキャッシュ(multi_layer_cache_*)は、"Rule"でルーティング情報が書かれているファイルを指定する必要があります(zisaku_rule.txtがサンプル)
-ふが.txtはネットワークトレースのファイル
-	pcapからテキストに変換してください(zisaku.txtがサンプル)
-
-・注意
-routingtable.go内のCalTreeDepth()が未完成です。
-理想：LPC trieに格納したときの高さ
-現在：二分木に格納したときの高さ
+シミュレーション結果や入力データを含めず、ソースコードと再現用の解析ツールを Git で管理します。`.gitignore` により、ローカルデータ、実験出力、バイナリ、環境設定ファイルは通常の `git add` 対象から除外されます。

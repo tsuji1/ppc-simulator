@@ -12,16 +12,33 @@ import (
 )
 
 type Cache struct {
-	Type           string   `json:"Type"`
-	CacheLayers    []Cache  `json:"CacheLayers"`
-	CachePolicies  []string `json:"CachePolicies"`
-	OnceCacheLimit int      `json:"OnceCacheLimit"`
-	InnerCache     *Cache
-	Size           int
-	Way            int
-	CacheTagLength [][2]int `json:"CacheTagLength,omitempty"` // キャッシュタグの長さ
-	CacheIndexType int      `json:"CacheIndexType,omitempty"` // キャッシュインデックスのタイプ
-	Refbits        int      `json:"Refbits"`
+	Type                          string   `json:"Type"`
+	CacheLayers                   []Cache  `json:"CacheLayers"`
+	CachePolicies                 []string `json:"CachePolicies"`
+	OnceCacheLimit                int      `json:"OnceCacheLimit"`
+	InnerCache                    *Cache
+	Size                          int
+	Way                           int
+	CacheTagLength                [][2]int `json:"CacheTagLength,omitempty"` // キャッシュタグの長さ
+	CacheIndexType                int      `json:"CacheIndexType,omitempty"` // キャッシュインデックスのタイプ
+	InsertionPolicy               string   `json:"InsertionPolicy,omitempty"`
+	IndexPolicy                   string   `json:"IndexPolicy,omitempty"`
+	AdaptiveInitial               int      `json:"AdaptiveInitial,omitempty"`
+	AdaptiveMin                   int      `json:"AdaptiveMin,omitempty"`
+	AdaptiveMax                   int      `json:"AdaptiveMax,omitempty"`
+	AdaptiveEpochLength           int      `json:"AdaptiveEpochLength,omitempty"`
+	LengthAwareMultiProbe         bool     `json:"LengthAwareMultiProbe,omitempty"`
+	MultiProbeLengths             []int    `json:"MultiProbeLengths,omitempty"`
+	WayQuotaWideMax               int      `json:"WayQuotaWideMax,omitempty"`
+	WayQuotaWideWays              int      `json:"WayQuotaWideWays,omitempty"`
+	SkewedAssociative             bool     `json:"SkewedAssociative,omitempty"`
+	SetExtensionPolicy            string   `json:"SetExtensionPolicy,omitempty"`
+	SetExtensionCapacityMode      string   `json:"SetExtensionCapacityMode,omitempty"`
+	SetExtensionPoolRatio         float64  `json:"SetExtensionPoolRatio,omitempty"`
+	SetExtensionEpochLength       int      `json:"SetExtensionEpochLength,omitempty"`
+	SetExtensionPressureThreshold uint64   `json:"SetExtensionPressureThreshold,omitempty"`
+	SetExtensionMaxPerSet         int      `json:"SetExtensionMaxPerSet,omitempty"`
+	Refbits                       int      `json:"Refbits"`
 }
 
 type SimulatorDefinition struct {
@@ -298,12 +315,38 @@ func MakeParameter(c Cache) (cache.Parameter, error) {
 	case strings.HasPrefix(paramType, "UnifiedCache"):
 		fmt.Printf("Creating UnifiedCacheParameter with Type: %s, Size: %d, Way: %d, CacheTagLength: %v, CacheIndexType: %d\n", paramType, c.Size, c.Way, c.CacheTagLength, c.CacheIndexType)
 		fmt.Println(c)
+		mainSize, extensionSize, totalPhysicalSize, sizeErr := cache.ResolveUnifiedCacheSetExtensionSizes(
+			uint(c.Size), uint(c.Way), c.SetExtensionPolicy, c.SetExtensionCapacityMode, c.SetExtensionPoolRatio,
+		)
+		if sizeErr != nil {
+			return nil, sizeErr
+		}
 		param = &cache.UnifiedCacheParameter{
-			Type:           paramType,
-			Size:           uint(c.Size),
-			Way:            uint(c.Way),
-			CacheTagLength: c.CacheTagLength,
-			CacheIndexType: c.CacheIndexType,
+			Type:                          paramType,
+			Size:                          uint(c.Size),
+			Way:                           uint(c.Way),
+			CacheTagLength:                c.CacheTagLength,
+			CacheIndexType:                c.CacheIndexType,
+			InsertionPolicy:               c.InsertionPolicy,
+			IndexPolicy:                   c.IndexPolicy,
+			AdaptiveInitial:               c.AdaptiveInitial,
+			AdaptiveMin:                   c.AdaptiveMin,
+			AdaptiveMax:                   c.AdaptiveMax,
+			AdaptiveEpochLength:           c.AdaptiveEpochLength,
+			LengthAwareMultiProbe:         c.LengthAwareMultiProbe,
+			MultiProbeLengths:             c.MultiProbeLengths,
+			WayQuotaWideMax:               c.WayQuotaWideMax,
+			WayQuotaWideWays:              c.WayQuotaWideWays,
+			SkewedAssociative:             c.SkewedAssociative,
+			SetExtensionPolicy:            c.SetExtensionPolicy,
+			SetExtensionCapacityMode:      c.SetExtensionCapacityMode,
+			SetExtensionPoolRatio:         c.SetExtensionPoolRatio,
+			SetExtensionEpochLength:       c.SetExtensionEpochLength,
+			SetExtensionPressureThreshold: c.SetExtensionPressureThreshold,
+			SetExtensionMaxPerSet:         c.SetExtensionMaxPerSet,
+			MainSize:                      mainSize,
+			ExtensionSize:                 extensionSize,
+			TotalPhysicalSize:             totalPhysicalSize,
 		}
 
 	default:
@@ -490,10 +533,16 @@ func NewUnifiedCacheSimulatorDefinition() SimulatorDefinition {
 	return SimulatorDefinition{
 		Type: "SimpleCacheSimulator",
 		Cache: Cache{
-			Type:           "UnifiedCache",
-			Size:           64,
-			Way:            4,
-			CacheIndexType: 5,
+			Type:                "UnifiedCache",
+			Size:                64,
+			Way:                 4,
+			CacheIndexType:      5,
+			InsertionPolicy:     cache.UnifiedCacheInsertionPolicyExclusive,
+			IndexPolicy:         cache.UnifiedCacheIndexPolicyFixed,
+			AdaptiveInitial:     18,
+			AdaptiveMin:         6,
+			AdaptiveMax:         24,
+			AdaptiveEpochLength: 1024,
 			CacheTagLength: [][2]int{
 				// []int{14, 32},
 				// []int{14, 32},
@@ -692,10 +741,7 @@ func EditSimulatorWithWay(base SimulatorDefinition, way int) SimulatorDefinition
 	newSim := base.DeepCopy()
 	newSim.Cache.Way = way
 	if newSim.Cache.Type == "UnifiedCache" {
-		for i := 0; i < way; i++ {
-			newSim.Cache.CacheTagLength = make([][2]int, way)
-			newSim.Cache.CacheTagLength = append(newSim.Cache.CacheTagLength, [2]int{9, 24})
-		}
+		newSim.Cache.CacheTagLength = [][2]int{{9, 24}}
 	}
 	return newSim
 }
