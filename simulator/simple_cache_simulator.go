@@ -1,7 +1,9 @@
 package simulator
 
 import (
+	"encoding/binary"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"test-module/cache"
 	"test-module/memorytrace"
@@ -20,12 +22,29 @@ type SimpleCacheSimulator struct {
 // CacheInitInfo はキャッシュ構築時の追加情報を保持します。
 // 上位キャッシュやデバッグモードなどの情報が含まれます。
 type CacheInitInfo struct {
-	RoutingTable   *routingtable.RoutingTablePatriciaTrie
-	DebugMode      bool
-	ParentCache    cache.Cache // 必要に応じて上位キャッシュなども追加可能
-	CacheIndex     int         // ParentCache内で自分が何番目か（親がいる場合のみ有効）
-	CacheTagLength [][2]int     //
-	CacheIndexType int
+	RoutingTable                  *routingtable.RoutingTablePatriciaTrie
+	DebugMode                     bool
+	ParentCache                   cache.Cache // 必要に応じて上位キャッシュなども追加可能
+	CacheIndex                    int         // ParentCache内で自分が何番目か（親がいる場合のみ有効）
+	CacheTagLength                [][2]int    //
+	CacheIndexType                int
+	InsertionPolicy               string
+	IndexPolicy                   string
+	AdaptiveInitial               int
+	AdaptiveMin                   int
+	AdaptiveMax                   int
+	AdaptiveEpochLength           int
+	LengthAwareMultiProbe         bool
+	MultiProbeLengths             []int
+	WayQuotaWideMax               int
+	WayQuotaWideWays              int
+	SkewedAssociative             bool
+	SetExtensionPolicy            string
+	SetExtensionCapacityMode      string
+	SetExtensionPoolRatio         float64
+	SetExtensionEpochLength       int
+	SetExtensionPressureThreshold uint64
+	SetExtensionMaxPerSet         int
 }
 
 func NewAddtionalInfoBuildCache(routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool, parentCache cache.Cache) CacheInitInfo {
@@ -39,7 +58,10 @@ func NewAddtionalInfoBuildCache(routingTable *routingtable.RoutingTablePatriciaT
 // Process は、パケットを処理し、キャッシュのヒット率を更新します。
 // パケットがキャッシュにヒットしたかどうかを返します。
 func (sim *SimpleCacheSimulator) Process(p interface{}, recordCacheHit bool) bool {
-	memorytrace.IncrementCycleCounter()
+	cycle := memorytrace.IncrementCycleCounter()
+	if sim.Tracer != nil {
+		cycle = sim.Tracer.IncrementCycleCounter()
+	}
 	switch pkt := p.(type) {
 	case *cache.Packet:
 		// キャッシュを検索
@@ -50,7 +72,9 @@ func (sim *SimpleCacheSimulator) Process(p interface{}, recordCacheHit bool) boo
 			sim.Stat.Hit += 1
 			fmt.Printf("sim stat hit: %d\n", sim.Stat.Hit)
 		} else {
-			sim.Cache.CacheFiveTuple(pkt.FiveTuple()) //平均20nsでキャッシュに追加される。
+			fiveTuple := pkt.FiveTuple()
+			sim.recordDRAMMiss(cycle, fiveTuple)
+			sim.Cache.CacheFiveTuple(fiveTuple) //平均20nsでキャッシュに追加される。
 
 		}
 
@@ -67,7 +91,9 @@ func (sim *SimpleCacheSimulator) Process(p interface{}, recordCacheHit bool) boo
 			// キャッシュヒットの場合
 			sim.Stat.Hit += 1
 		} else {
-			sim.Cache.CacheFiveTuple(pkt.FiveTuple()) //平均20nsでキャッシュに追加される。
+			fiveTuple := pkt.FiveTuple()
+			sim.recordDRAMMiss(cycle, fiveTuple)
+			sim.Cache.CacheFiveTuple(fiveTuple) //平均20nsでキャッシュに追加される。
 		}
 
 		sim.Stat.Processed += 1
@@ -80,6 +106,62 @@ func (sim *SimpleCacheSimulator) Process(p interface{}, recordCacheHit bool) boo
 		return false
 	}
 
+}
+
+func (sim *SimpleCacheSimulator) recordDRAMMiss(cycle uint64, fiveTuple *cache.FiveTuple) {
+	if sim.Tracer == nil || !sim.Tracer.Enabled() || fiveTuple == nil {
+		return
+	}
+
+	sim.Tracer.AddDRAMAccess(&memorytrace.DRAMAccess{
+		Timestamp:   cycle,
+		Address:     logicalAddressFromFiveTuple(fiveTuple),
+		Type:        "R",
+		Source:      sim.Cache.Description(),
+		CacheHit:    false,
+		MissType:    "cache-miss",
+		SrcIP:       fiveTuple.SrcIP,
+		DstIP:       fiveTuple.DstIP,
+		Proto:       protocolLabel(fiveTuple.Proto),
+		SrcPort:     fiveTuple.SrcPort,
+		DstPort:     fiveTuple.DstPort,
+		IsLeafIndex: fiveTuple.IsLeafIndex,
+	})
+}
+
+func logicalAddressFromFiveTuple(fiveTuple *cache.FiveTuple) uint64 {
+	if fiveTuple == nil {
+		return 0
+	}
+
+	var buf [9]byte
+	binary.BigEndian.PutUint32(buf[0:4], fiveTuple.SrcIP)
+	buf[4] = byte(fiveTuple.Proto)
+	binary.BigEndian.PutUint16(buf[5:7], fiveTuple.SrcPort)
+	binary.BigEndian.PutUint16(buf[7:9], fiveTuple.DstPort)
+
+	h := fnv.New64a()
+	_, _ = h.Write(buf[:])
+	flowSignature := h.Sum64() & 0xffff
+
+	return (uint64(fiveTuple.DstIP) << 16) | flowSignature
+}
+
+func protocolLabel(proto cache.IPProtocol) string {
+	switch proto {
+	case cache.IP_TCP:
+		return "tcp"
+	case cache.IP_UDP:
+		return "udp"
+	case cache.IP_ICMP:
+		return "icmp"
+	case cache.IP_ICMPv6:
+		return "icmpv6"
+	case cache.IP_L2TP:
+		return "l2tp"
+	default:
+		return "unknown"
+	}
 }
 
 // GetStat は、シミュレータの統計情報を返します。
@@ -171,7 +253,7 @@ func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cach
 		size := definitionCache.Size
 		way := definitionCache.Way
 
-		c = cache.NewNWaySetAssociativeLRUCache(uint(size), uint(way))
+		c = cache.NewNWaySetAssociativeLRUCache(uint(size), uint(way), routingTable)
 	case "NbitFullAssociativeDstipLRUCache":
 		size := definitionCache.Size
 		refbits := definitionCache.Refbits
@@ -193,7 +275,33 @@ func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cach
 
 		debugMode := additionalInfo.DebugMode
 		cacheIndexType := additionalInfo.CacheIndexType
-		c = cache.NewUnifiedCache(uint(size), uint(way), routingTable, cacheIndexType, cacheTagLength, debugMode)
+		c = cache.NewUnifiedCacheWithIndexConfig(
+			uint(size),
+			uint(way),
+			routingTable,
+			cacheIndexType,
+			cacheTagLength,
+			additionalInfo.InsertionPolicy,
+			cache.UnifiedCacheIndexConfig{
+				Policy:                        additionalInfo.IndexPolicy,
+				Initial:                       additionalInfo.AdaptiveInitial,
+				Min:                           additionalInfo.AdaptiveMin,
+				Max:                           additionalInfo.AdaptiveMax,
+				EpochLength:                   additionalInfo.AdaptiveEpochLength,
+				LengthAwareMultiProbe:         additionalInfo.LengthAwareMultiProbe,
+				MultiProbeLengths:             additionalInfo.MultiProbeLengths,
+				WayQuotaWideMax:               additionalInfo.WayQuotaWideMax,
+				WayQuotaWideWays:              additionalInfo.WayQuotaWideWays,
+				SkewedAssociative:             additionalInfo.SkewedAssociative,
+				SetExtensionPolicy:            additionalInfo.SetExtensionPolicy,
+				SetExtensionCapacityMode:      additionalInfo.SetExtensionCapacityMode,
+				SetExtensionPoolRatio:         additionalInfo.SetExtensionPoolRatio,
+				SetExtensionEpochLength:       additionalInfo.SetExtensionEpochLength,
+				SetExtensionPressureThreshold: additionalInfo.SetExtensionPressureThreshold,
+				SetExtensionMaxPerSet:         additionalInfo.SetExtensionMaxPerSet,
+			},
+			debugMode,
+		)
 
 		return c, nil
 	case "MultiLayerCacheExclusive":
@@ -318,12 +426,29 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 
 	// CacheInitInfo を生成
 	additionalInfo := CacheInitInfo{
-		RoutingTable:   r,
-		DebugMode:      simulatorDefinition.DebugMode,
-		ParentCache:    nil, // 上位キャッシュがない場合は nil
-		CacheIndex:     -1,  // 上位キャッシュがない場合は -1
-		CacheTagLength: simulatorDefinition.Cache.CacheTagLength,
-		CacheIndexType: simulatorDefinition.Cache.CacheIndexType,
+		RoutingTable:                  r,
+		DebugMode:                     simulatorDefinition.DebugMode,
+		ParentCache:                   nil, // 上位キャッシュがない場合は nil
+		CacheIndex:                    -1,  // 上位キャッシュがない場合は -1
+		CacheTagLength:                simulatorDefinition.Cache.CacheTagLength,
+		CacheIndexType:                simulatorDefinition.Cache.CacheIndexType,
+		InsertionPolicy:               simulatorDefinition.Cache.InsertionPolicy,
+		IndexPolicy:                   simulatorDefinition.Cache.IndexPolicy,
+		AdaptiveInitial:               simulatorDefinition.Cache.AdaptiveInitial,
+		AdaptiveMin:                   simulatorDefinition.Cache.AdaptiveMin,
+		AdaptiveMax:                   simulatorDefinition.Cache.AdaptiveMax,
+		AdaptiveEpochLength:           simulatorDefinition.Cache.AdaptiveEpochLength,
+		LengthAwareMultiProbe:         simulatorDefinition.Cache.LengthAwareMultiProbe,
+		MultiProbeLengths:             simulatorDefinition.Cache.MultiProbeLengths,
+		WayQuotaWideMax:               simulatorDefinition.Cache.WayQuotaWideMax,
+		WayQuotaWideWays:              simulatorDefinition.Cache.WayQuotaWideWays,
+		SkewedAssociative:             simulatorDefinition.Cache.SkewedAssociative,
+		SetExtensionPolicy:            simulatorDefinition.Cache.SetExtensionPolicy,
+		SetExtensionCapacityMode:      simulatorDefinition.Cache.SetExtensionCapacityMode,
+		SetExtensionPoolRatio:         simulatorDefinition.Cache.SetExtensionPoolRatio,
+		SetExtensionEpochLength:       simulatorDefinition.Cache.SetExtensionEpochLength,
+		SetExtensionPressureThreshold: simulatorDefinition.Cache.SetExtensionPressureThreshold,
+		SetExtensionMaxPerSet:         simulatorDefinition.Cache.SetExtensionMaxPerSet,
 	}
 
 	// キャッシュを構築
@@ -331,8 +456,6 @@ func BuildSimpleCacheSimulator(simulatorDefinition SimulatorDefinition, rulefile
 	if err != nil {
 		return nil, err
 	}
-
-
 
 	// シミュレータを初期化
 	sim := &SimpleCacheSimulator{

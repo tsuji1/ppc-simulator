@@ -1,0 +1,4 @@
+ip,network,allocation,organization,asn,reverse_dns,role,classification,evidence_url
+150.65.7.130,150.65.0.0/16,FRONTNET,Japan Advanced Institute of Science and Technology,AS17932,ftp.jaist.ac.jp,public FTP/mirror server,university-research-network,https://ftp.jaist.ac.jp/
+150.65.109.62,150.65.0.0/16,FRONTNET,Japan Advanced Institute of Science and Technology,AS17932,dm5203a.jaist.ac.jp,JAIST host (application unknown),university-research-network,https://bgp.he.net/AS17932
+203.178.132.80,203.178.132.64/26,TSUKUBA-WIDE / University of Tsukuba,WIDE Project Tsukuba NOC,AS2500,ftp.tsukuba.wide.ad.jp,public FTP/mirror server,university-research-network,https://www.tsukuba.wide.ad.jp/ftp-server/

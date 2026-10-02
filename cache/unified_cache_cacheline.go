@@ -8,31 +8,42 @@ import (
 )
 
 type UnifiedCacheLine struct {
-	Entries         map[uint32]*list.Element // キャッシュされたエントリのマップ。キーはMasked IP、値はリストの要素へのポインタ。
-	Size            uint                     // キャッシュの最大サイズ。
-	cacheTagLength  [][2]int
-	cacheIndexType  int
-	routingTable    *routingtable.RoutingTablePatriciaTrie
-	debugMode       bool
-	evictList       *list.List // 最も古いエントリを追跡するための双方向リスト。
-	directIndexSize uint
-	HitCount        [32]uint32
-	EvictedCache    map[uint32]uint32
+	Entries          map[unifiedCacheLineEntryKey]*list.Element // キャッシュされたエントリのマップ。キーはMasked IPとprefix長、値はリストの要素へのポインタ。
+	Size             uint                                       // キャッシュの最大サイズ。
+	cacheTagLength   [][2]int
+	cacheIndexType   int
+	insertionPolicy  string
+	routingTable     *routingtable.RoutingTablePatriciaTrie
+	debugMode        bool
+	evictList        *list.List // 最も古いエントリを追跡するための双方向リスト。
+	directIndexSize  uint
+	wayQuotaWideMax  int
+	wayQuotaWideWays int
+	HitCount         [32]uint32
+	EvictedCache     map[uint32]uint32
 	// 初期参照性ミス数
 	FirstMissCount      [32]uint32
 	UniqueDstIP         [32][]uint32
 	UniqueDstIPHitCount [32]map[uint32]uint32
 	// 2回目以降の参照性ミス数
-	SecondMissCount [32]uint32
-	parentIndex     uint
+	SecondMissCount   [32]uint32
+	SecondMissIPCount [32]map[uint32]uint32
+	parentIndex       uint
+	BaseSize          uint
 }
 
 type UnifiedCacheLineEntry struct {
-	Refered   int
-	Prefix    uint32
-	FiveTuple FiveTuple // キャッシュされたFiveTuple。
-	Length    uint8
-	NextHop   string // 次のホップのアドレス。
+	Refered     int
+	Prefix      uint32
+	FiveTuple   FiveTuple // キャッシュされたFiveTuple。
+	Length      uint8
+	NextHop     string // 次のホップのアドレス。
+	StorageBank int    // 0=Main, 1..N=Extension bank
+}
+
+type unifiedCacheLineEntryKey struct {
+	Network uint32
+	Length  uint8
 }
 
 type UnifiedCacheLineStat struct {
@@ -40,6 +51,7 @@ type UnifiedCacheLineStat struct {
 	FirstMissCount      [32]uint32
 	SecondMissCount     [32]uint32
 	UniqueDstIPHitCount [32]map[uint32]uint32
+	SecondMissIPCount   [32]map[uint32]uint32
 }
 
 func (cache *UnifiedCacheLine) ReturnMaskedIP(IP uint32, prefix uint8) uint32 {
@@ -49,6 +61,13 @@ func (cache *UnifiedCacheLine) ReturnMaskedIP(IP uint32, prefix uint8) uint32 {
 	temp = temp >> (32 - prefix)
 	temp = temp << (32 - prefix)
 	return temp
+}
+
+func (cache *UnifiedCacheLine) entryKey(dstIP uint32, prefix uint8) unifiedCacheLineEntryKey {
+	return unifiedCacheLineEntryKey{
+		Network: cache.ReturnMaskedIP(dstIP, prefix),
+		Length:  prefix,
+	}
 }
 
 func (cache *UnifiedCacheLine) StatString() string {
@@ -61,6 +80,7 @@ func (cache *UnifiedCacheLine) Stat() interface{} {
 		FirstMissCount:      cache.FirstMissCount,
 		SecondMissCount:     cache.SecondMissCount,
 		UniqueDstIPHitCount: cache.UniqueDstIPHitCount,
+		SecondMissIPCount:   cache.SecondMissIPCount,
 	}
 
 }
@@ -80,18 +100,83 @@ func (cache *UnifiedCacheLine) IsCached(p *Packet, update bool) (bool, *int) {
 	return cache.IsCachedWithFiveTuple(p.FiveTuple(), update)
 }
 
+func (cache *UnifiedCacheLine) LongestMatchLength(f *FiveTuple) (uint8, bool) {
+	length, _, found := cache.LongestMatchLocation(f)
+	return length, found
+}
+
+func (cache *UnifiedCacheLine) LongestMatchLocation(f *FiveTuple) (uint8, int, bool) {
+	var longest uint8
+	bank := 0
+	found := false
+	for key, elem := range cache.Entries {
+		entry := elem.Value.(UnifiedCacheLineEntry)
+		if cache.ReturnMaskedIP(f.DstIP, entry.Length) == key.Network &&
+			(!found || entry.Length > longest) {
+			longest = entry.Length
+			bank = entry.StorageBank
+			found = true
+		}
+	}
+	return longest, bank, found
+}
+
+func (cache *UnifiedCacheLine) ResidentCount() int {
+	return len(cache.Entries)
+}
+
+func (cache *UnifiedCacheLine) IsFull() bool {
+	return cache.ResidentCount() >= int(cache.Size)
+}
+
+func (cache *UnifiedCacheLine) ExtensionSetCount() int {
+	if cache.Size <= cache.BaseSize || cache.BaseSize == 0 {
+		return 0
+	}
+	return int((cache.Size - cache.BaseSize) / cache.BaseSize)
+}
+
+// GrowExtensionSet adds one physical extension set while preserving a single
+// logical LRU order across Main and all extension banks.
+func (cache *UnifiedCacheLine) GrowExtensionSet(bank int) {
+	if bank <= 0 {
+		panic("extension bank must be greater than zero")
+	}
+	for i := uint(0); i < cache.BaseSize; i++ {
+		cache.evictList.PushBack(UnifiedCacheLineEntry{StorageBank: bank})
+	}
+	cache.Size += cache.BaseSize
+	cache.AssertImmutableCondition()
+}
+
+func (cache *UnifiedCacheLine) HasSeenMissNetwork(f *FiveTuple) bool {
+	cacheLength, ok := selectUnifiedCacheLength(
+		f,
+		cache.cacheTagLength,
+		cache.insertionPolicy == UnifiedCacheInsertionPolicyInclusive,
+	)
+	if !ok {
+		return false
+	}
+	dstNetwork := f.DstIP >> (32 - uint8(cacheLength))
+	for _, network := range cache.UniqueDstIP[int(cacheLength)] {
+		if network == dstNetwork {
+			return true
+		}
+	}
+	return false
+}
+
 func (cache *UnifiedCacheLine) IsCachedWithFiveTuple(f *FiveTuple, update bool) (bool, *int) {
 	hit := false
 	var hitElem *list.Element
-	var dstIp uint32
 
-	for dstIP, elem := range cache.Entries {
+	for key, elem := range cache.Entries {
 		unifiedEntry := elem.Value.(UnifiedCacheLineEntry)
-		dstIp = f.DstIP
-		if cache.ReturnMaskedIP(dstIp, unifiedEntry.Length) == dstIP {
+		if cache.ReturnMaskedIP(f.DstIP, unifiedEntry.Length) == key.Network &&
+			(!hit || unifiedEntry.Length > hitElem.Value.(UnifiedCacheLineEntry).Length) {
 			hit = true
 			hitElem = elem
-			break
 		}
 	}
 	// if cache.parentIndex == 58 {
@@ -116,11 +201,12 @@ func (cache *UnifiedCacheLine) IsCachedWithFiveTuple(f *FiveTuple, update bool) 
 			// 参照カウントを更新
 			hitEntry := hitElem.Value.(UnifiedCacheLineEntry)
 			hitElem.Value = UnifiedCacheLineEntry{
-				Refered:   hitEntry.Refered + 1,
-				FiveTuple: hitEntry.FiveTuple,
-				NextHop:   hitEntry.NextHop,
-				Length:    hitEntry.Length,
-				Prefix:    hitEntry.Prefix,
+				Refered:     hitEntry.Refered + 1,
+				FiveTuple:   hitEntry.FiveTuple,
+				NextHop:     hitEntry.NextHop,
+				Length:      hitEntry.Length,
+				Prefix:      hitEntry.Prefix,
+				StorageBank: hitEntry.StorageBank,
 			}
 		}
 		if cache.debugMode && update {
@@ -140,59 +226,53 @@ func (cache *UnifiedCacheLine) IsCachedWithFiveTuple(f *FiveTuple, update bool) 
 		}
 	} else {
 		if update {
-			cacheLength := f.IsLeafIndex
-			// cacheTagLength = [[8, 24], [16, 32], [24, 32]] みたいな感じで8を出力する、min(8,16,24)
-
-			cachetagmin := 32
-			cacheTagMax := 0
-			for i := 0; i < len(cache.cacheTagLength); i++ {
-				if cache.cacheTagLength[i][0] < cachetagmin {
-					cachetagmin = cache.cacheTagLength[i][0]
+			cacheLength, canRecordMiss := selectUnifiedCacheLength(
+				f,
+				cache.cacheTagLength,
+				cache.insertionPolicy == UnifiedCacheInsertionPolicyInclusive,
+			)
+			if canRecordMiss {
+				lengthIndex := int(cacheLength)
+				dstNetwork := f.DstIP >> (32 - uint8(cacheLength))
+				// uniqueCache[cacheLength]にdstNetworkが存在するか確認
+				found := false
+				for _, ip := range cache.UniqueDstIP[lengthIndex] {
+					if ip == dstNetwork {
+						found = true // dstNetworkで判断
+						break
+					}
 				}
-				if cache.cacheTagLength[i][1] > cacheTagMax {
-					cacheTagMax = cache.cacheTagLength[i][1]
+				if cache.UniqueDstIPHitCount[lengthIndex] == nil {
+					cache.UniqueDstIPHitCount[lengthIndex] = make(map[uint32]uint32)
+				}
+				cache.UniqueDstIPHitCount[lengthIndex][dstNetwork]++
+
+				if !found {
+					cache.FirstMissCount[lengthIndex]++
+				} else {
+					cache.SecondMissCount[lengthIndex]++
+					if cache.SecondMissIPCount[lengthIndex] == nil {
+						cache.SecondMissIPCount[lengthIndex] = make(map[uint32]uint32)
+					}
+					cache.SecondMissIPCount[lengthIndex][dstNetwork]++
 				}
 			}
-			if cacheLength < int8(cachetagmin) {
-				cacheLength = int8(cachetagmin)
-			}
-			// Maxの場合はキャッシュできない
+			if cache.debugMode && update {
+				dstIpAddress := ipaddress.NewIPaddress(f.DstIP)
+				hitIP, item := cache.routingTable.SearchLongestIP(dstIpAddress, 32)
 
-			dstNetwork := f.DstIP >> (32 - uint8(cacheLength))
-			// uniqueCache[cacheLength]にdstNetworkが存在するか確認
-			found := false
-			for _, ip := range cache.UniqueDstIP[cacheLength] {
-				if ip == dstNetwork {
-					found = true  // dstNetworkで判断
-					break
+				// ヒットしていないのにNextHopが同じなことはありえない,逆の部分も見る
+				if item.(routingtable.Data).NextHop == hitElem.Value.(UnifiedCacheLineEntry).NextHop {
+					println("hitIP: ", ipaddress.BitStringToIP(hitIP), "dstIP: ", dstIpAddress.String())
+
+					println("hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP: ", ipaddress.NewIPaddress(hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP).String())
+					println("(UnifiedCacheLineEntry).NextHop: ", hitElem.Value.(UnifiedCacheLineEntry).NextHop)
+					println("(routingtable.Data).NextHop: ", item.(routingtable.Data).NextHop)
+					dstIpAddressString := dstIpAddress.String()
+					_ = dstIpAddressString
+					panic("NextHop is different")
 				}
 			}
-			if cache.UniqueDstIPHitCount[cacheLength] == nil {
-				cache.UniqueDstIPHitCount[cacheLength] = make(map[uint32]uint32)
-			}
-			cache.UniqueDstIPHitCount[cacheLength][dstNetwork]++
-
-			if !found {
-				cache.FirstMissCount[f.IsLeafIndex]++
-			} else {
-				cache.SecondMissCount[f.IsLeafIndex]++
-			}
-		if cache.debugMode && update {
-			dstIpAddress := ipaddress.NewIPaddress(f.DstIP)
-			hitIP, item := cache.routingTable.SearchLongestIP(dstIpAddress, 32)
-
-			// ヒットしていないのにNextHopが同じなことはありえない,逆の部分も見る
-			if item.(routingtable.Data).NextHop == hitElem.Value.(UnifiedCacheLineEntry).NextHop {
-				println("hitIP: ", ipaddress.BitStringToIP(hitIP), "dstIP: ", dstIpAddress.String())
-
-				println("hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP: ", ipaddress.NewIPaddress(hitElem.Value.(UnifiedCacheLineEntry).FiveTuple.DstIP).String())
-				println("(UnifiedCacheLineEntry).NextHop: ", hitElem.Value.(UnifiedCacheLineEntry).NextHop)
-				println("(routingtable.Data).NextHop: ", item.(routingtable.Data).NextHop)
-				dstIpAddressString := dstIpAddress.String()
-				_ = dstIpAddressString
-				panic("NextHop is different")
-			}
-		}
 
 			// if _, exists := cache.EvictedCache[dstNetwork]; !exists {
 			// 	cache.SecondMissCount[f.IsLeafIndex]++
@@ -226,63 +306,151 @@ func (cache *UnifiedCacheLine) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 		return evictedFiveTuples
 	}
 
-	// 各wayのcacheTagLengthをチェックして、キャッシュ可能かどうか判断
-	canCache := false
-	var cacheLength int8
-	for wayIdx := 0; wayIdx < int(cache.Size); wayIdx++ {
-		cacheTagLength := cache.cacheTagLength[wayIdx]
-		cacheTagLengthStart := cacheTagLength[0]
-		cacheTagLengthEnd := cacheTagLength[1]
-		if int(f.IsLeafIndex) <= cacheTagLengthEnd {
-			canCache = true
-			if int(f.IsLeafIndex) > cacheTagLengthStart {
-				cacheLength = f.IsLeafIndex
-			} else {
-				cacheLength = int8(cacheTagLengthStart)
-			}
-		}
-	}
-
+	cacheLength, canCache := selectUnifiedCacheLength(
+		f,
+		cache.cacheTagLength,
+		cache.insertionPolicy == UnifiedCacheInsertionPolicyInclusive,
+	)
 	if !canCache {
 		return evictedFiveTuples
 	}
 
-	oldestElem := cache.evictList.Back()
+	evicted, _ := cache.cacheFiveTupleWithLength(f, uint8(cacheLength))
+	return evicted
+}
 
-	replacedEntry := cache.evictList.Remove(oldestElem).(UnifiedCacheLineEntry)
+func (cache *UnifiedCacheLine) CacheFiveTupleWithLength(f *FiveTuple, cacheLength uint8) []*FiveTuple {
+	evicted, _ := cache.CacheFiveTupleWithLengthAndBank(f, cacheLength)
+	return evicted
+}
 
-	delete(cache.Entries, cache.ReturnMaskedIP(replacedEntry.FiveTuple.DstIP, replacedEntry.Length))
+func (cache *UnifiedCacheLine) CacheFiveTupleWithLengthAndBank(f *FiveTuple, cacheLength uint8) ([]*FiveTuple, int) {
+	cache.AssertImmutableCondition()
+	if elem, ok := cache.Entries[cache.entryKey(f.DstIP, cacheLength)]; ok {
+		return []*FiveTuple{}, elem.Value.(UnifiedCacheLineEntry).StorageBank
+	}
+	return cache.cacheFiveTupleWithLength(f, cacheLength)
+}
 
-	var newEntry UnifiedCacheLineEntry
+func (cache *UnifiedCacheLine) cacheFiveTupleWithLength(f *FiveTuple, cacheLength uint8) ([]*FiveTuple, int) {
+	evictedFiveTuples := []*FiveTuple{}
+
+	oldestElem := cache.victimForLength(cacheLength)
+	replacedEntry := cache.removeElement(oldestElem)
+	evictedFiveTuples = append(evictedFiveTuples, cache.cascadeEvictAncestors(replacedEntry)...)
+
+	newEntry := cache.newEntry(f, cacheLength)
+	newEntry.StorageBank = replacedEntry.StorageBank
+	newElem := cache.evictList.PushFront(newEntry)
+	cache.Entries[cache.entryKey(f.DstIP, cacheLength)] = newElem
+
+	cache.recordInsertedNetwork(f.DstIP, cacheLength)
+	cache.AssertImmutableCondition()
+	if replacedEntry.FiveTuple != (FiveTuple{}) {
+		evictedFiveTuples = append(evictedFiveTuples, &replacedEntry.FiveTuple)
+	}
+
+	return evictedFiveTuples, newEntry.StorageBank
+}
+
+func (cache *UnifiedCacheLine) victimForLength(cacheLength uint8) *list.Element {
+	if cache.wayQuotaWideWays <= 0 {
+		return cache.evictList.Back()
+	}
+
+	requestWide := int(cacheLength) <= cache.wayQuotaWideMax
+	quota := cache.wayQuotaWideWays
+	if !requestWide {
+		quota = int(cache.Size) - cache.wayQuotaWideWays
+	}
+
+	residentInGroup := 0
+	var empty *list.Element
+	var oldestInGroup *list.Element
+	for elem := cache.evictList.Back(); elem != nil; elem = elem.Prev() {
+		entry := elem.Value.(UnifiedCacheLineEntry)
+		if entry.FiveTuple == (FiveTuple{}) {
+			if empty == nil {
+				empty = elem
+			}
+			continue
+		}
+		if (int(entry.Length) <= cache.wayQuotaWideMax) == requestWide {
+			residentInGroup++
+			if oldestInGroup == nil {
+				oldestInGroup = elem
+			}
+		}
+	}
+	if residentInGroup >= quota && oldestInGroup != nil {
+		return oldestInGroup
+	}
+	if residentInGroup < quota && empty != nil {
+		return empty
+	}
+	panic(fmt.Sprintf("way quota invariant violated: length=%d wide_max=%d wide_ways=%d", cacheLength, cache.wayQuotaWideMax, cache.wayQuotaWideWays))
+}
+
+func (cache *UnifiedCacheLine) ConfigureWayQuota(wideMax, wideWays int) {
+	cache.wayQuotaWideMax = wideMax
+	cache.wayQuotaWideWays = wideWays
+}
+
+func (cache *UnifiedCacheLine) removeElement(elem *list.Element) UnifiedCacheLineEntry {
+	replacedEntry := cache.evictList.Remove(elem).(UnifiedCacheLineEntry)
+	if replacedEntry.FiveTuple != (FiveTuple{}) {
+		delete(cache.Entries, cache.entryKey(replacedEntry.FiveTuple.DstIP, replacedEntry.Length))
+	}
+	return replacedEntry
+}
+
+func (cache *UnifiedCacheLine) cascadeEvictAncestors(replacedEntry UnifiedCacheLineEntry) []*FiveTuple {
+	if cache.insertionPolicy != UnifiedCacheInsertionPolicyInclusive || replacedEntry.FiveTuple == (FiveTuple{}) {
+		return nil
+	}
+
+	evictedFiveTuples := []*FiveTuple{}
+	for key, elem := range cache.Entries {
+		if key.Length >= replacedEntry.Length {
+			continue
+		}
+		if cache.ReturnMaskedIP(replacedEntry.FiveTuple.DstIP, key.Length) != key.Network {
+			continue
+		}
+		entry := cache.removeElement(elem)
+		cache.evictList.PushBack(UnifiedCacheLineEntry{StorageBank: entry.StorageBank})
+		if entry.FiveTuple != (FiveTuple{}) {
+			evictedFiveTuples = append(evictedFiveTuples, &entry.FiveTuple)
+		}
+	}
+	return evictedFiveTuples
+}
+
+func (cache *UnifiedCacheLine) newEntry(f *FiveTuple, cacheLength uint8) UnifiedCacheLineEntry {
+	maskDstIP := cache.ReturnMaskedIP(f.DstIP, cacheLength)
 	if cache.debugMode {
-
 		// デバッグモードの場合、ルーティングテーブルを参照してエントリを作成する
-		maskDstIP := cache.ReturnMaskedIP(f.DstIP, uint8(cacheLength))
-
 		hit, item := cache.routingTable.SearchLongestIP(ipaddress.NewIPaddress(maskDstIP), int(cacheLength))
-
 		_ = hit
-
-		// fmt.Println("caching hitIP: ", ipaddress.BitStringToIP(hit), "dstIP: ", ipaddress.NewIPaddress(maskDstIP).String())
-		newEntry = UnifiedCacheLineEntry{
+		return UnifiedCacheLineEntry{
 			FiveTuple: *f,
 			NextHop:   item.(routingtable.Data).NextHop,
-			Length:    uint8(cacheLength),
+			Length:    cacheLength,
 			Prefix:    maskDstIP,
 			Refered:   1, // 新しいエントリは参照されているとみなす
 		}
-	} else {
-		newEntry = UnifiedCacheLineEntry{
-			FiveTuple: *f,
-			Length:    uint8(cacheLength),
-		}
 	}
 
-	newElem := cache.evictList.PushFront(newEntry)
-	cache.Entries[cache.ReturnMaskedIP(f.DstIP, uint8(cacheLength))] = newElem
+	return UnifiedCacheLineEntry{
+		FiveTuple: *f,
+		Length:    cacheLength,
+		Prefix:    maskDstIP,
+		Refered:   1,
+	}
+}
 
-	cache.AssertImmutableCondition()
-	dstNetwork := f.DstIP >> (32 - cacheLength)
+func (cache *UnifiedCacheLine) recordInsertedNetwork(dstIP uint32, cacheLength uint8) {
+	dstNetwork := dstIP >> (32 - cacheLength)
 
 	found := false
 	for _, ip := range cache.UniqueDstIP[cacheLength] {
@@ -294,13 +462,6 @@ func (cache *UnifiedCacheLine) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	if !found {
 		cache.UniqueDstIP[cacheLength] = append(cache.UniqueDstIP[cacheLength], dstNetwork)
 	}
-	if replacedEntry.FiveTuple == (FiveTuple{}) {
-		return evictedFiveTuples
-	}
-
-	evictedFiveTuples = append(evictedFiveTuples, &replacedEntry.FiveTuple)
-
-	return evictedFiveTuples
 }
 
 // InvalidateFiveTuple は、指定された FiveTuple をキャッシュから削除します。
@@ -353,24 +514,27 @@ func NewUnifiedCacheLine(
 	routingTable *routingtable.RoutingTablePatriciaTrie,
 	cacheIndexType int,
 	cacheTagLength [][2]int,
+	insertionPolicy string,
 	debugMode bool,
 	parentIndex uint,
 ) *UnifiedCacheLine {
 	evictList := list.New()
 
 	for i := 0; i < int(size); i++ {
-		evictList.PushBack(UnifiedCacheLineEntry{})
+		evictList.PushBack(UnifiedCacheLineEntry{StorageBank: 0})
 	}
 
 	return &UnifiedCacheLine{
-		Entries:        map[uint32]*list.Element{},
-		Size:           size,
-		evictList:      evictList,
-		routingTable:   routingTable,
-		cacheIndexType: cacheIndexType,
-		cacheTagLength: cacheTagLength,
-		debugMode:      debugMode,
-		EvictedCache:   make(map[uint32]uint32),
-		parentIndex:    parentIndex,
+		Entries:         map[unifiedCacheLineEntryKey]*list.Element{},
+		Size:            size,
+		evictList:       evictList,
+		routingTable:    routingTable,
+		cacheIndexType:  cacheIndexType,
+		cacheTagLength:  cacheTagLength,
+		insertionPolicy: insertionPolicy,
+		debugMode:       debugMode,
+		EvictedCache:    make(map[uint32]uint32),
+		parentIndex:     parentIndex,
+		BaseSize:        size,
 	}
 }
