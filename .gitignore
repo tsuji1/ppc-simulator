@@ -53,6 +53,9 @@ __pycache__/
 
 # Experiment configuration and generated results
 /scripts/env/
+# Keep the portable template; local experiment configs stay ignored.
+!/scripts/env/
+!/scripts/env/example.env
 /scripts/reports/
 /scripts/results/
 /scripts/*.csv
