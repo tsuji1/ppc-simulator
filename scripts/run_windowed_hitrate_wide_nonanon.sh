@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-TRACE="${TRACE:-/research/trace/2026-03-27.pcap}"
+TRACE="${TRACE:-/home/yuzugon/pcap/non-anon/2026-03-27.pcap}"
 RULEFILE="${RULEFILE:-/research/rules/rib.20260327.0600.unique.rule}"
 OUTDIR="${OUTDIR:-scripts/reports/windowed_hitrate_wide_nonanon}"
 MAX_PACKETS="${MAX_PACKETS:-10000000}"

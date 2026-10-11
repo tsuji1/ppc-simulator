@@ -193,7 +193,7 @@ def parse_args() -> argparse.Namespace:
             "nearest RIB dump, parse IPv4 prefixes, and write a simulator .rule file."
         )
     )
-    parser.add_argument("traces", nargs="+", help="Trace path(s), e.g. /research/trace/equinix-sanjose...pcap")
+    parser.add_argument("traces", nargs="+", help="Trace path(s), e.g. /home/yuzugon/pcap/equinix-sanjose...pcap")
     parser.add_argument("--outdir", default="rules", help="Directory for generated .rule files")
     parser.add_argument("--workdir", default="/tmp/bgp-ribs", help="Directory for downloaded RIB files")
     parser.add_argument(

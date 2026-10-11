@@ -85,34 +85,34 @@ add_trace() {
 }
 
 add_trace "WIDE non 2025-09" \
-  "/research/trace/2025-09-27.pcap" \
+  "/home/yuzugon/pcap/non-anon/2025-09-27.pcap" \
   "/research/rules/rib.20250927.0600.unique.rule"
 add_trace "WIDE non 2025-12" \
-  "/research/trace/2025-12-27.pcap" \
+  "/home/yuzugon/pcap/non-anon/2025-12-27.pcap" \
   "/research/rules/rib.20251227.0600.unique.rule"
 add_trace "WIDE non 2026-03" \
-  "/research/trace/2026-03-27.pcap" \
+  "/home/yuzugon/pcap/non-anon/2026-03-27.pcap" \
   "/research/rules/rib.20260327.0600.unique.rule"
 add_trace "JPIX to SINET 2018-05" \
-  "/research/trace/jpix2sinet90s_5tuple.txt" \
+  "/home/yuzugon/pcap/jpix2sinet90s_5tuple.txt" \
   "/research/rules/rrc06.bview.20180502.0000.unique.rule"
 add_trace "SINET to JPIX 2018-05" \
-  "/research/trace/sinet2jpix90s_5tuple.txt" \
+  "/home/yuzugon/pcap/sinet2jpix90s_5tuple.txt" \
   "/research/rules/rrc06.bview.20180502.0000.unique.rule"
 add_trace "WIDE anon 2025-09" \
-  "/research/trace/202509271400.pcap" \
+  "/home/yuzugon/pcap/202509271400.pcap" \
   "/research/rules/rib.20250927.0600.unique.rule"
 add_trace "WIDE anon 2025-12" \
-  "/research/trace/202512271400.pcap" \
+  "/home/yuzugon/pcap/202512271400.pcap" \
   "/research/rules/rib.20251227.0600.unique.rule"
 add_trace "WIDE anon 2026-03" \
-  "/research/trace/202603271400.pcap" \
+  "/home/yuzugon/pcap/202603271400.pcap" \
   "/research/rules/rib.20260327.0600.unique.rule"
 add_trace "San Jose anon 2014-03" \
-  "/research/trace/equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap" \
+  "/home/yuzugon/pcap/equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap" \
   "/research/rules/route-views.isc.rib.20140320.1400.unique.rule"
 add_trace "Chicago anon 2014-03" \
-  "/research/trace/equinix-chicago.dirB.20140320-140100.UTC.anon.pcap" \
+  "/home/yuzugon/pcap/equinix-chicago.dirB.20140320-140100.UTC.anon.pcap" \
   "/research/rules/route-views.chicago.rib.20160628.1400.unique.rule"
 add_trace "New York anon 2019-01" \
   "/home/yuzugon/pcap/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap" \
