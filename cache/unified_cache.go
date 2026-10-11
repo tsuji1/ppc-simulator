@@ -15,11 +15,13 @@ const (
 	CACHE_INDEX_TYPE_DIRECT   = iota // 0
 	CACHE_INDEX_TYPE_HASH            // 1
 	CACHE_INDEX_TYPE_IDEAL           // 2
-	CACHE_INDEX_TYPE_PREFIX24        // 3
-	CACHE_INDEX_TYPE_PREFIX20        // 4
-	CACHE_INDEX_TYPE_PREFIX18        // 5
+	CACHE_INDEX_TYPE_PREFIX24        // 3 Deprecated: CRC32 index。CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE+24 を使う
+	CACHE_INDEX_TYPE_PREFIX20        // 4 Deprecated: CRC32 index。CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE+20 を使う
+	CACHE_INDEX_TYPE_PREFIX18        // 5 Deprecated: CRC32 index。CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE+18 を使う
 )
 
+// CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE+L（L=0..32）は、上位 L bit の prefix の下位 log2(sets) bit を set index にする。
+// prefix 長 L で index する場合はこちらを使う（CacheIndexType=L / 3,4,5 の CRC32 index は deprecated、issue #78）。
 const CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE = 100
 
 const (
@@ -610,6 +612,9 @@ func (cache *UnifiedCache) setIdxForType(f *FiveTuple, idxType int, skew bool) u
 
 	// PREFIX8 - PREFIX24 でindex化を行う
 	// 9- 24
+	// Deprecated: CacheIndexType=L（CRC32(上位 L bit) % sets）は使わない。
+	// 上位 L bit の prefix の下位 log2(sets) bit を使う CacheIndexType=100+L（direct prefix）を使うこと。
+	// 既存結果の再現のためだけに残している（issue #78）。
 	if idxType > CACHE_INDEX_TYPE_PREFIX18 && idxType < 25 {
 		dstIP := f.DstIP >> (32 - idxType)
 		return cache.hashSetIdx(dstIP, skew)
