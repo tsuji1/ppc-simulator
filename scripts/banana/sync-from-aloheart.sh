@@ -14,7 +14,7 @@ set -euo pipefail
 
 HOST="${HOST:-banana}"
 SRC=/home/yuzugon
-DST=yuzugon # banana の /home/tsuji/yuzugon（= /home/yuzugon）
+DST=yuzugon # banana の ~/yuzugon
 RSYNC=(rsync -a --checksum --info=stats1,name1 "$@")
 
 "${RSYNC[@]}" "$SRC/research.md" "$HOST:$DST/"

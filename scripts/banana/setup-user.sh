@@ -1,24 +1,20 @@
 #!/usr/bin/env bash
-# banana を aloheart と同じ作業環境にする（sudo 不要）。setup-root.sh の後に tsuji で実行する。
+# banana で aloheart と同じものを揃える（sudo 不要）。tsuji で実行する。何度実行してもよい。
 #
-#   bash setup-user.sh            # repo の clone/pull、trace の symlink、WIDE rule の生成、build
+#   bash setup-user.sh            # repo の clone/pull、Go/uv、trace の symlink、WIDE rule の生成、build
 #   SKIP_RULES=1 bash setup-user.sh
 #
-# aloheart と同じく /home/yuzugon/{osada-ppc-simulator,ppc-result-viewer,pcap,rules,...} に揃える。
-# 実体は /home/tsuji/yuzugon。trace は NAS（/mnt/nas_readonly/network-trace）と既存の ~/pcap を参照する。
+# 置き場所は ~/yuzugon/{osada-ppc-simulator,ppc-result-viewer,pcap,rules,...}。aloheart とパスは揃えない。
+# trace は NAS（/mnt/nas_readonly/network-trace）と既存の ~/pcap を参照する。
 # git 管理外のもの（exec.sh、scripts/env/*.env、tasks、ppc-research、WIDE 以外の rule）は
 # aloheart 側で sync-from-aloheart.sh を実行して送る。
 set -euo pipefail
 
-WS=/home/yuzugon
+WS="${WS:-$HOME/yuzugon}"
 NAS=/mnt/nas_readonly/network-trace
 BRANCH="${BRANCH:-wip/aloheart-sync}"
 
-if [[ ! -L $WS || ! -d $WS/ ]]; then
-  echo "$WS がありません。先に sudo bash setup-root.sh を実行してください" >&2
-  exit 1
-fi
-
+mkdir -p "$WS"
 export PATH="/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
 
 clone_or_pull() { # clone_or_pull <url> <dir> <branch> [remote 名]
@@ -46,14 +42,14 @@ clone_or_pull git@gitlab.com:yamaki-lab/ppc/ppc-result-viewer.git "$WS/ppc-resul
 clone_or_pull https://github.com/tsuji1/research-routing-table-cache.git "$WS/research-routing-table-cache" main
 clone_or_pull https://github.com/tsuji1/research-routing-table-cache.wiki.git "$WS/research-routing-table-cache.wiki" master
 
-echo "== tool shims (scripts が /home/yuzugon/go/bin/go と /home/yuzugon/.local/bin/uv を直書きしている)"
+echo "== Go / uv"
+# /usr/local/go は 1.23 だが go.mod は 1.24.2 以上。sudo せず、go が 1.26.1（aloheart と同じ）を自動で取ってくるようにする
+go env -w GOTOOLCHAIN=go1.26.1
+go version
 # banana の ~/.cargo/bin/uv は 0.4 系で self update できないので、公式 installer で ~/.local/bin に入れる
 if [[ ! -x $HOME/.local/bin/uv ]]; then
   curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
 fi
-mkdir -p "$WS/go/bin" "$WS/.local/bin"
-ln -sfn /usr/local/go/bin/go "$WS/go/bin/go"
-ln -sfn "$HOME/.local/bin/uv" "$WS/.local/bin/uv"
 
 echo "== traces"
 mkdir -p "$WS/pcap/non-anon"
@@ -87,21 +83,6 @@ for d in 2025-09-27 2025-12-27 2026-03-27; do
   link "$NAS/WIDE/unanoymized/$d.pcap" "$WS/pcap/non-anon/$d.pcap"
 done
 link "$NAS/WIDE/unanoymized/2025-12-27-ipv6.pcap" "$WS/pcap/non-anon/2025-12-27-ipv6.pcap"
-
-# aloheart の /research/trace と同じ名前で並べる
-if [[ -w /research/trace ]]; then
-  for d in 2025-09-27 2025-12-27 2026-03-27; do
-    link "$WS/pcap/non-anon/$d.pcap" "/research/trace/$d.pcap"
-  done
-  for f in 202509271400.pcap 202512271400.pcap 202603271400.pcap \
-           equinix-chicago.dirB.20140320-140100.UTC.anon.pcap \
-           equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap \
-           jpix2sinet90s_5tuple.txt sinet2jpix90s_5tuple.txt; do
-    link "$WS/pcap/$f" "/research/trace/$f"
-  done
-else
-  echo "  /research/trace に書けないので skip（setup-root.sh を確認）" >&2
-fi
 
 echo "== rules"
 mkdir -p "$WS/rules" "$WS/osada-ppc-simulator/rules"
