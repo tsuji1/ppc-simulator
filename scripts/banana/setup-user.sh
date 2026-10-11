@@ -27,6 +27,12 @@ clone_or_pull() { # clone_or_pull <url> <dir> <branch> [remote 名]
     git -C "$dir" fetch "$remote" --prune
     git -C "$dir" switch "$branch"
     git -C "$dir" pull --ff-only
+  elif [[ -d $dir ]]; then
+    # sync-from-aloheart.sh が先に gitignore された設定を置いた場合
+    git -C "$dir" init -q
+    git -C "$dir" remote add "$remote" "$url"
+    git -C "$dir" fetch "$remote"
+    git -C "$dir" checkout -f -b "$branch" --track "$remote/$branch"
   else
     git clone -o "$remote" -b "$branch" "$url" "$dir"
   fi
@@ -41,10 +47,13 @@ clone_or_pull https://github.com/tsuji1/research-routing-table-cache.git "$WS/re
 clone_or_pull https://github.com/tsuji1/research-routing-table-cache.wiki.git "$WS/research-routing-table-cache.wiki" master
 
 echo "== tool shims (scripts が /home/yuzugon/go/bin/go と /home/yuzugon/.local/bin/uv を直書きしている)"
+# banana の ~/.cargo/bin/uv は 0.4 系で self update できないので、公式 installer で ~/.local/bin に入れる
+if [[ ! -x $HOME/.local/bin/uv ]]; then
+  curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh
+fi
 mkdir -p "$WS/go/bin" "$WS/.local/bin"
 ln -sfn /usr/local/go/bin/go "$WS/go/bin/go"
-ln -sfn "$(command -v uv)" "$WS/.local/bin/uv"
-uv self update || echo "uv self update に失敗（続行）"
+ln -sfn "$HOME/.local/bin/uv" "$WS/.local/bin/uv"
 
 echo "== traces"
 mkdir -p "$WS/pcap/non-anon"

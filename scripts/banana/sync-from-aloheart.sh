@@ -7,7 +7,8 @@
 #
 # 送るもの:
 # - research/（入口の AGENTS.md など）、research.md、tasks/、ppc-research/（git 管理外）
-# - osada-ppc-simulator の gitignore された設定: exec.sh、.env、scripts/env/*.env
+# - osada-ppc-simulator の gitignore されたもの: exec.sh、.env、scripts/env/*.env、
+#   c/liblctrie.{a,so}（作るには設定済みの Linux kernel source が要るので、ビルド済みを送る）
 # - rules のうち banana で作り直せないもの（WIDE 2025-26 は setup-user.sh が RIB から作る）
 set -euo pipefail
 
@@ -20,7 +21,7 @@ RSYNC=(rsync -a --checksum --info=stats1,name1 "$@")
 "${RSYNC[@]}" "$SRC/research" "$SRC/tasks" "$SRC/ppc-research" "$HOST:$DST/"
 
 cd "$SRC/osada-ppc-simulator"
-"${RSYNC[@]}" --relative exec.sh .env scripts/env/ "$HOST:$DST/osada-ppc-simulator/"
+"${RSYNC[@]}" --relative exec.sh .env scripts/env/ c/liblctrie.a c/liblctrie.so "$HOST:$DST/osada-ppc-simulator/"
 "${RSYNC[@]}" rules/ "$HOST:$DST/osada-ppc-simulator/rules/"
 
 "${RSYNC[@]}" \
