@@ -56,7 +56,7 @@ var cachenum = flag.Int("cachenum", 2, "cache number")
 var trace = flag.String("trace", "", "network trace file")
 var bench = flag.Bool("bench", false, "to benchmark")
 var maxProccess = flag.Uint64("max", 0, "max process")
-var skip = flag.Int("skip", 0, "skip")
+var skip = flag.Int("skip", 0, "number of leading tasks to skip")
 var rulefile = flag.String("rulefile", "", "rule file")
 var recordCacheHit = flag.Bool("recordCachehit", false, " record cache hit")
 var cacheTypeFlag = flag.String("cachetype", "UnifiedCache", "cache type (LRU, FullLRU, FullAssociativeLRUCache, MultiLayerCacheExclusive, MultiLayerCacheInclusive, UnifiedCache)")
@@ -1855,7 +1855,7 @@ func main() {
 			totalTask = len(capacity)
 
 			for i, c := range capacity {
-				if i > *skip {
+				if i >= *skip {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
 					fmt.Print("newSim: ")
 					newSim.Interval = 100000000000
@@ -1877,7 +1877,7 @@ func main() {
 			totalTask = len(capacity)
 
 			for i, c := range capacity {
-				if i > *skip {
+				if i >= *skip {
 					newSim := simulator.CreateSimulatorWithCapacity(baseSimulatorDefinition, c)
 					fmt.Print("newSim: ")
 					newSim.Interval = 100000000000
@@ -1945,7 +1945,7 @@ func main() {
 			fmt.Printf("traceFileName: %v, ruleFileName: %v\n", traceFileName, ruleFileName)
 
 			for i, setting := range settngs {
-				if i > *skip {
+				if i >= *skip {
 					newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
 					newSim.DebugMode = debugmode
 
@@ -2008,7 +2008,7 @@ func main() {
 			for i, setting := range settngs {
 
 				for _, onceCacheLimit := range onceCacheLimits {
-					if i > *skip {
+					if i >= *skip {
 						newSim := simulator.CreateSimulatorWithCapacityAndRefbits(baseSimulatorDefinition, setting)
 						newSim.DebugMode = debugmode
 						newSim.Cache.OnceCacheLimit = onceCacheLimit
@@ -2079,7 +2079,7 @@ func main() {
 			totalTask = len(settings)
 
 			for i, setting := range settings {
-				if i > *skip {
+				if i >= *skip {
 					way, err := resolveUnifiedCacheWaySpec(*wayFlag, setting)
 					if err != nil {
 						panic(err)
@@ -2108,6 +2108,9 @@ func main() {
 		// 全タスクの終了を待つ
 		close(queue)
 		wg.Wait()
+		if completedTasks == 0 {
+			log.Fatalf("no simulation tasks completed (total tasks: %d, skip: %d)", totalTask, *skip)
+		}
 		if !*mongoEnabledFlag {
 			summaryPath, prefixPath, err := writeLocalCSVResults(*csvOutputDirFlag, executionID, traceFileName, ruleFileName, localCSVResults)
 			if err != nil {
