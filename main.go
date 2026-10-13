@@ -155,6 +155,9 @@ func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, re
 	prefixPath := ""
 	var prefixFile *os.File
 	var prefixWriter *csv.Writer
+	setPath := ""
+	var setFile *os.File
+	var setWriter *csv.Writer
 	if hasUnifiedStats {
 		prefixPath = filepath.Join(outputDir, executionID+"_unified_prefix_stats.csv")
 		prefixFile, err = os.Create(prefixPath)
@@ -175,11 +178,39 @@ func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, re
 			_ = prefixFile.Close()
 			return "", "", fmt.Errorf("write UnifiedCache prefix CSV header: %w", err)
 		}
+		setPath = filepath.Join(outputDir, executionID+"_unified_set_prefix_stats.csv")
+		setFile, err = os.Create(setPath)
+		if err != nil {
+			_ = summaryFile.Close()
+			_ = prefixFile.Close()
+			return "", "", fmt.Errorf("create UnifiedCache set-prefix CSV: %w", err)
+		}
+		setWriter = csv.NewWriter(setFile)
+		setHeader := []string{
+			"execution_id", "run_id", "capacity", "way", "cache_index_type", "set_index", "cache_prefix_len",
+			"cacheline_hits", "cacheline_first_misses", "cacheline_second_misses",
+		}
+		if err := setWriter.Write(setHeader); err != nil {
+			_ = summaryFile.Close()
+			_ = prefixFile.Close()
+			_ = setFile.Close()
+			return "", "", fmt.Errorf("write UnifiedCache set-prefix CSV header: %w", err)
+		}
 	}
 	closeOutputFiles := func() {
+		summaryWriter.Flush()
+		if prefixWriter != nil {
+			prefixWriter.Flush()
+		}
+		if setWriter != nil {
+			setWriter.Flush()
+		}
 		_ = summaryFile.Close()
 		if prefixFile != nil {
 			_ = prefixFile.Close()
+		}
+		if setFile != nil {
+			_ = setFile.Close()
 		}
 	}
 
@@ -223,6 +254,10 @@ func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, re
 		if !ok {
 			continue
 		}
+		if len(unifiedStat.CachelineFirstMissCount) != len(unifiedStat.CachelineHitCount) || len(unifiedStat.CachelineSecondMissCount) != len(unifiedStat.CachelineHitCount) {
+			closeOutputFiles()
+			return "", "", fmt.Errorf("run %s has inconsistent UnifiedCache set-stat row counts", runID)
+		}
 		for prefixLen := 0; prefixLen < 32; prefixLen++ {
 			var lineHits, lineFirstMisses, lineSecondMisses uint64
 			for _, perSet := range unifiedStat.CachelineHitCount {
@@ -258,21 +293,52 @@ func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, re
 				return "", "", fmt.Errorf("write run %s prefix %d: %w", runID, prefixLen, err)
 			}
 		}
+		for setIdx := range unifiedStat.CachelineHitCount {
+			for prefixLen := 0; prefixLen < 32; prefixLen++ {
+				setRow := []string{
+					executionID,
+					runID,
+					strconv.Itoa(cacheConfig.Size),
+					strconv.Itoa(cacheConfig.Way),
+					strconv.Itoa(cacheConfig.CacheIndexType),
+					strconv.Itoa(setIdx),
+					strconv.Itoa(prefixLen),
+					strconv.FormatUint(uint64(unifiedStat.CachelineHitCount[setIdx][prefixLen]), 10),
+					strconv.FormatUint(uint64(unifiedStat.CachelineFirstMissCount[setIdx][prefixLen]), 10),
+					strconv.FormatUint(uint64(unifiedStat.CachelineSecondMissCount[setIdx][prefixLen]), 10),
+				}
+				if err := setWriter.Write(setRow); err != nil {
+					closeOutputFiles()
+					return "", "", fmt.Errorf("write run %s set %d prefix %d: %w", runID, setIdx, prefixLen, err)
+				}
+			}
+		}
 	}
 
 	summaryWriter.Flush()
 	if prefixWriter != nil {
 		prefixWriter.Flush()
 	}
+	if setWriter != nil {
+		setWriter.Flush()
+	}
 	writeErr := summaryWriter.Error()
 	if writeErr == nil && prefixWriter != nil {
 		writeErr = prefixWriter.Error()
+	}
+	if writeErr == nil && setWriter != nil {
+		writeErr = setWriter.Error()
 	}
 	if err := summaryFile.Close(); writeErr == nil {
 		writeErr = err
 	}
 	if prefixFile != nil {
 		if err := prefixFile.Close(); writeErr == nil {
+			writeErr = err
+		}
+	}
+	if setFile != nil {
+		if err := setFile.Close(); writeErr == nil {
 			writeErr = err
 		}
 	}
