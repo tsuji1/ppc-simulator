@@ -96,6 +96,7 @@ var logLengthFlag = flag.Bool("loglength", false, "write UnifiedCache resident e
 var logLengthOutputDirFlag = flag.String("loglength-output-dir", "scripts/reports/unified_cache_length", "output directory for -loglength CSV files")
 var dramRequestTraceOutputDirFlag = flag.String("dram-request-trace-dir", "", "write request-level DRAM trace CSV files into this directory")
 var csvOutputDirFlag = flag.String("csv-output-dir", "output/csv", "directory for local result CSV files when MongoDB is disabled")
+var streamFlag = flag.Bool("stream", false, "stream packets from an .mpk file (converted once from the pcap) instead of loading the whole trace into memory")
 var routingTable *routingtable.RoutingTablePatriciaTrie
 
 const gobProgressInterval = 10_000_000
@@ -372,7 +373,9 @@ func init() {
 	fpRule.Close()
 	// gobPathファイルが存在するか確認
 
-	if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
+	if *streamFlag {
+		prepareStreamTrace(*trace, gobPath)
+	} else if _, err := os.Stat(gobPath); err == nil && !gobdebugmode {
 		// gobファイルが存在する場合、デコードする
 		fmt.Println("gobファイルが見つかりました。デコード中...")
 		packets = decodeGobFile(gobPath)
@@ -1148,10 +1151,10 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 		defer file.Close()
 	}
 
-	for _, p := range *packetList {
+	step := func(p *MinPacket) bool {
 
 		start := time.Now()
-		hit := sim.Process(&p, recordCacheHit)
+		hit := sim.Process(p, recordCacheHit)
 		elapsed := time.Since(start)
 
 		if recordCacheHit {
@@ -1178,10 +1181,21 @@ func runSimpleCacheSimulatorWithPackets(packetList *[]MinPacket, sim *simulator.
 			fmt.Printf("%v\n", sim.GetStatString())
 		}
 		if sim.GetStat().Processed == 10000 && bench {
-			break
+			return false
 		}
 		if maxProccess != 0 && uint64(sim.GetStat().Processed) == maxProccess {
-			break
+			return false
+		}
+		return true
+	}
+	if streamTracePath != "" {
+		forEachStreamPacket(streamTracePath, step)
+	} else {
+		for i := range *packetList {
+			p := (*packetList)[i]
+			if !step(&p) {
+				break
+			}
 		}
 	}
 	stat := sim.GetSimulatorResult()
@@ -1787,6 +1801,9 @@ func main() {
 		var baseSimulatorDefinition simulator.SimulatorDefinition
 
 		packetlen := uint64(len(packets))
+		if streamTracePath != "" {
+			packetlen = streamPacketCount
+		}
 		if *maxProccess != 0 {
 			packetlen = *maxProccess
 		}
