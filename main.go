@@ -585,8 +585,11 @@ func decodeGobFile(filepath string) []MinPacket {
 }
 
 // パケットデータをgobファイルに保存する関数
-func savePacketsToGob(filepath string, packets []MinPacket) error {
-	file, err := os.Create(filepath)
+func savePacketsToGob(path string, packets []MinPacket) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
