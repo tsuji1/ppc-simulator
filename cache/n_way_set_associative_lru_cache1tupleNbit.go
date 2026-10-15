@@ -19,6 +19,26 @@ type NWaySetAssociativeDstipNbitLRUCache struct {
 	ParentCache        Cache
 	IndexInParentCache int
 	IsFull             bool
+	// Index は set index の作り方。空なら CRC32、MPIndexDirect なら key（上位 Refbits bit）の下位 bit。
+	// direct では index に使った bit が set の位置で決まるので、tag は Refbits - log2(sets) bit で足りる。
+	Index string
+}
+
+const (
+	MPIndexCRC    = "crc"
+	MPIndexDirect = "direct"
+)
+
+// NormalizeMPIndex は MP の index 指定を内部表現にする。CRC は従来の結果と一致させるため空文字にする。
+func NormalizeMPIndex(index string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(index)) {
+	case "", MPIndexCRC:
+		return "", nil
+	case MPIndexDirect:
+		return MPIndexDirect, nil
+	default:
+		return "", fmt.Errorf("invalid MP index %q (want crc or direct)", index)
+	}
 }
 
 func returnMaskedIP(IP uint32, refbits uint) uint32 {
@@ -57,6 +77,13 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) IsCached(p *Packet, update boo
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) setIdxFromMaskedDstIp(f *FiveTuple) uint {
 	maxSetIdx := cache.Size / cache.Way
+	if cache.Index == MPIndexDirect {
+		key := uint(0)
+		if cache.Refbits > 0 {
+			key = uint(f.DstIP >> (32 - cache.Refbits))
+		}
+		return key % maxSetIdx
+	}
 	dstIP := returnMaskedIP(f.DstIP, cache.Refbits)
 
 	crc := crc32.ChecksumIEEE(uint32ToBytes(dstIP))
@@ -99,6 +126,9 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) Description() string {
 }
 
 func (cache *NWaySetAssociativeDstipNbitLRUCache) ParameterString() string {
+	if cache.Index != "" {
+		return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d , \"Ref\": %d, \"Index\": \"%s\"}", cache.Description(), cache.Way, cache.Size, cache.Refbits, cache.Index)
+	}
 	return fmt.Sprintf("{\"Type\": \"%s\", \"Way\": %d, \"Size\": %d , \"Ref\": %d}", cache.Description(), cache.Way, cache.Size, cache.Refbits)
 }
 
@@ -108,6 +138,7 @@ func (cache *NWaySetAssociativeDstipNbitLRUCache) Parameter() Parameter {
 		Way:     int(cache.Way),
 		Size:    int(cache.Size),
 		Refbits: int(cache.Refbits),
+		Index:   cache.Index,
 	}
 }
 func NewNWaySetAssociativeDstipNbitLRUCache(refbits, size, way uint, routingTable *routingtable.RoutingTablePatriciaTrie, debugMode bool, parentCache Cache, indexInParentCache int) *NWaySetAssociativeDstipNbitLRUCache {

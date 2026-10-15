@@ -266,7 +266,13 @@ func buildCache(definitionCache Cache, additionalInfo CacheInitInfo) (cache.Cach
 		parentCache := additionalInfo.ParentCache
 		indexInParentCache := additionalInfo.CacheIndex
 
-		c = cache.NewNWaySetAssociativeDstipNbitLRUCache(uint(refbits), uint(size), uint(way), routingTable, debugMode, parentCache, indexInParentCache)
+		index, err := cache.NormalizeMPIndex(definitionCache.Index)
+		if err != nil {
+			return c, err
+		}
+		layer := cache.NewNWaySetAssociativeDstipNbitLRUCache(uint(refbits), uint(size), uint(way), routingTable, debugMode, parentCache, indexInParentCache)
+		layer.Index = index
+		c = layer
 	case "UnifiedCache":
 		size := definitionCache.Size
 		way := definitionCache.Way

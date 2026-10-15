@@ -71,6 +71,7 @@ var refbitsEndFlag = flag.Int("refbits-end", 32, "end of refbits range (inclusiv
 var refbitsStepFlag = flag.Int("refbits-step", 1, "step of refbits range")
 var mpRefbitsFlag = flag.String("mp-refbits", "", "comma-separated fixed refbits for MultiLayerCacheExclusive, for example 24,20,16")
 var mpCapacitiesFlag = flag.String("mp-capacities", "", "comma-separated fixed capacities for MultiLayerCacheExclusive, for example 2048,2048,2048")
+var mpIndexFlag = flag.String("mp-index", "crc", "set index of each MP layer: crc (CRC32 of the masked key) or direct (low bits of the key; tag needs Refbits - log2(sets) bits)")
 var wayFlag = flag.String("way", "4", "cache way for associative caches; UnifiedCache also accepts full")
 var cacheIndexTypeFlag = flag.Int("cache-index-type", 5, "cache index type for UnifiedCache")
 var cacheTagLengthFlag = flag.String("cache-tag-length", "9-24", "cache tag length ranges for UnifiedCache (min-max, /N, or comma separated one per way)")
@@ -2003,8 +2004,13 @@ func main() {
 			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
+			mpIndex, err := cache.NormalizeMPIndex(*mpIndexFlag)
+			if err != nil {
+				panic(err)
+			}
 			for i := range baseSimulatorDefinition.Cache.CacheLayers {
 				baseSimulatorDefinition.Cache.CacheLayers[i].Way = way
+				baseSimulatorDefinition.Cache.CacheLayers[i].Index = mpIndex
 			}
 
 			fmt.Printf("refbitsRange: %v\n", refbitsRange)
@@ -2062,8 +2068,13 @@ func main() {
 			for i := 1; i < *cachenum; i++ {
 				baseSimulatorDefinition.AddCacheLayer(nil)
 			}
+			mpIndex, err := cache.NormalizeMPIndex(*mpIndexFlag)
+			if err != nil {
+				panic(err)
+			}
 			for i := range baseSimulatorDefinition.Cache.CacheLayers {
 				baseSimulatorDefinition.Cache.CacheLayers[i].Way = way
+				baseSimulatorDefinition.Cache.CacheLayers[i].Index = mpIndex
 			}
 
 			onceCacheLimits := make([]int, 0, 128)

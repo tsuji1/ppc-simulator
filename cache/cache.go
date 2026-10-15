@@ -78,6 +78,8 @@ type NbitSetAssociativeParameter struct {
 	Size    int
 	Way     int
 	Refbits int
+	// Index は set index の作り方。空なら CRC32（従来どおり）、"direct" なら key の下位 bit。
+	Index string `json:",omitempty" bson:"index,omitempty"`
 }
 
 type MultiCacheParameter struct {
@@ -190,12 +192,16 @@ func (p SetAssociativeParameter) GetParameterString() map[string]interface{} {
 
 // NbitSetAssociativeParameter の GetParameterString 実装
 func (p NbitSetAssociativeParameter) GetParameterString() map[string]interface{} {
-	return map[string]interface{}{
+	m := map[string]interface{}{
 		"Type":    p.Type,
 		"Size":    p.Size,
 		"Way":     p.Way,
 		"Refbits": p.Refbits,
 	}
+	if p.Index != "" {
+		m["Index"] = p.Index
+	}
+	return m
 }
 
 // MultiCacheParameter の GetParameterString 実装
@@ -254,12 +260,16 @@ func (p SetAssociativeParameter) GetBson() bson.M {
 
 // NbitSetAssociativeParameter の GetBson 実装
 func (p NbitSetAssociativeParameter) GetBson() bson.M {
-	return bson.M{
+	m := bson.M{
 		"type":    p.Type,
 		"size":    p.Size,
 		"way":     p.Way,
 		"refbits": p.Refbits,
 	}
+	if p.Index != "" {
+		m["index"] = p.Index
+	}
+	return m
 }
 func (p UnifiedCacheLineParameter) GetBson() bson.M {
 	return bson.M{

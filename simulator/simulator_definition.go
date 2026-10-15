@@ -39,6 +39,8 @@ type Cache struct {
 	SetExtensionPressureThreshold uint64   `json:"SetExtensionPressureThreshold,omitempty"`
 	SetExtensionMaxPerSet         int      `json:"SetExtensionMaxPerSet,omitempty"`
 	Refbits                       int      `json:"Refbits"`
+	// Index は MP の層（NbitNWaySetAssociativeDstipLRUCache）の set index。空か "crc" で CRC32、"direct" で key の下位 bit。
+	Index string `json:"Index,omitempty"`
 }
 
 type SimulatorDefinition struct {

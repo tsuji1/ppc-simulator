@@ -36,6 +36,14 @@ Options:
   --dbupdate            Force DB insertion/rerun for existing configs.
   --no-sudo             Pass --no-sudo to exec.sh.
   --no-build            Skip the one-time go build.
+  --mp-index <crc|direct>
+                        MP set index (default: crc). direct uses the low bits of
+                        each layer's key, so the tag needs Refbits - log2(sets) bits.
+
+Environment:
+  PCAP_ROOT             Trace directory (default: /home/yuzugon/pcap)
+  RULE_ROOT             Rule directory (default: /research/rules)
+  RULE_ROOT_NYC         Rule directory for New York (default: /home/yuzugon/rules)
   -h, --help            Show this help.
 
 After this finishes, regenerate the report with:
@@ -59,6 +67,10 @@ MAX_PROCESS=10000000
 DBUPDATE=false
 NO_SUDO=false
 NO_BUILD=false
+MP_INDEX="crc"
+PCAP_ROOT="${PCAP_ROOT:-/home/yuzugon/pcap}"
+RULE_ROOT="${RULE_ROOT:-/research/rules}"
+NYC_RULE_ROOT="${RULE_ROOT_NYC:-/home/yuzugon/rules}"
 UNIFIED_INDEX_TYPES="${UNIFIED_INDEX_TYPES:-2,16,17,18,19,20,21,22,23,24}"
 
 while (( $# > 0 )); do
@@ -98,6 +110,11 @@ while (( $# > 0 )); do
       NO_BUILD=true
       shift
       ;;
+    --mp-index)
+      [[ -n "${2:-}" ]] || die "--mp-index requires a value"
+      MP_INDEX="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -131,57 +148,57 @@ add_trace() {
 
 if [[ "$TRACE_SET" == "all" ]]; then
   add_trace "WIDE non 2025-09" \
-    "/home/yuzugon/pcap/non-anon/2025-09-27.pcap" \
-    "/research/rules/rib.20250927.0600.unique.rule"
+    "$PCAP_ROOT/non-anon/2025-09-27.pcap" \
+    "$RULE_ROOT/rib.20250927.0600.unique.rule"
 
   add_trace "WIDE non 2025-12" \
-    "/home/yuzugon/pcap/non-anon/2025-12-27.pcap" \
-    "/research/rules/rib.20251227.0600.unique.rule"
+    "$PCAP_ROOT/non-anon/2025-12-27.pcap" \
+    "$RULE_ROOT/rib.20251227.0600.unique.rule"
 
   if [[ "$INCLUDE_20260327" == "true" ]]; then
     add_trace "WIDE non 2026-03" \
-      "/home/yuzugon/pcap/non-anon/2026-03-27.pcap" \
-      "/research/rules/rib.20260327.0600.unique.rule"
+      "$PCAP_ROOT/non-anon/2026-03-27.pcap" \
+      "$RULE_ROOT/rib.20260327.0600.unique.rule"
   fi
 
   add_trace "WIDE anon 2025-09" \
-    "/home/yuzugon/pcap/202509271400.pcap" \
-    "/research/rules/rib.20250927.0600.unique.rule"
+    "$PCAP_ROOT/202509271400.pcap" \
+    "$RULE_ROOT/rib.20250927.0600.unique.rule"
 
   add_trace "WIDE anon 2025-12" \
-    "/home/yuzugon/pcap/202512271400.pcap" \
-    "/research/rules/rib.20251227.0600.unique.rule"
+    "$PCAP_ROOT/202512271400.pcap" \
+    "$RULE_ROOT/rib.20251227.0600.unique.rule"
 
   add_trace "WIDE anon 2026-03" \
-    "/home/yuzugon/pcap/202603271400.pcap" \
-    "/research/rules/rib.20260327.0600.unique.rule"
+    "$PCAP_ROOT/202603271400.pcap" \
+    "$RULE_ROOT/rib.20260327.0600.unique.rule"
 
   add_trace "San Jose anon 2014-03" \
-    "/home/yuzugon/pcap/equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap" \
-    "/research/rules/route-views.isc.rib.20140320.1400.unique.rule"
+    "$PCAP_ROOT/equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap" \
+    "$RULE_ROOT/route-views.isc.rib.20140320.1400.unique.rule"
 
 fi
 
 if [[ "$TRACE_SET" == "all" || "$TRACE_SET" == "chicago" || "$TRACE_SET" == "nyc-chicago" ]]; then
   add_trace "Chicago anon 2014-03" \
-    "/home/yuzugon/pcap/equinix-chicago.dirB.20140320-140100.UTC.anon.pcap" \
-    "/research/rules/route-views.chicago.rib.20160628.1400.unique.rule"
+    "$PCAP_ROOT/equinix-chicago.dirB.20140320-140100.UTC.anon.pcap" \
+    "$RULE_ROOT/route-views.chicago.rib.20160628.1400.unique.rule"
 fi
 
 if [[ "$TRACE_SET" == "all" || "$TRACE_SET" == "nyc" || "$TRACE_SET" == "nyc-chicago" ]]; then
   add_trace "New York anon 2019-01" \
-    "/home/yuzugon/pcap/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap" \
-    "/home/yuzugon/rules/rrc11.bview.20190117.1600.unique.rule"
+    "$PCAP_ROOT/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap" \
+    "$NYC_RULE_ROOT/rrc11.bview.20190117.1600.unique.rule"
 fi
 
 if [[ "$TRACE_SET" == "all" || "$TRACE_SET" == "jpix-sinet" ]]; then
   add_trace "JPIX to SINET 2018-05" \
-    "/home/yuzugon/pcap/jpix2sinet90s_5tuple.txt" \
-    "/research/rules/rrc06.bview.20180502.0000.unique.rule"
+    "$PCAP_ROOT/jpix2sinet90s_5tuple.txt" \
+    "$RULE_ROOT/rrc06.bview.20180502.0000.unique.rule"
 
   add_trace "SINET to JPIX 2018-05" \
-    "/home/yuzugon/pcap/sinet2jpix90s_5tuple.txt" \
-    "/research/rules/rrc06.bview.20180502.0000.unique.rule"
+    "$PCAP_ROOT/sinet2jpix90s_5tuple.txt" \
+    "$RULE_ROOT/rrc06.bview.20180502.0000.unique.rule"
 fi
 
 run() {
@@ -232,6 +249,7 @@ run_mp() {
     --refbits-start 16 \
     --refbits-end 24 \
     --refbits-step 1 \
+    --mp-index "$MP_INDEX" \
     "${exec_common_flags[@]}"
 
   echo "[INFO] finished MP sweep command for ${label}"
