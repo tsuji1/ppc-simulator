@@ -262,8 +262,10 @@ func parseOptions() (options, error) {
 		return opts, fmt.Errorf("invalid -ps-index-types: %w", err)
 	}
 	for _, indexType := range opts.psIndexTypes {
-		if indexType < 0 || indexType > 24 {
-			return opts, fmt.Errorf("PS cache index type must be 0..24: %d", indexType)
+		// 100+L (L=0..32) is the direct prefix index (cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE)
+		direct := indexType >= cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE && indexType <= cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE+32
+		if (indexType < 0 || indexType > 24) && !direct {
+			return opts, fmt.Errorf("PS cache index type must be 0..24 or 100..132: %d", indexType)
 		}
 	}
 	opts.cacheTagLength, err = parseCacheTagLength(rawCacheTagLength)
