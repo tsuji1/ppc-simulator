@@ -8,11 +8,13 @@ appear in the trace, and the cache sees fewer distinct entries (leaf blocks,
 /24 or /18 blocks) per prefix than it would with real traffic.
 
 This script rewrites a simulator trace made by ``flowbench_trace_to_sim.py``:
-a destination inside a truncated prefix's representative block is mapped to a
-position in the prefix's whole region (all aligned blocks, uniformly by
-address). The mapping is a deterministic function of (destination, seed), so
-repeated destinations (flows) stay repeated and the per-prefix packet counts
-do not change. Destinations of other prefixes are left as they are.
+a destination at offset o of a truncated prefix's representative block (size
+B) is mapped to a random position in [o*R/B, (o+1)*R/B) of the prefix's whole
+region (all aligned blocks, size R, in address order). The mapping is a
+deterministic, one-to-one function of (destination, seed), so repeated
+destinations (flows) stay repeated, distinct ones stay distinct, and the
+per-prefix packet counts do not change. Destinations of other prefixes are
+left as they are.
 """
 
 from __future__ import annotations
@@ -136,8 +138,10 @@ def main() -> None:
             if k >= 0 and ip < regions[k][0] + regions[k][1]:
                 new = cache.get(ip)
                 if new is None:
-                    _, _, blocks, cumulative = regions[k]
-                    offset = mix(ip ^ salt) % cumulative[-1]
+                    start, size, blocks, cumulative = regions[k]
+                    lo = (ip - start) * cumulative[-1] // size
+                    hi = (ip - start + 1) * cumulative[-1] // size
+                    offset = lo + mix(ip ^ salt) % (hi - lo)
                     j = bisect.bisect_right(cumulative, offset)
                     new = blocks[j][0] + offset - (cumulative[j - 1] if j else 0)
                     cache[ip] = new
