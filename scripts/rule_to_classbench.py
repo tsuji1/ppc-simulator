@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Convert a routing rule file into a ClassBench filter set.
+"""routing の rule file を ClassBench の filter set に変換する。
 
-Input rule format: ``<ip> <prefix_len> <nexthop>`` (one prefix per line).
-Each prefix becomes a 5-tuple filter whose destination field is the prefix
-and every other field is a wildcard:
+入力 rule の形式: 1 行 1 prefix で ``<ip> <prefix長> <nexthop>``。
+各 prefix を、宛先 field にその prefix を入れ、他の field をすべて wildcard にした
+5-tuple filter にする:
 
     @0.0.0.0/0<TAB>1.0.0.0/24<TAB>0 : 65535<TAB>0 : 65535<TAB>0x00/0x00
 
-The default route (/0) is skipped by default because ClassBench would emit
-0.0.0.0 / 255.255.255.255 corner headers for it.
+default route（/0）は既定で除く。残すと ClassBench が 0.0.0.0 / 255.255.255.255 の
+corner header を出すため。重なりのある prefix はそのまま残す（1 行を 1 行に変換するだけ）。
 
-ClassBench's trace_generator numbers filters from 0 in input order, so a
-side-car ``.map`` file can be written that lists ``filter_no prefix nexthop``
-for later post-processing (see classbench_trace_to_sim.py).
+ClassBench の trace_generator は filter を入力順に 0 から番号付けするので、
+trace の filter 番号はこの出力の行番号（0 始まり）に対応する（classbench_trace_to_sim.py で使う）。
+出力と同じ場所に ``<output>.meta.json``（件数と prefix 長の分布）も書く。
 """
 
 from __future__ import annotations
@@ -27,10 +27,10 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--rule-file", required=True)
-    parser.add_argument("--output", required=True, help="ClassBench filter file to write")
-    parser.add_argument("--keep-default", action="store_true", help="Keep the /0 default route")
-    parser.add_argument("--max", type=int, default=0, help="Maximum filters to write; 0 writes all")
+    parser.add_argument("--rule-file", required=True, help="入力の rule file（<ip> <prefix長> <nexthop>）")
+    parser.add_argument("--output", required=True, help="書き出す ClassBench の filter file")
+    parser.add_argument("--keep-default", action="store_true", help="/0 の default route を残す")
+    parser.add_argument("--max", type=int, default=0, help="書き出す filter 数の上限。0 なら全部")
     return parser.parse_args()
 
 

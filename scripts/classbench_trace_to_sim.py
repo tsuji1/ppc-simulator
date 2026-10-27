@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""Convert a ClassBench trace_generator output into the simulator trace format.
+"""ClassBench の trace_generator の出力を simulator の trace 形式に変換する。
 
-ClassBench trace rows (tab separated, decimal):
-    src_ip dst_ip src_port dst_port proto filter_no
+ClassBench の trace の行（tab 区切り、10 進）:
+    src_ip dst_ip src_port dst_port proto filter番号
 
-Simulator rows (7 columns):
+simulator の trace の行（7 列）:
     time,len,srcIP,dstIP,proto,srcPort,dstPort
 
-trace_generator picks either the low or the high corner of each field, so a
-dst-prefix-only filter set yields only network or broadcast addresses.
-``--fill-host random`` replaces the destination with a random address inside
-the prefix of ``filter_no`` (the filter used for generation, not the LPM
-result). One random address is drawn per burst: consecutive identical
-ClassBench rows keep the same destination, so Pareto locality is preserved.
-``--fill-host corner`` keeps the ClassBench destination unchanged.
+trace_generator は各 field の下端か上端（corner）しか出さないので、宛先 prefix だけの
+filter set からは network address か broadcast address しか出ない。
+``--fill-host random`` は宛先を、filter番号の prefix（生成に使った filter。LPM の結果ではない）
+の中の random なアドレスに置き換える。random なアドレスは burst ごとに 1 つ選ぶ:
+ClassBench の同じ行が続く間は同じ宛先にするので、Pareto の局所性は保たれる。
+``--fill-host corner`` は ClassBench の宛先をそのまま使う。
 
-src / ports / proto are fixed because they are wildcards in the filter set.
+src・port・proto は filter set で wildcard なので固定値にする。
+出力と同じ場所に ``<output>.meta.json`` も書く。
 """
 
 from __future__ import annotations
@@ -30,23 +30,23 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--trace", required=True, help="ClassBench *_trace file")
-    parser.add_argument("--filters", required=True, help="ClassBench filter file used to generate the trace")
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--fill-host", choices=("random", "corner"), default="random")
-    parser.add_argument("--seed", type=int, default=1, help="Seed for --fill-host random")
-    parser.add_argument("--src-ip", default="192.0.2.1")
-    parser.add_argument("--proto", choices=("tcp", "udp"), default="tcp")
-    parser.add_argument("--packet-len", type=int, default=64)
-    parser.add_argument("--src-port", type=int, default=12345)
-    parser.add_argument("--dst-port", type=int, default=80)
-    parser.add_argument("--time-step", type=float, default=0.000001)
-    parser.add_argument("--meta", default="", help="Extra JSON object merged into the metadata file")
+    parser.add_argument("--trace", required=True, help="ClassBench の trace（trace_generator の *_trace）")
+    parser.add_argument("--filters", required=True, help="trace の生成に使った ClassBench の filter file")
+    parser.add_argument("--output", required=True, help="書き出す simulator の trace")
+    parser.add_argument("--fill-host", choices=("random", "corner"), default="random", help="宛先の host 部の埋め方")
+    parser.add_argument("--seed", type=int, default=1, help="--fill-host random の seed")
+    parser.add_argument("--src-ip", default="192.0.2.1", help="固定の送信元アドレス")
+    parser.add_argument("--proto", choices=("tcp", "udp"), default="tcp", help="固定の protocol")
+    parser.add_argument("--packet-len", type=int, default=64, help="固定の packet 長")
+    parser.add_argument("--src-port", type=int, default=12345, help="固定の送信元 port")
+    parser.add_argument("--dst-port", type=int, default=80, help="固定の宛先 port")
+    parser.add_argument("--time-step", type=float, default=0.000001, help="1 パケットごとに進める時刻（秒）")
+    parser.add_argument("--meta", default="", help="meta.json に追加する JSON object（生成条件の記録用）")
     return parser.parse_args()
 
 
 def load_dst_prefixes(path: str) -> tuple[list[int], list[int]]:
-    """Return (network, host_mask) per filter, indexed by ClassBench filter_no."""
+    """filter ごとの (network, host_mask) を ClassBench の filter番号順に返す。"""
     networks: list[int] = []
     host_masks: list[int] = []
     with open(path) as handle:

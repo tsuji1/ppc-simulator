@@ -1,20 +1,18 @@
 #!/usr/bin/env python3
-"""Spread FlowBench destinations over the whole hittable region of each prefix.
+"""FlowBench の宛先を、各 prefix の到達領域全体に広げ直す。
 
-``fib_to_flowbench.py`` writes only the largest aligned block of a prefix's
-hittable region (prefix minus its more-specific prefixes), so FlowBench puts
-every destination of that prefix into that one block. The other blocks never
-appear in the trace, and the cache sees fewer distinct entries (leaf blocks,
-/24 or /18 blocks) per prefix than it would with real traffic.
+``fib_to_flowbench.py`` は prefix の到達領域（prefix − 子の prefix）のうち最大の
+aligned block しか書かないので、FlowBench はその prefix の宛先をすべてその 1 block に置く。
+ほかの block は trace に現れず、cache から見た prefix あたりの entry 数（leaf block、
+/24 や /18 の block）が実際の通信より少なくなる。
 
-This script rewrites a simulator trace made by ``flowbench_trace_to_sim.py``:
-a destination at offset o of a truncated prefix's representative block (size
-B) is mapped to a random position in [o*R/B, (o+1)*R/B) of the prefix's whole
-region (all aligned blocks, size R, in address order). The mapping is a
-deterministic, one-to-one function of (destination, seed), so repeated
-destinations (flows) stay repeated, distinct ones stay distinct, and the
-per-prefix packet counts do not change. Destinations of other prefixes are
-left as they are.
+この script は ``flowbench_trace_to_sim.py`` が作った simulator の trace を書き換える:
+到達領域の一部しか代表していない prefix について、代表 block（大きさ B）の
+offset o にある宛先を、到達領域全体（全 aligned block をアドレス順につないだもの、
+大きさ R）の [o*R/B, (o+1)*R/B) の中の random な位置に移す。移し先は (宛先, seed) で
+決まる 1 対 1 の関数なので、同じ宛先（flow）は同じ宛先のまま、異なる宛先は異なるままで、
+prefix ごとのパケット数も変わらない。それ以外の prefix の宛先はそのまま残す。
+出力と同じ場所に ``<output>.meta.json`` も書く。
 """
 
 from __future__ import annotations
@@ -32,15 +30,15 @@ MASK64 = (1 << 64) - 1
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--rule-file", required=True, help="rule file given to fib_to_flowbench.py")
-    parser.add_argument("--trace", required=True, help="simulator trace from flowbench_trace_to_sim.py")
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--seed", type=int, default=1)
+    parser.add_argument("--rule-file", required=True, help="fib_to_flowbench.py に渡した rule file")
+    parser.add_argument("--trace", required=True, help="flowbench_trace_to_sim.py が作った simulator の trace")
+    parser.add_argument("--output", required=True, help="書き出す simulator の trace")
+    parser.add_argument("--seed", type=int, default=1, help="移し先を決める seed")
     return parser.parse_args()
 
 
 def aligned_blocks(lo: int, hi: int) -> list[tuple[int, int]]:
-    """Maximal aligned power-of-two blocks covering [lo, hi): [(start, size)]."""
+    """[lo, hi) を覆う、2 のべき乗で align された極大 block の列 [(start, size)] を返す。"""
     blocks = []
     while lo < hi:
         size = lo & -lo if lo else 1 << 32
@@ -52,7 +50,7 @@ def aligned_blocks(lo: int, hi: int) -> list[tuple[int, int]]:
 
 
 def truncated_regions(rule_file: str) -> list[tuple[int, int, list[tuple[int, int]], list[int]]]:
-    """(block start, block size, region blocks, cumulative sizes) for prefixes whose region is not one block."""
+    """到達領域が 1 block でない prefix について (代表block の始点, 大きさ, 領域の block 列, 累積の大きさ) を返す。"""
     prefixes = []
     with open(rule_file) as handle:
         for line in handle:
@@ -62,7 +60,7 @@ def truncated_regions(rule_file: str) -> list[tuple[int, int, list[tuple[int, in
             prefixes.append((ip_to_int(fields[0]), int(fields[1])))
     prefixes.sort()
 
-    # same containment stack as fib_to_flowbench.py
+    # fib_to_flowbench.py と同じ包含関係の stack
     children: list[list[int]] = [[] for _ in prefixes]
     stack: list[int] = []
     for i, (net, length) in enumerate(prefixes):
@@ -109,7 +107,7 @@ def truncated_regions(rule_file: str) -> list[tuple[int, int, list[tuple[int, in
 
 
 def mix(value: int) -> int:
-    """splitmix64 finalizer."""
+    """splitmix64 の finalizer（64bit の hash）。"""
     value = (value + 0x9E3779B97F4A7C15) & MASK64
     value = ((value ^ (value >> 30)) * 0xBF58476D1CE4E5B9) & MASK64
     value = ((value ^ (value >> 27)) * 0x94D049BB133111EB) & MASK64

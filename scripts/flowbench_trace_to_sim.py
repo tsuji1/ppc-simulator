@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Convert a FlowBench 1-field (dst LPM) trace into the simulator trace format.
+"""FlowBench の 1 field（宛先 LPM）の trace を simulator の trace 形式に変換する。
 
-FlowBench rows (default style): ``0x<dst hex> <rule index>``. The rule index
-refers to FlowBench's internal order (sorted by available width), not to the
-input file order, so it is ignored; LPM is recomputed by the analyzers.
+FlowBench の行（既定の書式）: ``0x<宛先の16進> <rule番号>``。rule番号は FlowBench 内部の
+順番（使える bit 数で並べ替えた後）で、入力 file の順番と対応しないので使わない。
+LPM は解析側で計算し直す。
 
-Simulator rows (7 columns): ``time,len,srcIP,dstIP,proto,srcPort,dstPort``.
+simulator の行（7 列）: ``time,len,srcIP,dstIP,proto,srcPort,dstPort``。
+出力と同じ場所に ``<output>.meta.json`` も書く。
 """
 
 from __future__ import annotations
@@ -18,15 +19,15 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--trace", required=True, help="FlowBench trace file")
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--src-ip", default="192.0.2.1")
-    parser.add_argument("--proto", choices=("tcp", "udp"), default="tcp")
-    parser.add_argument("--packet-len", type=int, default=64)
-    parser.add_argument("--src-port", type=int, default=12345)
-    parser.add_argument("--dst-port", type=int, default=80)
-    parser.add_argument("--time-step", type=float, default=0.000001)
-    parser.add_argument("--meta", default="", help="Extra JSON object merged into the metadata file")
+    parser.add_argument("--trace", required=True, help="FlowBench の trace（flowbench-trace の出力）")
+    parser.add_argument("--output", required=True, help="書き出す simulator の trace")
+    parser.add_argument("--src-ip", default="192.0.2.1", help="固定の送信元アドレス")
+    parser.add_argument("--proto", choices=("tcp", "udp"), default="tcp", help="固定の protocol")
+    parser.add_argument("--packet-len", type=int, default=64, help="固定の packet 長")
+    parser.add_argument("--src-port", type=int, default=12345, help="固定の送信元 port")
+    parser.add_argument("--dst-port", type=int, default=80, help="固定の宛先 port")
+    parser.add_argument("--time-step", type=float, default=0.000001, help="1 パケットごとに進める時刻（秒）")
+    parser.add_argument("--meta", default="", help="meta.json に追加する JSON object（生成条件の記録用）")
     return parser.parse_args()
 
 

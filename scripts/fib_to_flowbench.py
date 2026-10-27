@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
-"""Convert a routing rule file into a disjoint FlowBench rule set (1-field LPM).
+"""routing の rule file を、互いに重ならない FlowBench の rule set（1 field の LPM）に変換する。
 
-FlowBench's trace generator first "isolates" every rule into the region that
-only that rule can hit. Its generic algorithm is O(n^2) and does not finish
-for a full FIB (~1M prefixes), so this script does the LPM isolation in
-O(n log n) instead:
+FlowBench の trace 生成は、まず各 rule を「その rule にしか当たらない領域」に切り出す
+（isolation）。元の実装は O(n^2) で、FIB 全体（約 100 万 prefix）では実用的な時間で終わらず、
+完全に覆われた rule があると isolation 自体を中止してしまう。そこで LPM 専用に
+O(n log n) で切り出してから渡す:
 
-  * the hittable region of a prefix = prefix minus its more-specific prefixes
-  * prefixes whose region is empty (fully covered) are dropped; they can never
-    be an LPM result
-  * the region is decomposed into aligned blocks and the largest block is
-    written as that prefix's representative rule (FlowBench also keeps only
-    one isolated piece per rule)
+  * prefix の到達領域 = prefix − より長い（子の）prefix の領域
+  * 到達領域が空（完全に覆われている）prefix は捨てる。LPM の結果に絶対にならないため
+  * 到達領域を aligned block に分け、最大の block をその prefix の代表 rule として書く
+    （FlowBench も 1 rule につき切り出した片を 1 つしか使わない）
 
-The output uses ClassBench style for one LPM field (``@1.0.0.0/24``) and is
-meant for ``flowbench-trace --isolated -f 1 -fw 32 -ft LPM``. A side-car
-``.map`` file lists ``block_prefix original_prefix region_size`` per line in
-output order.
+出力は 1 つの LPM field の ClassBench 風書式（``@1.0.0.0/24``）で、
+``flowbench-trace --isolated -f 1 -fw 32 -ft LPM`` に渡す。
+``<output>.map`` には出力順に ``代表block 元prefix 到達領域のアドレス数`` を、
+``<output>.meta.json`` には件数と block 長の分布を書く。
 """
 
 from __future__ import annotations
@@ -30,8 +28,8 @@ from pathlib import Path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--rule-file", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--rule-file", required=True, help="入力の rule file（<ip> <prefix長> <nexthop>）")
+    parser.add_argument("--output", required=True, help="書き出す FlowBench の rule file")
     return parser.parse_args()
 
 
@@ -45,7 +43,7 @@ def int_to_ip(value: int) -> str:
 
 
 def largest_block(lo: int, hi: int) -> tuple[int, int]:
-    """Largest aligned power-of-two block inside [lo, hi): (start, size)."""
+    """[lo, hi) に含まれる、2 のべき乗で align された最大の block を (start, size) で返す。"""
     best = (lo, 0)
     while lo < hi:
         size = lo & -lo if lo else 1 << 32
@@ -68,7 +66,7 @@ def main() -> None:
             prefixes.append((ip_to_int(fields[0]), int(fields[1])))
     prefixes.sort()
 
-    # direct children of each prefix, found with a containment stack
+    # 各 prefix の直接の子を、包含関係の stack で求める
     children: list[list[int]] = [[] for _ in prefixes]
     stack: list[int] = []
     for i, (net, length) in enumerate(prefixes):
