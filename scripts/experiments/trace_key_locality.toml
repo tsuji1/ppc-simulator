@@ -1,0 +1,46 @@
+# MP と LTPC の hit rate の差の原因を見るため、FlowBench（rd・fd 掃引）と実 trace（WIDE 非匿名、NYC）を
+# cache の key に直した特徴量で比べる（#117）。
+# banana で実行する: researchctl run scripts/experiments/trace_key_locality.toml
+name = "trace-key-locality"
+issue = 117
+note = "FlowBench rd・fd 掃引の 60 本と WIDE（非匿名）・NYC の、cache key 単位の run 長・種類数・再利用距離"
+cwd = "/home/tsuji/yuzugon/osada-ppc-simulator"
+inputs = [
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "/home/tsuji/yuzugon/pcap/non-anon/2026-03-27.pcap",
+  "/home/tsuji/yuzugon/rules/rrc11.bview.20190117.1600.unique.rule",
+  "/home/tsuji/yuzugon/pcap/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap",
+  "run:20261028-021638-fb38f4/outputs/out/flowbench_rd_fd_sweep/summary/per_trace.csv",
+]
+outputs = ["out/trace_key_locality"]
+metrics = "out/trace_key_locality/summary/brief.csv"
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cmd/analyze_cache_key_locality/"]
+
+[[steps]]
+name = "features"
+argv = [
+  "bash", "scripts/run_trace_key_locality.sh",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/trace_key_locality",
+  "12",
+  "real_wide_nonanon=/home/tsuji/yuzugon/pcap/non-anon/2026-03-27.pcap=/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "real_nyc_anon=/home/tsuji/yuzugon/pcap/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap=/home/tsuji/yuzugon/rules/rrc11.bview.20190117.1600.unique.rule",
+]
+
+[[steps]]
+name = "summarize"
+argv = [
+  "python3", "scripts/summarize_trace_key_locality.py",
+  "--input-dir", "out/trace_key_locality",
+  "--fb-per-trace", "run:20261028-021638-fb38f4/outputs/out/flowbench_rd_fd_sweep/summary/per_trace.csv",
+  "--output-dir", "out/trace_key_locality/summary",
+]
