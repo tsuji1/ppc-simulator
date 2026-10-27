@@ -1,0 +1,34 @@
+# FlowBench の rd（rule の Pareto a）と fd（flow の Pareto a）を変えた trace の性質と、MP・LTPC の hit rate（#117、#118）。
+# banana で実行する: researchctl run scripts/experiments/flowbench_rd_fd_sweep.toml
+name = "flowbench-rd-fd-sweep"
+issue = 117
+note = "FlowBench -rd a 1 -fd a 1（rd 0.70/0.75/0.80 × fd 0.70/0.75/0.80/1 × seed 1-5、10M）と実 WIDE の prefix 数・MP・LTPC best L（#118）"
+cwd = "/home/tsuji/yuzugon/osada-ppc-simulator"
+inputs = [
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "/home/tsuji/yuzugon/pcap/non-anon/2026-03-27.pcap",
+]
+outputs = ["out/flowbench_rd_fd_sweep"]
+metrics = "out/flowbench_rd_fd_sweep/summary/brief.csv"
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_flowbench_rd_fd_sweep.sh",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "/home/tsuji/yuzugon/pcap/non-anon/2026-03-27.pcap",
+  "out/flowbench_rd_fd_sweep",
+  "12",
+]
+
+[[steps]]
+name = "summarize"
+argv = [
+  "python3", "scripts/summarize_flowbench_rd_fd.py",
+  "--input-dir", "out/flowbench_rd_fd_sweep",
+  "--output-dir", "out/flowbench_rd_fd_sweep/summary",
+]
