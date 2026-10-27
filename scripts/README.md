@@ -28,16 +28,16 @@ RIB（Route Views）
   ▼
 rib.YYYYMMDD.HHMM.unique.rule ─────────────────────────────┐
   │                                                         │
-  │ rule_to_classbench.py                                   │ fib_to_flowbench.py
+  │ rule_to_classbench.py                                   │ fib-flowbench isolate
   ▼                                                         ▼
 *.cb（5-tuple filter、重なりあり）                          *.fb（1 field、重なりなし）+ *.fb.map
   │ trace_generator（ClassBench）                           │ flowbench-trace --isolated（FlowBench）
   ▼                                                         ▼
 *.cbtrace                                                   *.fbtrace
-  │ classbench_trace_to_sim.py                              │ flowbench_trace_to_sim.py
+  │ classbench_trace_to_sim.py                              │ fib-flowbench to-sim
   ▼                                                         ▼
 simulator の trace（7 列 CSV）                              simulator の trace（7 列 CSV）
-                                                            │ flowbench_widen_dst.py（任意）
+                                                            │ fib-flowbench widen（推奨）
                                                             ▼
                                                             宛先を到達領域全体に広げた trace
 ```
@@ -69,7 +69,7 @@ FIB を入れるときは、必ず上の patch 済みのものを使う。
 
 ### 共通の出力：simulator の trace
 
-`*_trace_to_sim.py` と `flowbench_widen_dst.py` が書く。1 行 1 パケットの 7 列 CSV（header なし）。
+`classbench_trace_to_sim.py` と `fib-flowbench to-sim` / `widen` が書く。1 行 1 パケットの 7 列 CSV（header なし）。
 
 ```
 time,len,srcIP,dstIP,proto,srcPort,dstPort
@@ -156,119 +156,28 @@ python3 scripts/classbench_trace_to_sim.py --trace rib20260327_a1_b0.1_s10_seed1
 
 ### FlowBench
 
-#### 1. `fib_to_flowbench.py`：rule file → 重なりのない rule set
+FIB → FlowBench の rule set の変換（isolate）、FlowBench の trace → simulator の trace（to-sim）、宛先を到達領域全体に広げ直す処理（widen）は、
+別 repo の [tsuji1/fib-flowbench](https://github.com/tsuji1/fib-flowbench)（private）に移した。この repo には submodule `third_party/fib-flowbench` として入っている。
+使い方・仕組み・注意点は fib-flowbench の README を見る。
 
 ```
-python3 scripts/fib_to_flowbench.py --rule-file rib.20260327.0600.unique.rule --output rib20260327.fb
+git submodule update --init third_party/fib-flowbench
+PYTHONPATH=third_party/fib-flowbench/src python3 -m fib_flowbench.cli isolate --rule-file rib.20260327.0600.unique.rule --output rib20260327.fb
+flowbench-trace -i rib20260327.fb --isolated -f 1 -fw 32 -ft LPM -n 10000000 -rd 0.75 1 -fd 1 1 -s 1 -o rd0.75-1_s1.fbtrace
+PYTHONPATH=third_party/fib-flowbench/src python3 -m fib_flowbench.cli to-sim --trace rd0.75-1_s1.fbtrace --output rd0.75-1_s1.txt
+PYTHONPATH=third_party/fib-flowbench/src python3 -m fib_flowbench.cli widen --rule-file rib.20260327.0600.unique.rule \
+  --trace rd0.75-1_s1.txt --output rd0.75-1_s1_widen.txt --seed 1
 ```
 
-| 引数 | 内容 |
-|---|---|
-| `--rule-file` | 入力の rule file |
-| `--output` | 書き出す FlowBench の rule file |
+以前は `scripts/fib_to_flowbench.py`・`flowbench_trace_to_sim.py`・`flowbench_widen_dst.py` だった（ae100dc まで）。fib-flowbench の出力は、これらとバイト単位で同じ（researchctl run `20261027-230546-f44e74`）。
 
-FlowBench の isolation（各 rule を「その rule にしか当たらない領域」に切り出す処理）を、LPM 専用に O(n log n) で先に行う。
+この repo に残っている FlowBench 用の解析:
 
-1. prefix をソートし、stack で直接の子（より長い prefix）を求める。
-2. 到達領域 = prefix − 子の領域。空なら LPM の結果にならないので捨てる。
-3. 到達領域の中で最大の aligned block を、その prefix の代表 rule にする。
-
-出力は 3 つ。WIDE の FIB 全体で 6 秒程度。
-
-- `.fb`：1 行 1 rule の、1 field の ClassBench 風書式。1,007,029 rule（完全に覆われた 52,129 個を除く）。
-
-  ```
-  @1.0.0.0/24
-  @1.0.136.0/24
-  ```
-
-- `.fb.map`：出力と同じ順に `代表block 元prefix 到達領域のアドレス数`。
-
-  ```
-  1.0.0.0/24 1.0.0.0/24 256       ← 子がないので prefix そのまま
-  1.0.136.0/24 1.0.128.0/19 512   ← /19 が子に削られ、残った領域の最大 block が /24
-  ```
-
-- `.fb.meta.json`：prefix 数、捨てた数、部分 block で代表した数（49,108）、block 長の分布。
-
-#### 2. `flowbench-trace`（FlowBench）：rule set → trace
-
-```
-flowbench-trace -i rib20260327.fb --isolated -f 1 -fw 32 -ft LPM -n 10000000 -rd 0.7 1 -fd 1 1 -s 1 \
-  -o rib20260327_rd0.7-1_fd1-1_n10m_s1.fbtrace
-```
-
-| 引数 | 内容 |
-|---|---|
-| `-i`、`-o` | 入力の rule file、出力の trace |
-| `--isolated` | 入力が重なりのない rule なので、O(n²) の isolation を飛ばす（fork で追加） |
-| `--no-verify` | `--isolated` のときの重なり検査を飛ばす（`verify-isolated` branch のみ） |
-| `-f 1 -fw 32 -ft LPM` | field は 1 つ、32 bit、LPM |
-| `-n` | パケット数 |
-| `-rd a b` | rule 単位の Pareto parameter（どの rule にどれだけ当てるか） |
-| `-fd a b` | flow 単位の Pareto parameter（rule の中の flow の偏り） |
-| `-s` | seed |
-
-出力（`.fbtrace`）は 1 行 1 パケットで、`0x<宛先の16進> <rule番号>`。
-
-```
-0xad6ca492  1006970
-0xad6ca492  1006970
-0xad63b6ff  1006970
-```
-
-rule 番号は FlowBench 内部で並べ替えた後の番号で、入力の順番と対応しない。
-
-`verify-isolated` branch の FlowBench では、入力に重なりがあると次のように表示して終了する（rule の番号は入力順で 1 から）。
-`fib_to_flowbench.py` の出力は、重なりがないことを確認済み（researchctl run `20261027-113927-c58c9b`）。
-
-```
---isolated: input rules 8 and 9 overlap
-  R 00000001000000001
-  R 000000010000000010
-```
-
-#### 3. `flowbench_trace_to_sim.py`：trace → simulator の trace
-
-```
-python3 scripts/flowbench_trace_to_sim.py --trace rib20260327_rd0.7-1_fd1-1_n10m_s1.fbtrace \
-  --output fb_rib20260327_rd0.7-1_fd1-1_n10m_s1.txt
-```
-
-| 引数 | 内容 |
-|---|---|
-| `--trace` | FlowBench の trace（`.fbtrace`） |
-| `--output` | 書き出す simulator の trace |
-
-宛先の 16 進をアドレスに直すだけで、rule 番号は使わない（LPM は解析側で計算し直す）。
-
-```
-0.000000,64,192.0.2.1,173.108.164.146,tcp,12345,80
-```
-
-#### 4. `flowbench_widen_dst.py`（任意）：宛先を到達領域全体に広げる
-
-```
-python3 scripts/flowbench_widen_dst.py --rule-file rib.20260327.0600.unique.rule \
-  --trace fb_rib20260327_rd0.7-1_fd1-1_n10m_s1.txt --output fb_rib20260327_rd0.7-1_fd1-1_n10m_s1_widen.txt --seed 1
-```
-
-| 引数 | 内容 |
-|---|---|
-| `--rule-file` | `fib_to_flowbench.py` に渡したのと同じ rule file |
-| `--trace` | `flowbench_trace_to_sim.py` の出力 |
-| `--output` | 書き出す simulator の trace |
-| `--seed` | 移し先を決める seed |
-
-`fib_to_flowbench.py` は到達領域のうち最大の block しか使わない。そのため、例えば `1.0.128.0/19` に当たる宛先は、到達領域 512 アドレスのうち代表の `1.0.136.0/24` の 256 アドレスにしか出ない。
-このスクリプトは、そうした prefix の宛先を到達領域全体に移す。
-
-- 移し先は (宛先, seed) で決まる 1 対 1 の関数。同じ宛先は同じ宛先のまま、異なる宛先は異なるままで、prefix ごとのパケット数も変わらない。
-- 到達領域が 1 block の prefix の宛先はそのまま。
-- `meta.json` には、対象 prefix 数、移したパケット数、移した宛先の種類数を書く。
+- `flowbench_flows_per_rule.py`、`run_flowbench_flows_per_rule.sh`：1 rule あたりの flow 数・packet 数
+- `summarize_flowbench_bestl.py`：LTPC の index 長 L の掃引（先頭 1M で選んだ best L）の集計
 
 ### 制約と注意点
 
 - **ClassBench は覆われた prefix も選ぶ。** filter を一様に選ぶので、選んだ filter と実際に LPM で当たる prefix がずれることがある。また、当たる prefix のほとんどが /24 になる（平均 LPM 長 23.1、WIDE の実 trace は 18.1）。
-- **FlowBench の rule は 1 prefix につき 1 block。** `flowbench_widen_dst.py` を通さない trace では、子を持つ prefix（49,108 個）の宛先が代表 block に集まる。短い prefix を /24 などに展開する cache（MP など）では、必要な entry 数が実際より少なくなり、hit 率が良く見えすぎる可能性がある（影響の大きさはまだ測っていない）。
+- **FlowBench の rule は 1 prefix につき 1 block。** `fib-flowbench widen` を通さない trace では、子を持つ prefix（49,108 個）の宛先が代表 block に集まる。詳しくは fib-flowbench の README。
 - **宛先以外の列には意味がない。** flow 単位の 5-tuple を見る解析には使えない。

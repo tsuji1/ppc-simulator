@@ -3,7 +3,7 @@
 
 FlowBench は rule ごとの packet 数（``-rd``）と flow ごとの packet 数（``-fd``）を決めたあと、
 flow 数の多い group から順に「flow 数を収容できる rule（使える bit 数 >= log2(flow 数)）」へ
-割り当てる。``fib_to_flowbench.py`` は各 prefix を代表 block（多くは /24）にするので、
+割り当てる。``fib-flowbench isolate``（third_party/fib-flowbench）は各 prefix を代表 block（多くは /24）にするので、
 257 flow 以上の group は代表 /24 には入らない。その影響の大きさを trace から測る。
 
 * 宛先 1 つを 1 flow とする（FlowBench の flow は宛先 1 点の exact rule）
@@ -31,7 +31,7 @@ FLOW_BUCKETS = [(1, 1), (2, 16), (17, 256), (257, 4096), (4097, 65536), (65537, 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--trace", required=True, help="flowbench-trace の出力（0x<宛先> <rule番号>）")
-    parser.add_argument("--map", required=True, help="fib_to_flowbench.py が書いた <rule>.map")
+    parser.add_argument("--map", required=True, help="fib-flowbench isolate が書いた <rule>.map")
     parser.add_argument("--label", required=True, help="出力 file 名に使う条件名")
     parser.add_argument("--out-dir", required=True, help="出力先")
     return parser.parse_args()

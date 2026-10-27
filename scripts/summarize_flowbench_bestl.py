@@ -4,7 +4,7 @@
 Input: ``windowed_hitrate`` CSVs (one per trace) run with
 ``-windows 1000000,10000000 -ps-index-types 2,5,108..124``. File names are
 ``real_nonanon.csv``, ``orig_<trace>.csv`` (FlowBench as generated) and
-``wide_<trace>.csv`` (after ``flowbench_widen_dst.py``), where ``<trace>`` is
+``wide_<trace>.csv`` (after ``fib-flowbench widen``), where ``<trace>`` is
 ``fb_rib20260327_rd<a>-<b>_fd1-1_n10m_s<seed>``.
 
 The best L is chosen per trace by the cumulative hit rate of the first 1M

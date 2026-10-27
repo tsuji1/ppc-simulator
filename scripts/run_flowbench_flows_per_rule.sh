@@ -12,6 +12,12 @@ flowbench_dir=$1
 rule_file=$2
 out_dir=$3
 script_dir=$(cd "$(dirname "$0")" && pwd)
+# rule set の変換は submodule の fib-flowbench（git submodule update --init で取る）
+fib_flowbench=$script_dir/../third_party/fib-flowbench
+if [[ ! -f $fib_flowbench/src/fib_flowbench/cli.py ]]; then
+  echo "fib-flowbench がない。git submodule update --init third_party/fib-flowbench を実行する" >&2
+  exit 1
+fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$out_dir"
@@ -21,7 +27,7 @@ git -C "$flowbench_dir" rev-parse HEAD > "$out_dir/flowbench_commit.txt"
 git -C "$flowbench_dir" status --short >> "$out_dir/flowbench_commit.txt"
 (cd "$flowbench_dir/source" && g++ -std=c++14 -O2 trace_generator.cpp -o "$tmp/flowbench-trace")
 
-python3 "$script_dir/fib_to_flowbench.py" --rule-file "$rule_file" --output "$tmp/rules.fb"
+PYTHONPATH="$fib_flowbench/src" python3 -m fib_flowbench.cli isolate --rule-file "$rule_file" --output "$tmp/rules.fb"
 cp "$tmp/rules.fb.meta.json" "$out_dir/rules.fb.meta.json"
 
 # rule の Pareto(a, b)、flow の Pareto(a, b)
