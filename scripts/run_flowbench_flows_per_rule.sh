@@ -15,6 +15,7 @@ script_dir=$(cd "$(dirname "$0")" && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 mkdir -p "$out_dir"
+out_dir=$(cd "$out_dir" && pwd)
 
 git -C "$flowbench_dir" rev-parse HEAD > "$out_dir/flowbench_commit.txt"
 git -C "$flowbench_dir" status --short >> "$out_dir/flowbench_commit.txt"
