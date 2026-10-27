@@ -8,7 +8,7 @@
 #   REAL_TRACE     比べる実 trace（pcap など）。label は real
 #   OUT_DIR        出力先。coverage/<label>/、hitrate/<label>.csv、logs/ を作る
 #   JOBS           同時に処理する trace の数（既定 6）
-# 条件は環境変数 RD_AS・FD_AS・SEEDS（空白区切り）で変えられる。
+# 条件は環境変数 RD_AS・FD_AS・SEEDS（空白区切り）で変えられる。go が PATH にないときは GO に go のパスを渡す。
 # trace は大きいので一時 directory に作り、解析後に消す（同じ条件で再生成できる）。
 set -euo pipefail
 
@@ -45,7 +45,7 @@ out_dir=$(cd "$out_dir" && pwd)
 (cd "$flowbench_dir/source" && g++ -std=c++17 -O2 trace_generator.cpp -o "$tmp/flowbench-trace")
 mkdir -p "$tmp/bin"
 for cmd in analyze_lpm_prefix_coverage windowed_hitrate; do
-  (cd "$repo_dir" && go build -o "$tmp/bin/$cmd" "./cmd/$cmd")
+  (cd "$repo_dir" && "${GO:-go}" build -o "$tmp/bin/$cmd" "./cmd/$cmd")
 done
 
 PYTHONPATH="$fib_flowbench/src" python3 -m fib_flowbench.cli isolate --rule-file "$rule_file" --output "$tmp/rules.fb"

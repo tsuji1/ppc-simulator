@@ -13,6 +13,7 @@ metrics = "out/flowbench_rd_fd_sweep/summary/brief.csv"
 
 [env]
 GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
 
 [[steps]]
 name = "sweep"
