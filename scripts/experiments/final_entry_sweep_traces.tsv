@@ -1,0 +1,12 @@
+# #124 の実 trace（label、trace、rule）。#103 と同じ組み合わせ。CAIDA は先頭 10 秒の切り出し（先頭 10M packet しか使わない）
+WIDE 25-09	/home/tsuji/yuzugon/pcap/non-anon/2025-09-27.pcap	/home/tsuji/yuzugon/rules/rib.20250927.0600.unique.rule
+WIDE 25-12	/home/tsuji/yuzugon/pcap/non-anon/2025-12-27.pcap	/home/tsuji/yuzugon/rules/rib.20251227.0600.unique.rule
+WIDE 26-03	/home/tsuji/yuzugon/pcap/non-anon/2026-03-27.pcap	/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule
+Academic A 2018-05	/home/tsuji/yuzugon/pcap/jpix2sinet90s_5tuple.txt	/home/tsuji/yuzugon/rules/rrc06.bview.20180502.0000.unique.rule
+Academic B 2018-05	/home/tsuji/yuzugon/pcap/sinet2jpix90s_5tuple.txt	/home/tsuji/yuzugon/rules/rrc06.bview.20180502.0000.unique.rule
+San Jose	/home/tsuji/yuzugon/pcap/equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20140320.1400.unique.rule
+Chicago	/home/tsuji/yuzugon/pcap/equinix-chicago.dirB.20140320-140100.UTC.anon.pcap	/home/tsuji/yuzugon/rules/route-views.chicago.rib.20160628.1400.unique.rule
+New York	/home/tsuji/yuzugon/pcap/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap	/home/tsuji/yuzugon/rules/rrc11.bview.20190117.1600.unique.rule
+CAIDA 25-03 A	/home/tsuji/yuzugon/pcap/caida100g/20250320-130000.dira.anon.first10s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B	/home/tsuji/yuzugon/pcap/caida100g/20250320-130000.dirb.anon.first10s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A	/home/tsuji/yuzugon/pcap/caida100g/20251120-130000.dira.anon.first10s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule

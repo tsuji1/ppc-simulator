@@ -1,0 +1,27 @@
+# 最終発表用: 総 entry 数 256〜64K の MPLC /24+/18・VPLC（先頭 1M で L を選ぶ）・VPLC ideal のミス率（#124）。
+# 実 trace 11 本と FlowBench（-rd 0.70 1 -fd 1 1、seed 1〜3）、先頭 10M packet、8-way。
+# banana で実行する: researchctl run scripts/experiments/final_entry_sweep.toml
+name = "final-entry-sweep"
+issue = 124
+note = "総 entry 数 256〜64K × 実 trace 11 本 + FlowBench 3 本の MPLC・VPLC（L=8..24）・ideal の hit（#124）"
+cwd = "/home/tsuji/yuzugon/osada-ppc-simulator"
+inputs = [
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/final_entry_sweep"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_sweep",
+  "14",
+]
