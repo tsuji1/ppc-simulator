@@ -1,0 +1,32 @@
+# MPLC の構成（/24 + /n、n と /24 層への容量配分）を総 entry 数 256〜64K で掃引し、最適構成を探す（#113、#124）。
+# 実 trace 11 本と FlowBench（-rd 0.70 1 -fd 1 1、seed 1〜3）、先頭 10M packet、8-way、index は CRC と direct。
+# banana で実行する: researchctl run scripts/experiments/mplc_config_sweep.toml
+name = "mplc-config-sweep"
+issue = 113
+note = "総 entry 数 256〜64K × n=8..23 × /24 層の割合 1/8..7/8 × CRC・direct の MPLC の hit（実 trace 11 本 + FlowBench 3 本）"
+cwd = "/home/tsuji/yuzugon/osada-ppc-simulator"
+inputs = [
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/mplc_config_sweep"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cmd/windowed_hitrate/"]
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_mplc_config_sweep.sh",
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/mplc_config_sweep",
+  "8",
+]

@@ -46,8 +46,8 @@ type options struct {
 	maxPackets      uint64
 	progressEvery   uint64
 	way             int
-	mpCapacities    []int
-	mpRefbits       []int
+	mpConfigs       []mpConfigSpec
+	mpIndexes       []string
 	psCapacity      int
 	psIndexTypes    []int
 	cacheTagLength  [][2]int
@@ -205,6 +205,8 @@ func parseOptions() (options, error) {
 	var rawWindows string
 	var rawMPCapacities string
 	var rawMPRefbits string
+	var rawMPConfigs string
+	var rawMPIndex string
 	var rawPSIndexTypes string
 	var rawCacheTagLength string
 
@@ -218,8 +220,10 @@ func parseOptions() (options, error) {
 	flag.IntVar(&opts.way, "way", opts.way, "way for MP and PS caches")
 	flag.StringVar(&rawMPCapacities, "mp-capacities", "2048,2048", "comma-separated MP layer capacities")
 	flag.StringVar(&rawMPRefbits, "mp-refbits", "24,18", "comma-separated MP layer refbits")
+	flag.StringVar(&rawMPConfigs, "mp-configs", "", "several MP configs run in one pass, e.g. \"24:128,18:128;24:64,18:192\" (overrides -mp-capacities/-mp-refbits)")
+	flag.StringVar(&rawMPIndex, "mp-index", "crc", "comma-separated MP set index: crc and/or direct")
 	flag.IntVar(&opts.psCapacity, "ps-capacity", opts.psCapacity, "Prefix-Shared cache capacity")
-	flag.StringVar(&rawPSIndexTypes, "ps-index-types", "21,2", "comma-separated Prefix-Shared cache index types; 2 is ideal")
+	flag.StringVar(&rawPSIndexTypes, "ps-index-types", "21,2", "comma-separated Prefix-Shared cache index types; 2 is ideal; none skips PS")
 	flag.StringVar(&rawCacheTagLength, "cache-tag-length", defaultTagLengthWay8, "UnifiedCache tag length spec")
 	flag.StringVar(&opts.insertionPolicy, "cache-insertion-policy", opts.insertionPolicy, "UnifiedCache insertion policy")
 	flag.StringVar(&opts.windowMode, "window-mode", opts.windowMode, "window mode: warm or cold")
@@ -243,23 +247,40 @@ func parseOptions() (options, error) {
 	if err != nil {
 		return opts, fmt.Errorf("invalid -windows: %w", err)
 	}
-	opts.mpCapacities, err = parseIntList(rawMPCapacities)
-	if err != nil {
-		return opts, fmt.Errorf("invalid -mp-capacities: %w", err)
+	if strings.TrimSpace(rawMPConfigs) != "" {
+		opts.mpConfigs, err = parseMPConfigs(rawMPConfigs)
+		if err != nil {
+			return opts, fmt.Errorf("invalid -mp-configs: %w", err)
+		}
+	} else {
+		mpCapacities, err := parseIntList(rawMPCapacities)
+		if err != nil {
+			return opts, fmt.Errorf("invalid -mp-capacities: %w", err)
+		}
+		mpRefbits, err := parseIntList(rawMPRefbits)
+		if err != nil {
+			return opts, fmt.Errorf("invalid -mp-refbits: %w", err)
+		}
+		if len(mpCapacities) != len(mpRefbits) {
+			return opts, fmt.Errorf("-mp-capacities has %d items but -mp-refbits has %d", len(mpCapacities), len(mpRefbits))
+		}
+		opts.mpConfigs = []mpConfigSpec{{refbits: mpRefbits, capacities: mpCapacities}}
 	}
-	opts.mpRefbits, err = parseIntList(rawMPRefbits)
-	if err != nil {
-		return opts, fmt.Errorf("invalid -mp-refbits: %w", err)
+	opts.mpIndexes = splitCSVish(rawMPIndex)
+	if len(opts.mpIndexes) == 0 {
+		return opts, errors.New("-mp-index must not be empty")
 	}
-	if len(opts.mpCapacities) != len(opts.mpRefbits) {
-		return opts, fmt.Errorf("-mp-capacities has %d items but -mp-refbits has %d", len(opts.mpCapacities), len(opts.mpRefbits))
+	for _, index := range opts.mpIndexes {
+		if _, err := cache.NormalizeMPIndex(index); err != nil {
+			return opts, err
+		}
 	}
-	if len(opts.mpCapacities) < 1 {
-		return opts, errors.New("-mp-capacities must include at least one layer")
-	}
-	opts.psIndexTypes, err = parseNonNegativeIntList(rawPSIndexTypes)
-	if err != nil {
-		return opts, fmt.Errorf("invalid -ps-index-types: %w", err)
+	// "none" で PS を回さない（MP の構成だけを掃引するとき）
+	if strings.TrimSpace(rawPSIndexTypes) != "none" {
+		opts.psIndexTypes, err = parseNonNegativeIntList(rawPSIndexTypes)
+		if err != nil {
+			return opts, fmt.Errorf("invalid -ps-index-types: %w", err)
+		}
 	}
 	for _, indexType := range opts.psIndexTypes {
 		// 100+L (L=0..32) is the direct prefix index (cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE)
@@ -387,32 +408,93 @@ func parseCacheTagLength(raw string) ([][2]int, error) {
 	return result, nil
 }
 
-func buildConfigSpecs(opts options) ([]configSpec, error) {
-	configs := make([]configSpec, 0, 1+len(opts.psIndexTypes))
+// mpConfigSpec は MP の 1 構成（各層の refbits と entry 数）。
+type mpConfigSpec struct {
+	refbits    []int
+	capacities []int
+}
 
-	mpLayers := make([]simulator.Cache, len(opts.mpCapacities))
-	mpPolicies := make([]string, max(0, len(opts.mpCapacities)-1))
+// parseMPConfigs は -mp-configs を読む。構成は ";" 区切り、各構成は "refbits:entry数" を "," でつなぐ（例 "24:128,18:128;24:64,18:192"）。
+func parseMPConfigs(raw string) ([]mpConfigSpec, error) {
+	var result []mpConfigSpec
+	for _, part := range strings.Split(raw, ";") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		var spec mpConfigSpec
+		for _, layer := range splitCSVish(part) {
+			fields := strings.Split(layer, ":")
+			if len(fields) != 2 {
+				return nil, fmt.Errorf("expected refbits:capacity: %q", layer)
+			}
+			refbits, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+			if err != nil {
+				return nil, err
+			}
+			capacity, err := strconv.Atoi(strings.TrimSpace(fields[1]))
+			if err != nil {
+				return nil, err
+			}
+			if refbits <= 0 || refbits > 32 || capacity <= 0 {
+				return nil, fmt.Errorf("invalid MP layer %q", layer)
+			}
+			spec.refbits = append(spec.refbits, refbits)
+			spec.capacities = append(spec.capacities, capacity)
+		}
+		if len(spec.refbits) == 0 {
+			return nil, fmt.Errorf("empty MP config: %q", part)
+		}
+		result = append(result, spec)
+	}
+	if len(result) == 0 {
+		return nil, errors.New("empty list")
+	}
+	return result, nil
+}
+
+func buildMPConfigSpec(opts options, mp mpConfigSpec, index string) (configSpec, error) {
+	normalized, err := cache.NormalizeMPIndex(index)
+	if err != nil {
+		return configSpec{}, err
+	}
+	mpLayers := make([]simulator.Cache, len(mp.capacities))
+	mpPolicies := make([]string, max(0, len(mp.capacities)-1))
 	totalMPCapacity := 0
-	for i := range opts.mpCapacities {
+	for i := range mp.capacities {
+		if mp.capacities[i]%opts.way != 0 {
+			return configSpec{}, fmt.Errorf("MP layer capacity %d is not a multiple of way %d", mp.capacities[i], opts.way)
+		}
 		mpLayers[i] = simulator.Cache{
 			Type:    "NbitNWaySetAssociativeDstipLRUCache",
-			Size:    opts.mpCapacities[i],
+			Size:    mp.capacities[i],
 			Way:     opts.way,
-			Refbits: opts.mpRefbits[i],
+			Refbits: mp.refbits[i],
+			Index:   normalized,
 		}
-		totalMPCapacity += opts.mpCapacities[i]
+		totalMPCapacity += mp.capacities[i]
 	}
 	for i := range mpPolicies {
 		mpPolicies[i] = "WriteThrough"
 	}
-	configs = append(configs, configSpec{
-		id:             "mp-" + joinIntsDash(opts.mpRefbits) + "-" + joinIntsDash(opts.mpCapacities),
-		label:          "MP /" + joinIntsPlusSlash(opts.mpRefbits) + " " + joinIntsPlus(opts.mpCapacities),
+	// CRC は従来の id・label のまま（既存の集計と一致させる）。direct だけ印を付ける
+	id := "mp-" + joinIntsDash(mp.refbits) + "-" + joinIntsDash(mp.capacities)
+	label := "MP /" + joinIntsPlusSlash(mp.refbits) + " " + joinIntsPlus(mp.capacities)
+	indexName := ""
+	if normalized == cache.MPIndexDirect {
+		id += "-direct"
+		label += " direct"
+		indexName = cache.MPIndexDirect
+	}
+	return configSpec{
+		id:             id,
+		label:          label,
 		family:         "Multi-Prefix-Cache",
-		capacityConfig: joinIntsPipe(opts.mpCapacities),
+		capacityConfig: joinIntsPipe(mp.capacities),
 		totalCapacity:  totalMPCapacity,
-		refbitsConfig:  joinIntsPipe(opts.mpRefbits),
+		refbitsConfig:  joinIntsPipe(mp.refbits),
 		way:            opts.way,
+		cacheIndexType: indexName,
 		definition: simulator.SimulatorDefinition{
 			Type: "SimpleCacheSimulator",
 			Cache: simulator.Cache{
@@ -422,7 +504,21 @@ func buildConfigSpecs(opts options) ([]configSpec, error) {
 			},
 			DebugMode: false,
 		},
-	})
+	}, nil
+}
+
+func buildConfigSpecs(opts options) ([]configSpec, error) {
+	configs := make([]configSpec, 0, len(opts.mpConfigs)*len(opts.mpIndexes)+len(opts.psIndexTypes))
+
+	for _, index := range opts.mpIndexes {
+		for _, mp := range opts.mpConfigs {
+			config, err := buildMPConfigSpec(opts, mp, index)
+			if err != nil {
+				return nil, err
+			}
+			configs = append(configs, config)
+		}
+	}
 
 	for _, indexType := range opts.psIndexTypes {
 		indexName := fmt.Sprintf("index%d", indexType)
