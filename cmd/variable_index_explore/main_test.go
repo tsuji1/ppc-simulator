@@ -97,6 +97,77 @@ func TestIndexOfDirect(t *testing.T) {
 	}
 }
 
+func withXorIndex(t *testing.T, v bool) {
+	t.Helper()
+	prev := xorIndex
+	xorIndex = v
+	t.Cleanup(func() { xorIndex = prev })
+}
+
+func TestIndexOfXor(t *testing.T) {
+	withXorIndex(t, true)
+	// 8 set（k=3）、L=24：P = 0x0A0005 を 3 bit ずつ XOR する
+	p := uint64(0x0A0005)
+	want := 0
+	for q := p; q != 0; q >>= 3 {
+		want ^= int(q & 7)
+	}
+	if got := indexOf(ip(10, 0, 5, 0), 24, 8); got != want {
+		t.Fatalf("xor L=24 index = %d, want %d", got, want)
+	}
+	// L <= k なら direct と同じ（L=9、1024 set）
+	withDirectIndex(t, true)
+	for _, dst := range []uint32{ip(10, 0, 5, 0), ip(255, 128, 0, 0), ip(1, 2, 3, 4)} {
+		xorIndex = true
+		x := indexOf(dst, 9, 1024)
+		xorIndex = false
+		d := indexOf(dst, 9, 1024)
+		if x != d {
+			t.Fatalf("L<=k: xor=%d direct=%d", x, d)
+		}
+	}
+	// L=32（IP 全体）と 1 set でも動く
+	xorIndex = true
+	if got := indexOf(ip(255, 255, 255, 255), 32, 1); got != 0 {
+		t.Fatalf("1 set: %d", got)
+	}
+	if got := indexOf(ip(0xff, 0, 0, 0), 32, 256); got != 0xff {
+		t.Fatalf("L=32 256 set: %d, want 255", got)
+	}
+}
+
+// XOR 畳み込みでは、set 番号と上位 L−k bit（tag）から上位 L bit を復元できる（tag を direct と同じ長さにできる）。
+func TestXorIndexRecoverableFromTag(t *testing.T) {
+	withXorIndex(t, true)
+	rng := rand.New(rand.NewSource(7))
+	for _, nsets := range []int{128, 512, 2048} {
+		k := log2Int(nsets)
+		for _, l := range []int{12, 18, 24, 32} {
+			for i := 0; i < 2000; i++ {
+				dst := rng.Uint32()
+				p := uint64(dst) >> (32 - l)
+				set := indexOf(dst, l, nsets)
+				tagBits := p >> k
+				low := uint64(set ^ xorFold(tagBits, k))
+				if got := tagBits<<k | low; got != p {
+					t.Fatalf("nsets=%d L=%d: recovered %x, want %x", nsets, l, got, p)
+				}
+			}
+		}
+	}
+}
+
+func TestTopShare(t *testing.T) {
+	miss := make([]uint64, 20) // 上位 10% = 2 set
+	miss[3], miss[7], miss[11] = 50, 30, 20
+	if got := topShare(miss, 0.1); got != 0.8 {
+		t.Fatalf("topShare = %v, want 0.8", got)
+	}
+	if got := topShare(make([]uint64, 4), 0.1); got != 0 {
+		t.Fatalf("no miss: %v", got)
+	}
+}
+
 // ---------------------------------------------------------------- static vs. independent reference
 
 // refLRU は setArray と独立に書いた参照実装（set ごとに MRU 先頭の slice）。
@@ -155,10 +226,12 @@ func randomTrace(seed int64, n int) *trace {
 }
 
 func TestRunStaticMatchesReference(t *testing.T) {
-	for _, direct := range []bool{false, true} {
+	for _, kind := range []string{"crc", "direct", "xor"} {
+		direct := kind == "direct"
 		withDirectIndex(t, direct)
+		withXorIndex(t, kind == "xor")
 		tr := randomTrace(1, 20000)
-		for _, l := range []int{12, 16, 18, 24} {
+		for _, l := range []int{12, 16, 18, 24, 32} {
 			const capacity, way = 64, 4
 			nsets := capacity / way
 			ref := &refLRU{way: way, sets: map[int][]struct {
@@ -173,10 +246,13 @@ func TestRunStaticMatchesReference(t *testing.T) {
 			}
 			got := runStatic(tr, 0, len(tr.dst), capacity, way, l)
 			if got.Hits != refHits {
-				t.Fatalf("direct=%v L=%d: runStatic hits=%d, reference=%d", direct, l, got.Hits, refHits)
+				t.Fatalf("%s L=%d: runStatic hits=%d, reference=%d", kind, l, got.Hits, refHits)
 			}
 			if refHits == 0 || refHits == uint64(len(tr.dst)) {
-				t.Fatalf("direct=%v L=%d: degenerate trace (hits=%d)", direct, l, refHits)
+				t.Fatalf("%s L=%d: degenerate trace (hits=%d)", kind, l, refHits)
+			}
+			if got.TopMissShare <= 0 || got.TopMissShare > 1 {
+				t.Fatalf("%s L=%d: top10_miss_share=%v", kind, l, got.TopMissShare)
 			}
 		}
 	}
@@ -497,5 +573,33 @@ func TestLoadGobMatchesDstLeaf(t *testing.T) {
 	// max は TCP/UDP パケット数で数える
 	if got := loadTraces([]string{gobPath}, 2); len(got.dst) != 2 || got.dst[1] != ip(9, 9, 9, 9) {
 		t.Fatalf("gob max=2: %v", got.dst)
+	}
+
+	// 本体 simulator の .mpk（10 byte、proto 1=tcp 2=udp 3=icmp）も同じ結果になる
+	protoCode := map[string]byte{"tcp": 1, "udp": 2, "icmp": 3}
+	var mraw []byte
+	for _, p := range packets {
+		var b [10]byte
+		binary.LittleEndian.PutUint32(b[0:4], ip(192, 0, 2, 1))
+		binary.LittleEndian.PutUint32(b[4:8], p.DstIP)
+		b[8] = byte(p.IsLeafIndex)
+		b[9] = protoCode[p.Proto]
+		mraw = append(mraw, b[:]...)
+	}
+	mpkPath := filepath.Join(dir, "x.mpk")
+	if err := os.WriteFile(mpkPath, mraw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := loadTraces([]string{mpkPath}, 0)
+	if len(m.dst) != len(wantDst) {
+		t.Fatalf("mpk: %d packets, want %d", len(m.dst), len(wantDst))
+	}
+	for i := range wantDst {
+		if m.dst[i] != wantDst[i] || m.clen[i] != wantLen[i] {
+			t.Fatalf("mpk[%d] = (%x,%d), want (%x,%d)", i, m.dst[i], m.clen[i], wantDst[i], wantLen[i])
+		}
+	}
+	if got := loadTraces([]string{mpkPath}, 2); len(got.dst) != 2 || got.dst[1] != ip(9, 9, 9, 9) {
+		t.Fatalf("mpk max=2: %v", got.dst)
 	}
 }

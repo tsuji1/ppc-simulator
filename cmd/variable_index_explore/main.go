@@ -52,6 +52,8 @@ func loadTraces(paths []string, maxPerFile int) *trace {
 	for _, path := range paths {
 		if strings.HasSuffix(path, ".gob") {
 			loadGob(t, path, maxPerFile)
+		} else if strings.HasSuffix(path, ".mpk") {
+			loadMPK(t, path, maxPerFile)
 		} else {
 			loadDstLeaf(t, path, maxPerFile)
 		}
@@ -88,6 +90,28 @@ func loadGob(t *trace, path string, maxPerFile int) {
 			continue
 		}
 		t.append(packets[i].DstIP, int(packets[i].IsLeafIndex))
+		n++
+	}
+}
+
+// loadMPK は本体 simulator の -stream が作る .mpk（10 byte/packet、little endian：SrcIP u32、DstIP u32、
+// IsLeafIndex i8、proto u8。proto は 1=tcp、2=udp、3=icmp）を読む。gob と同じく TCP/UDP だけを使う。
+func loadMPK(t *trace, path string, maxPerFile int) {
+	f, err := os.Open(path)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	r := bufio.NewReaderSize(f, 1<<22)
+	var buf [10]byte
+	for n := 0; maxPerFile <= 0 || n < maxPerFile; {
+		if _, err := io.ReadFull(r, buf[:]); err != nil {
+			break
+		}
+		if buf[9] != 1 && buf[9] != 2 {
+			continue
+		}
+		t.append(binary.LittleEndian.Uint32(buf[4:8]), int(int8(buf[8])))
 		n++
 	}
 }
@@ -179,9 +203,42 @@ func (a *setArray) access(set int, dst uint32, clen int8) bool {
 // 2026-10-08 以前の結果（-index crc）との比較・再現のためだけに残している。
 var directIndex bool
 
+// xorIndex が true なら、上位 L bit の prefix P を下位から log2(nsets) bit ずつに区切り、全部を XOR した値を
+// set index にする（issue #123）。index = P[k-1:0] ^ P[2k-1:k] ^ ...。L <= k なら direct と同じ。
+// set 番号と P の上位 L−k bit（tag）から P[k-1:0] を復元できるので、tag の長さは direct と同じで済む。
+// directIndex より優先する。
+var xorIndex bool
+
+// indexName は結果 CSV の index 列に書く -index の値。
+var indexName string
+
+// xorFold は p を k bit ずつに区切って XOR した値を返す。
+func xorFold(p uint64, k int) int {
+	if k == 0 {
+		return 0
+	}
+	mask := uint64(1)<<k - 1
+	var idx uint64
+	for ; p != 0; p >>= k {
+		idx ^= p & mask
+	}
+	return int(idx)
+}
+
+func log2Int(n int) int {
+	k := 0
+	for 1<<k < n {
+		k++
+	}
+	return k
+}
+
 func indexOf(dst uint32, l, nsets int) int {
+	if xorIndex {
+		return xorFold(uint64(dst)>>(32-l), log2Int(nsets))
+	}
 	if directIndex {
-		return int(dst>>(32-l)) & (nsets - 1)
+		return int(uint64(dst)>>(32-l)) & (nsets - 1)
 	}
 	var b [4]byte
 	binary.BigEndian.PutUint32(b[:], dst>>(32-l))
@@ -201,6 +258,25 @@ type result struct {
 	FinalL                string
 	LHist                 map[int]uint64 // index 長ごとの lookup 回数
 	Series                []window
+	TopMissShare          float64 // ミスの多い上位 10% の set が全ミスに占める割合（static のみ。他は 0）
+}
+
+// topShare は set ごとのミス数から、ミスの多い上位 frac の set が占める割合を返す。
+func topShare(miss []uint64, frac float64) float64 {
+	s := append([]uint64(nil), miss...)
+	sort.Slice(s, func(i, j int) bool { return s[i] > s[j] })
+	n := max(1, int(float64(len(s))*frac))
+	var top, all uint64
+	for i, v := range s {
+		all += v
+		if i < n {
+			top += v
+		}
+	}
+	if all == 0 {
+		return 0
+	}
+	return float64(top) / float64(all)
 }
 
 type window struct {
@@ -215,11 +291,16 @@ func runStatic(t *trace, from, to, capacity, way, l int) *result {
 	nsets := capacity / way
 	a := newSetArray(nsets, way)
 	res := &result{Policy: "static", Params: fmt.Sprintf("L=%d", l), Capacity: capacity, Way: way, FinalL: strconv.Itoa(l)}
+	miss := make([]uint64, nsets)
 	for i := from; i < to; i++ {
-		if a.access(indexOf(t.dst[i], l, nsets), t.dst[i], t.clen[i]) {
+		s := indexOf(t.dst[i], l, nsets)
+		if a.access(s, t.dst[i], t.clen[i]) {
 			res.Hits++
+		} else {
+			miss[s]++
 		}
 	}
+	res.TopMissShare = topShare(miss, 0.1)
 	res.Packets = uint64(to - from)
 	res.Probes = res.Packets
 	return res
@@ -1019,7 +1100,8 @@ func main() {
 		name       = flag.String("name", "", "trace label used in output")
 		maxPer     = flag.Int("max", 10_000_000, "packets per file")
 		mode       = flag.String("mode", "static", "static | shadow | region | split")
-		indexKind  = flag.String("index", "direct", "set index function: direct (low bits of top L bits) | crc (DEPRECATED: CRC32 of top L bits)")
+		indexKind  = flag.String("index", "direct", "set index function: direct (low bits of top L bits) | xor (XOR-fold of top L bits, issue 123) | crc (DEPRECATED: CRC32 of top L bits)")
+		lmax       = flag.Int("lmax", 24, "static / static-train: largest index length L to sweep (9..lmax, up to 32)")
 		caps       = flag.String("capacity", "1024,4096,16384", "capacities")
 		way        = flag.Int("way", 8, "associativity")
 		cands      = flag.String("cands", "16-24", "candidate index lengths")
@@ -1068,8 +1150,15 @@ func main() {
 		fmt.Fprintln(os.Stderr, "warning: -index crc is deprecated; use -index direct")
 	case "direct":
 		directIndex = true
+	case "xor":
+		xorIndex = true
 	default:
 		fmt.Fprintf(os.Stderr, "unknown -index %s\n", *indexKind)
+		os.Exit(2)
+	}
+	indexName = *indexKind
+	if *lmax < 9 || *lmax > 32 {
+		fmt.Fprintf(os.Stderr, "invalid -lmax %d: expected 9..32\n", *lmax)
 		os.Exit(2)
 	}
 	t := loadTraces(strings.Split(*traceFiles, ","), *maxPer)
@@ -1096,7 +1185,7 @@ func main() {
 				add(func() *result { return runStatic(t, 0, n, c, *way, fixed) })
 				continue
 			}
-			for l := 9; l <= 24; l++ {
+			for l := 9; l <= *lmax; l++ {
 				add(func() *result { return runStatic(t, 0, n, c, *way, l) })
 			}
 			add(func() *result { return runIdeal(t, c, *way) })
@@ -1109,7 +1198,7 @@ func main() {
 			for _, tr := range parseInts(*trainPkts) {
 				add(func() *result {
 					best, bestHit := 0, uint64(0)
-					for l := 9; l <= 24; l++ {
+					for l := 9; l <= *lmax; l++ {
 						if r := runStatic(t, 0, tr, c, *way, l); r.Hits > bestHit {
 							best, bestHit = l, r.Hits
 						}
@@ -1119,7 +1208,7 @@ func main() {
 					return r
 				})
 			}
-			for l := 9; l <= 24; l++ {
+			for l := 9; l <= *lmax; l++ {
 				add(func() *result {
 					r := runStatic(t, evalFrom, n, c, *way, l)
 					r.Policy = "static-eval"
@@ -1263,7 +1352,7 @@ func writeResults(path string, results []*result) {
 		panic(err)
 	}
 	defer f.Close()
-	fmt.Fprintln(f, "trace,policy,params,capacity,way,packets,hits,hit_rate,probes_per_packet,switches,shadow_bits,table_bits,final_l,l_hist")
+	fmt.Fprintln(f, "trace,policy,params,capacity,way,packets,hits,hit_rate,probes_per_packet,switches,shadow_bits,table_bits,final_l,l_hist,index,top10_miss_share")
 	for _, r := range results {
 		keys := make([]int, 0, len(r.LHist))
 		for l := range r.LHist {
@@ -1274,9 +1363,10 @@ func writeResults(path string, results []*result) {
 		for _, l := range keys {
 			hist = append(hist, fmt.Sprintf("%d:%.3f", l, float64(r.LHist[l])/float64(r.Packets)))
 		}
-		fmt.Fprintf(f, "%s,%s,%s,%d,%d,%d,%d,%.6f,%.4f,%d,%d,%d,%s,%s\n",
+		fmt.Fprintf(f, "%s,%s,%s,%d,%d,%d,%d,%.6f,%.4f,%d,%d,%d,%s,%s,%s,%.6f\n",
 			r.Trace, r.Policy, r.Params, r.Capacity, r.Way, r.Packets, r.Hits, r.hitRate(),
-			float64(r.Probes)/float64(r.Packets), r.Switches, r.ShadowBits, r.TableBits, r.FinalL, strings.Join(hist, " "))
+			float64(r.Probes)/float64(r.Packets), r.Switches, r.ShadowBits, r.TableBits, r.FinalL, strings.Join(hist, " "),
+			indexName, r.TopMissShare)
 	}
 	fmt.Fprintf(os.Stderr, "wrote %s\n", path)
 }
