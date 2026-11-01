@@ -157,6 +157,25 @@ func TestXorIndexRecoverableFromTag(t *testing.T) {
 	}
 }
 
+func TestSetIndexKind(t *testing.T) {
+	withDirectIndex(t, false)
+	withXorIndex(t, false)
+	prev := indexName
+	t.Cleanup(func() { indexName = prev })
+	if !setIndexKind("xor") || !xorIndex || directIndex || indexName != "xor" {
+		t.Fatal("xor")
+	}
+	if !setIndexKind("direct") || xorIndex || !directIndex || indexName != "direct" {
+		t.Fatal("direct（xor が残ってはいけない）")
+	}
+	if !setIndexKind("crc") || xorIndex || directIndex {
+		t.Fatal("crc")
+	}
+	if setIndexKind("bogus") {
+		t.Fatal("unknown kind must be rejected")
+	}
+}
+
 func TestTopShare(t *testing.T) {
 	miss := make([]uint64, 20) // 上位 10% = 2 set
 	miss[3], miss[7], miss[11] = 50, 30, 20

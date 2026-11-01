@@ -1100,10 +1100,10 @@ func main() {
 		name       = flag.String("name", "", "trace label used in output")
 		maxPer     = flag.Int("max", 10_000_000, "packets per file")
 		mode       = flag.String("mode", "static", "static | shadow | region | split")
-		indexKind  = flag.String("index", "direct", "set index function: direct (low bits of top L bits) | xor (XOR-fold of top L bits, issue 123) | crc (DEPRECATED: CRC32 of top L bits)")
+		indexKind  = flag.String("index", "direct", "set index function (list): direct (low bits of top L bits) | xor (XOR-fold of top L bits, issue 123) | crc (DEPRECATED: CRC32 of top L bits)")
 		lmax       = flag.Int("lmax", 24, "static / static-train: largest index length L to sweep (9..lmax, up to 32)")
 		caps       = flag.String("capacity", "1024,4096,16384", "capacities")
-		way        = flag.Int("way", 8, "associativity")
+		wayList    = flag.String("way", "8", "associativity (list; with several ways or -index kinds, output files get _<index>_w<way>)")
 		cands      = flag.String("cands", "16-24", "candidate index lengths")
 		fixedIndex = flag.Int("fixed-index", 0, "fixed prefix length used for indexing (0 = normal /9..24 sweep; allows legacy type-5 comparison)")
 		outDir     = flag.String("out", "scripts/reports/variable_index_hw", "output dir")
@@ -1144,19 +1144,14 @@ func main() {
 		os.Exit(2)
 	}
 	debugEpochs = *dbgEpochs
-	switch *indexKind {
-	case "crc":
-		// Deprecated: 旧結果の再現用
-		fmt.Fprintln(os.Stderr, "warning: -index crc is deprecated; use -index direct")
-	case "direct":
-		directIndex = true
-	case "xor":
-		xorIndex = true
-	default:
-		fmt.Fprintf(os.Stderr, "unknown -index %s\n", *indexKind)
-		os.Exit(2)
+	kinds := strings.Split(*indexKind, ",")
+	for _, k := range kinds {
+		if !setIndexKind(k) {
+			fmt.Fprintf(os.Stderr, "unknown -index %s\n", k)
+			os.Exit(2)
+		}
 	}
-	indexName = *indexKind
+	ways := parseInts(*wayList)
 	if *lmax < 9 || *lmax > 32 {
 		fmt.Fprintf(os.Stderr, "invalid -lmax %d: expected 9..32\n", *lmax)
 		os.Exit(2)
@@ -1174,79 +1169,91 @@ func main() {
 	}
 	candList := parseInts(*cands)
 
-	var jobs []func() *result
-	add := func(f func() *result) { jobs = append(jobs, f) }
+	// trace は 1 回だけ読み、index 関数と way 数の組ごとに順に回す（index 関数は global なので組どうしは並列にしない）。
+	for _, kind := range kinds {
+		setIndexKind(kind)
+		for _, wv := range ways {
+			way := &wv
+			suffix := ""
+			if len(kinds) > 1 || len(ways) > 1 {
+				suffix = fmt.Sprintf("_%s_w%d", kind, wv)
+			}
 
-	switch *mode {
-	case "static":
-		for _, c := range capList {
-			if *fixedIndex > 0 {
-				fixed := *fixedIndex
-				add(func() *result { return runStatic(t, 0, n, c, *way, fixed) })
-				continue
-			}
-			for l := 9; l <= *lmax; l++ {
-				add(func() *result { return runStatic(t, 0, n, c, *way, l) })
-			}
-			add(func() *result { return runIdeal(t, c, *way) })
-		}
-	case "static-train":
-		// 実際に作れる静的方式：先頭 train 個のパケットで固定 L を選び、残り [evalFrom, n) を固定 L で評価する。
-		// 比較用に、評価区間での各固定 L も出す（評価区間でのオラクルと /18）。
-		evalFrom := *evalStart
-		for _, c := range capList {
-			for _, tr := range parseInts(*trainPkts) {
-				add(func() *result {
-					best, bestHit := 0, uint64(0)
+			var jobs []func() *result
+			add := func(f func() *result) { jobs = append(jobs, f) }
+
+			switch *mode {
+			case "static":
+				for _, c := range capList {
+					if *fixedIndex > 0 {
+						fixed := *fixedIndex
+						add(func() *result { return runStatic(t, 0, n, c, *way, fixed) })
+						continue
+					}
 					for l := 9; l <= *lmax; l++ {
-						if r := runStatic(t, 0, tr, c, *way, l); r.Hits > bestHit {
-							best, bestHit = l, r.Hits
+						add(func() *result { return runStatic(t, 0, n, c, *way, l) })
+					}
+					add(func() *result { return runIdeal(t, c, *way) })
+				}
+			case "static-train":
+				// 実際に作れる静的方式：先頭 train 個のパケットで固定 L を選び、残り [evalFrom, n) を固定 L で評価する。
+				// 比較用に、評価区間での各固定 L も出す（評価区間でのオラクルと /18）。
+				evalFrom := *evalStart
+				for _, c := range capList {
+					for _, tr := range parseInts(*trainPkts) {
+						add(func() *result {
+							best, bestHit := 0, uint64(0)
+							for l := 9; l <= *lmax; l++ {
+								if r := runStatic(t, 0, tr, c, *way, l); r.Hits > bestHit {
+									best, bestHit = l, r.Hits
+								}
+							}
+							r := runStatic(t, evalFrom, n, c, *way, best)
+							r.Policy, r.Params = "static-train", fmt.Sprintf("train=%d;L=%d", tr, best)
+							return r
+						})
+					}
+					for l := 9; l <= *lmax; l++ {
+						add(func() *result {
+							r := runStatic(t, evalFrom, n, c, *way, l)
+							r.Policy = "static-eval"
+							return r
+						})
+					}
+				}
+			case "static-switch":
+				// 実運用どおりの静的方式：[0, tr) は初期 L で転送しつつ、同じ [0, tr) で /9〜/24 を試して最良 L を選ぶ。
+				// tr パケット目で L を書き換えて flush し、[tr, n) は選んだ L で転送する。全区間 [0, n) のヒット率を出す。
+				for _, c := range capList {
+					for _, tr := range parseInts(*trainPkts) {
+						for _, ini := range parseInts(*initials) {
+							add(func() *result { return runStaticSwitch(t, c, *way, ini, tr) })
 						}
 					}
-					r := runStatic(t, evalFrom, n, c, *way, best)
-					r.Policy, r.Params = "static-train", fmt.Sprintf("train=%d;L=%d", tr, best)
-					return r
-				})
-			}
-			for l := 9; l <= *lmax; l++ {
-				add(func() *result {
-					r := runStatic(t, evalFrom, n, c, *way, l)
-					r.Policy = "static-eval"
-					return r
-				})
-			}
-		}
-	case "static-switch":
-		// 実運用どおりの静的方式：[0, tr) は初期 L で転送しつつ、同じ [0, tr) で /9〜/24 を試して最良 L を選ぶ。
-		// tr パケット目で L を書き換えて flush し、[tr, n) は選んだ L で転送する。全区間 [0, n) のヒット率を出す。
-		for _, c := range capList {
-			for _, tr := range parseInts(*trainPkts) {
-				for _, ini := range parseInts(*initials) {
-					add(func() *result { return runStaticSwitch(t, c, *way, ini, tr) })
 				}
-			}
-		}
-	case "shadow":
-		for _, c := range capList {
-			for _, div := range parseInts(*sampleDivs) {
-				for _, ep := range parseInts(*epochs) {
-					for _, thS := range strings.Split(*ths, ",") {
-						th, _ := strconv.ParseFloat(thS, 64)
-						for _, sw := range strings.Split(*switches, ",") {
-							for _, nb := range parseInts(*neighbors) {
-								for _, tb := range parseInts(*tagBits) {
-									for _, ini := range parseInts(*initials) {
-										for _, sm := range strings.Split(*sampleMode, ",") {
-											for _, he := range parseInts(*shadowHot) {
-												w := *dualWin
-												if w == 0 {
-													w = 4 * c
-												}
-												for _, rv := range strings.Split(*rovers, ",") {
-													cfg := shadowConfig{Cands: candList, Neighbor: nb, Rover: rv == "true", SampleDiv: div, SampleMode: sm, SampleBits: *sampleBits,
-														Epoch: ep, Threshold: th, Initial: ini, Switch: sw, DualWindow: w, TagBits: tb, Decay: *decay, SeriesWin: *seriesWin,
-														HotEntries: he, HotG: *hotG}
-													add(func() *result { return runShadow(t, c, *way, cfg) })
+			case "shadow":
+				for _, c := range capList {
+					for _, div := range parseInts(*sampleDivs) {
+						for _, ep := range parseInts(*epochs) {
+							for _, thS := range strings.Split(*ths, ",") {
+								th, _ := strconv.ParseFloat(thS, 64)
+								for _, sw := range strings.Split(*switches, ",") {
+									for _, nb := range parseInts(*neighbors) {
+										for _, tb := range parseInts(*tagBits) {
+											for _, ini := range parseInts(*initials) {
+												for _, sm := range strings.Split(*sampleMode, ",") {
+													for _, he := range parseInts(*shadowHot) {
+														w := *dualWin
+														if w == 0 {
+															w = 4 * c
+														}
+														for _, rv := range strings.Split(*rovers, ",") {
+															cfg := shadowConfig{Cands: candList, Neighbor: nb, Rover: rv == "true", SampleDiv: div, SampleMode: sm, SampleBits: *sampleBits,
+																Epoch: ep, Threshold: th, Initial: ini, Switch: sw, DualWindow: w, TagBits: tb, Decay: *decay, SeriesWin: *seriesWin,
+																HotEntries: he, HotG: *hotG}
+															add(func() *result { return runShadow(t, c, *way, cfg) })
+														}
+													}
 												}
 											}
 										}
@@ -1256,94 +1263,112 @@ func main() {
 						}
 					}
 				}
-			}
-		}
-	case "region":
-		split := int(float64(n) * *trainFrac)
-		for _, c := range capList {
-			for _, g := range parseInts(*regionG) {
-				add(func() *result {
-					return runRegion(t, split, n, c, *way, trainRegionOracle(t, split, c, *way, g, candList), "oracle")
-				})
-				add(func() *result {
-					return runRegion(t, split, n, c, *way, trainRegionMode(t, split, g, candList), "mode")
-				})
-			}
-			// 同じテスト区間での静的 L（比較用）
-			for _, l := range candList {
-				add(func() *result {
-					r := runRegion(t, split, n, c, *way, &regionTable{l: []int8{int8(l)}}, "baseline-static")
-					r.Params, r.TableBits = fmt.Sprintf("L=%d", l), 0
-					return r
-				})
-			}
-		}
-	case "region-online":
-		for _, c := range capList {
-			for _, g := range parseInts(*regionG) {
-				for _, upd := range []string{"miss", "all"} {
-					add(func() *result { return runRegionOnline(t, c, *way, g, g, candList, *regionInit, "last", upd, 0) })
-					for _, cb := range []int{2, 3, 4} {
-						add(func() *result { return runRegionOnline(t, c, *way, g, g, candList, *regionInit, "majority", upd, cb) })
-					}
-				}
-			}
-		}
-	case "region-hashed":
-		for _, c := range capList {
-			for _, g := range parseInts(*regionG) {
-				for _, tb := range parseInts(*regionTableBits) {
-					if tb > g {
-						continue
-					}
-					add(func() *result {
-						return runRegionOnline(t, c, *way, g, tb, candList, *regionInit, "majority", "miss", 3)
-					})
-				}
-			}
-		}
-	case "hot-region":
-		for _, c := range capList {
-			for _, k := range parseInts(*hotEntries) {
-				for _, def := range parseInts(*hotDefaults) {
+			case "region":
+				split := int(float64(n) * *trainFrac)
+				for _, c := range capList {
 					for _, g := range parseInts(*regionG) {
-						add(func() *result { return runHotRegion(t, c, *way, g, k, def, candList) })
+						add(func() *result {
+							return runRegion(t, split, n, c, *way, trainRegionOracle(t, split, c, *way, g, candList), "oracle")
+						})
+						add(func() *result {
+							return runRegion(t, split, n, c, *way, trainRegionMode(t, split, g, candList), "mode")
+						})
+					}
+					// 同じテスト区間での静的 L（比較用）
+					for _, l := range candList {
+						add(func() *result {
+							r := runRegion(t, split, n, c, *way, &regionTable{l: []int8{int8(l)}}, "baseline-static")
+							r.Params, r.TableBits = fmt.Sprintf("L=%d", l), 0
+							return r
+						})
 					}
 				}
+			case "region-online":
+				for _, c := range capList {
+					for _, g := range parseInts(*regionG) {
+						for _, upd := range []string{"miss", "all"} {
+							add(func() *result { return runRegionOnline(t, c, *way, g, g, candList, *regionInit, "last", upd, 0) })
+							for _, cb := range []int{2, 3, 4} {
+								add(func() *result { return runRegionOnline(t, c, *way, g, g, candList, *regionInit, "majority", upd, cb) })
+							}
+						}
+					}
+				}
+			case "region-hashed":
+				for _, c := range capList {
+					for _, g := range parseInts(*regionG) {
+						for _, tb := range parseInts(*regionTableBits) {
+							if tb > g {
+								continue
+							}
+							add(func() *result {
+								return runRegionOnline(t, c, *way, g, tb, candList, *regionInit, "majority", "miss", 3)
+							})
+						}
+					}
+				}
+			case "hot-region":
+				for _, c := range capList {
+					for _, k := range parseInts(*hotEntries) {
+						for _, def := range parseInts(*hotDefaults) {
+							for _, g := range parseInts(*regionG) {
+								add(func() *result { return runHotRegion(t, c, *way, g, k, def, candList) })
+							}
+						}
+					}
+				}
+			case "split":
+				for _, c := range capList {
+					for _, spec := range strings.Split(*splitSpec, ",") {
+						p := parseInts(strings.ReplaceAll(spec, ":", ","))
+						add(func() *result { return runSplit(t, c, *way, p[0], p[1], p[2]) })
+					}
+				}
+			default:
+				fmt.Fprintf(os.Stderr, "unknown mode %s\n", *mode)
+				os.Exit(2)
 			}
-		}
-	case "split":
-		for _, c := range capList {
-			for _, spec := range strings.Split(*splitSpec, ",") {
-				p := parseInts(strings.ReplaceAll(spec, ":", ","))
-				add(func() *result { return runSplit(t, c, *way, p[0], p[1], p[2]) })
-			}
-		}
-	default:
-		fmt.Fprintf(os.Stderr, "unknown mode %s\n", *mode)
-		os.Exit(2)
-	}
 
-	results := make([]*result, len(jobs))
-	sem := make(chan struct{}, *jobsN)
-	var wg sync.WaitGroup
-	for i, job := range jobs {
-		wg.Add(1)
-		sem <- struct{}{}
-		go func() {
-			defer wg.Done()
-			defer func() { <-sem }()
-			r := job()
-			r.Trace = *name
-			results[i] = r
-		}()
+			results := make([]*result, len(jobs))
+			sem := make(chan struct{}, *jobsN)
+			var wg sync.WaitGroup
+			for i, job := range jobs {
+				wg.Add(1)
+				sem <- struct{}{}
+				go func() {
+					defer wg.Done()
+					defer func() { <-sem }()
+					r := job()
+					r.Trace = *name
+					results[i] = r
+				}()
+			}
+			wg.Wait()
+			base := fmt.Sprintf("%s_%s%s%s", *name, *mode, *tag, suffix)
+			writeResults(filepath.Join(*outDir, base+".csv"), results)
+			if *seriesWin > 0 {
+				writeSeries(filepath.Join(*outDir, base+"_series.csv"), results)
+			}
+		}
 	}
-	wg.Wait()
-	base := fmt.Sprintf("%s_%s%s", *name, *mode, *tag)
-	writeResults(filepath.Join(*outDir, base+".csv"), results)
-	if *seriesWin > 0 {
-		writeSeries(filepath.Join(*outDir, base+"_series.csv"), results)
+}
+
+// setIndexKind は -index の値に合わせて index 関数の global を設定する。未知の値なら false。
+func setIndexKind(kind string) bool {
+	directIndex, xorIndex = false, false
+	switch kind {
+	case "crc":
+		// Deprecated: 旧結果の再現用
+		fmt.Fprintln(os.Stderr, "warning: -index crc is deprecated; use -index direct")
+	case "direct":
+		directIndex = true
+	case "xor":
+		xorIndex = true
+	default:
+		return false
 	}
+	indexName = kind
+	return true
 }
 
 func writeResults(path string, results []*result) {
