@@ -81,8 +81,10 @@ def miss_by_capacity(rows, out: Path):
         for label, idx, col, color, ls in series:
             ys = [100 * sum(by[(t, idx, way, c)][col] for t in traces) / len(traces) for c in caps]
             ax.plot(caps, ys, color=color, lw=2, ls=ls, marker="o", ms=5, label=label)
-            ax.annotate(f"{ys[-1]:.2f}%", (caps[-1], ys[-1]), xytext=(6, 0), textcoords="offset points",
-                        va="center", fontsize=8, color=INK2)
+            # 上位 L bit の 3 本は重なるので、direct と破線の 2 本だけ右端に値を書く
+            if idx == "direct" or ls == "--":
+                ax.annotate(f"{ys[-1]:.2f}%", (caps[-1], ys[-1]), xytext=(6, 0), textcoords="offset points",
+                            va="center", fontsize=8, color=INK2)
         ax.set_xscale("log", base=2)
         ax.set_yscale("log")
         ax.set_xticks(caps, [f"{c // 1024}K" for c in caps])
