@@ -19,6 +19,11 @@ GOTOOLCHAIN = "go1.26.1"
 GO = "/usr/local/go/bin/go"
 
 [[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cmd/windowed_hitrate/"]
+
+[[steps]]
 name = "sweep"
 argv = [
   "bash", "scripts/run_final_entry_sweep.sh",
