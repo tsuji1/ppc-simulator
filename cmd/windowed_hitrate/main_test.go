@@ -89,9 +89,10 @@ func TestBuildConfigSpecsMPOnly(t *testing.T) {
 
 func TestWriteResultJSON(t *testing.T) {
 	dir := t.TempDir()
+	// 本番の rule と同じく default route を入れる（無いと最長一致の検索が空になる）
 	rule := filepath.Join(dir, "rule.txt")
 	trace := filepath.Join(dir, "trace.txt")
-	if err := os.WriteFile(rule, []byte("10.0.0.0 8 1\n10.1.0.0 16 2\n192.168.1.0 24 3\n"), 0o644); err != nil {
+	if err := os.WriteFile(rule, []byte("0.0.0.0 0 0\n10.0.0.0 8 1\n10.1.0.0 16 2\n192.168.1.0 24 3\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var lines []string
