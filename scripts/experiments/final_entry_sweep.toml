@@ -3,7 +3,7 @@
 # banana で実行する: researchctl run ~/yuzugon/worktrees/osada-issue124/scripts/experiments/final_entry_sweep.toml
 name = "final-entry-sweep"
 issue = 124
-note = "総 entry 数 256〜64K × 実 trace 11 本 + FlowBench 3 本の MPLC・VPLC（L=8..24）・ideal の hit（#124）"
+note = "総 entry 数 256〜64K × 実 trace 11 本 + FlowBench 3 本の MPLC・VPLC（L=8..24）・ideal の hit と StatDetail（電力の計算用、#124）"
 # 他の作業と checkout を共有しない（実行中に別作業が cmd/windowed_hitrate を書き換えた）。
 # 事前に git worktree add --detach ~/yuzugon/worktrees/osada-issue124 origin-github/wip/aloheart-sync と
 # git submodule update --init third_party/fib-flowbench をしておく

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/binary"
 	"encoding/csv"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -53,6 +54,37 @@ type options struct {
 	cacheTagLength  [][2]int
 	insertionPolicy string
 	windowMode      string
+	resultJSON      string
+}
+
+// configResult は -result-json に書く 1 構成分。result は本体 simulator と同じ形式（StatDetail に DepthSum など）。
+type configResult struct {
+	ConfigID string                    `json:"config_id"`
+	Label    string                    `json:"config_label"`
+	Family   string                    `json:"family"`
+	Trace    string                    `json:"trace_path"`
+	Rule     string                    `json:"rule_path"`
+	Result   simulator.SimulatorResult `json:"simulator_result"`
+}
+
+// writeResultJSON は評価区間全体の統計（warm の各構成）を JSON の配列で書く。電力の計算に使う。
+func writeResultJSON(opts options, runs []runState) error {
+	results := make([]configResult, 0, len(runs))
+	for i := range runs {
+		results = append(results, configResult{
+			ConfigID: runs[i].config.id,
+			Label:    runs[i].config.label,
+			Family:   runs[i].config.family,
+			Trace:    opts.trace,
+			Rule:     opts.ruleFile,
+			Result:   runs[i].sim.GetSimulatorResult(),
+		})
+	}
+	data, err := json.MarshalIndent(results, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(opts.resultJSON, data, 0o644)
 }
 
 type configSpec struct {
@@ -170,6 +202,11 @@ func main() {
 				fatalf("flush partial windows: %v", err)
 			}
 		}
+		if opts.resultJSON != "" {
+			if err := writeResultJSON(opts, runs); err != nil {
+				fatalf("write result json: %v", err)
+			}
+		}
 	}
 	writer.Flush()
 	if err := writer.Error(); err != nil {
@@ -227,6 +264,7 @@ func parseOptions() (options, error) {
 	flag.StringVar(&rawCacheTagLength, "cache-tag-length", defaultTagLengthWay8, "UnifiedCache tag length spec")
 	flag.StringVar(&opts.insertionPolicy, "cache-insertion-policy", opts.insertionPolicy, "UnifiedCache insertion policy")
 	flag.StringVar(&opts.windowMode, "window-mode", opts.windowMode, "window mode: warm or cold")
+	flag.StringVar(&opts.resultJSON, "result-json", "", "write the whole-run simulator result (StatDetail) of each config as JSON (warm mode only)")
 	flag.Parse()
 
 	if opts.ruleFile == "" {

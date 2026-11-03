@@ -5,7 +5,7 @@
 #   TRACE_LIST     実 trace の一覧（TSV: label <TAB> trace path <TAB> rule path。# で始まる行は無視）
 #   FLOWBENCH_DIR  Flow-Bench の fork（tsuji1/Flow-Bench の routing-fib）の checkout
 #   FB_RULE_FILE   FlowBench の trace を作る元の rule file（WIDE）
-#   OUT_DIR        出力先。hitrate/<slug>_<容量>.csv、logs/、traces/ を作る
+#   OUT_DIR        出力先。hitrate/<slug>_<容量>.csv、results/<slug>_<容量>.json（電力の計算に使う StatDetail）、logs/、traces/ を作る
 #   JOBS           同時に動かす windowed_hitrate の数（既定 6。1 本 2〜4GB 使う。banana の 62GB で他の job と並べた 14 並列は途中で止まった（OOM と推定））
 # 環境変数:
 #   CAPACITIES  総 entry 数（空白区切り、既定 256〜65536 の 2 倍刻み）
@@ -36,7 +36,7 @@ if [[ ! -f $fib_flowbench/src/fib_flowbench/cli.py ]]; then
   exit 1
 fi
 
-mkdir -p "$out_dir"/{hitrate,logs,traces}
+mkdir -p "$out_dir"/{hitrate,results,logs,traces}
 out_dir=$(cd "$out_dir" && pwd)
 # FlowBench の trace は大きいので一時 directory に置き、終わったら消す（同じ条件で再生成できる。sha256 は残す）
 tmp=$(mktemp -d)
@@ -91,6 +91,7 @@ one() {
     -windows 1000000,"$packets" -progress-interval 0 -way 8 \
     -mp-capacities "$half,$half" -mp-refbits 24,18 -mp-index direct,crc -ps-capacity "$cap" -ps-index-types "$ps_types" \
     -output-dir "$out_dir/hitrate" -output-csv "$out_dir/hitrate/${slug}_$cap.csv" \
+    -result-json "$out_dir/results/${slug}_$cap.json" \
     > "$out_dir/logs/${slug}_$cap.log" 2>&1
   # 集計で trace の表示名に使う（同時に書くので 1 行ずつ追記する）
   printf '%s\t%s\t%s\n' "${slug}_$cap.csv" "$label" "$cap" >> "$out_dir/hitrate/labels.tsv"
