@@ -1,0 +1,35 @@
+# #124: FlowBench で VPLC と ideal のミス率が重なる理由を確かめる。final_entry_sweep.toml と同じ trace・構成で、
+# ミスの内訳（同じ entry 数の fully associative LRU・初回参照・挿入しない packet）と、index ごとの set の偏り
+# （100k packet の window ごと）を出す。StatDetail の JSON は出さない。
+# banana で実行する: researchctl run ~/yuzugon/worktrees/osada-issue124/scripts/experiments/final_entry_breakdown.toml
+name = "final-entry-breakdown"
+issue = 124
+note = "総 entry 数 256〜64K × 実 trace 11 本 + FlowBench 3 本のミスの内訳（FA LRU・初回参照）と set の偏り（#124）"
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue124"
+inputs = [
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/final_entry_breakdown"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+RESULT_JSON = "0"
+BREAKDOWN_WINDOW = "100000"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cmd/windowed_hitrate/", "./cache/"]
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_breakdown",
+  "6",
+]

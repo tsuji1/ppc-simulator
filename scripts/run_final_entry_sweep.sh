@@ -14,6 +14,8 @@
 #   FB_FD       FlowBench の -fd（既定 "1 1"）
 #   PACKETS     1 trace で使う packet 数（既定 10000000）
 #   GO          go のパス（PATH にないとき）
+#   RESULT_JSON      1 で results/ に StatDetail の JSON を出す（既定 1。0 で出さない。1 構成 50MB ほどになる）
+#   BREAKDOWN_WINDOW 指定すると breakdown/<slug>_<容量>.json に、ミスの内訳（FA LRU・初回参照）と set の偏り（この packet 数の window ごと）を出す
 # MPLC は各層に半分ずつ（/24 と /18）。index は direct（主）と CRC（参考）の両方を出す。VPLC は先頭 1M の window と全体の両方の hit を出し、
 # L の選択は集計側（research-routing-table-cache の scripts/summarize_final_entry_sweep.py）で行う。
 set -euo pipefail
@@ -28,6 +30,8 @@ fb_seeds=${FB_SEEDS-"1 2 3"}
 fb_rd=${FB_RD:-"0.70 1"}
 fb_fd=${FB_FD:-"1 1"}
 packets=${PACKETS:-10000000}
+result_json=${RESULT_JSON:-1}
+breakdown_window=${BREAKDOWN_WINDOW:-}
 script_dir=$(cd "$(dirname "$0")" && pwd)
 repo_dir=$(cd "$script_dir/.." && pwd)
 fib_flowbench=$repo_dir/third_party/fib-flowbench
@@ -36,7 +40,7 @@ if [[ ! -f $fib_flowbench/src/fib_flowbench/cli.py ]]; then
   exit 1
 fi
 
-mkdir -p "$out_dir"/{hitrate,results,logs,traces}
+mkdir -p "$out_dir"/{hitrate,results,breakdown,logs,traces}
 out_dir=$(cd "$out_dir" && pwd)
 # FlowBench の trace は大きいので一時 directory に置き、終わったら消す（同じ条件で再生成できる。sha256 は残す）
 tmp=$(mktemp -d)
@@ -87,18 +91,25 @@ one() {
   local half=$((cap / 2))
   local slug
   slug=$(printf '%s' "$label" | tr -c 'A-Za-z0-9.-' '_')
+  local extra=()
+  if [[ $result_json == 1 ]]; then
+    extra+=(-result-json "$out_dir/results/${slug}_$cap.json")
+  fi
+  if [[ -n $breakdown_window ]]; then
+    extra+=(-breakdown-json "$out_dir/breakdown/${slug}_$cap.json" -breakdown-window "$breakdown_window")
+  fi
   "$tmp/bin/windowed_hitrate" -rulefile "$rule" -trace "$trace" -max "$packets" \
     -windows 1000000,"$packets" -progress-interval 0 -way 8 \
     -mp-capacities "$half,$half" -mp-refbits 24,18 -mp-index direct,crc -ps-capacity "$cap" -ps-index-types "$ps_types" \
     -output-dir "$out_dir/hitrate" -output-csv "$out_dir/hitrate/${slug}_$cap.csv" \
-    -result-json "$out_dir/results/${slug}_$cap.json" \
+    "${extra[@]}" \
     > "$out_dir/logs/${slug}_$cap.log" 2>&1
   # 集計で trace の表示名に使う（同時に書くので 1 行ずつ追記する）
   printf '%s\t%s\t%s\n' "${slug}_$cap.csv" "$label" "$cap" >> "$out_dir/hitrate/labels.tsv"
   echo "done $label $cap"
 }
 export -f one
-export tmp out_dir packets ps_types
+export tmp out_dir packets ps_types result_json breakdown_window
 
 : > "$out_dir/hitrate/labels.tsv"
 while IFS=$'\t' read -r label trace rule; do
