@@ -1066,6 +1066,32 @@ func (cache *UnifiedCache) CacheFiveTuple(f *FiveTuple) []*FiveTuple {
 	return cache.cacheAtSetWithLength(setIdx, f, uint8(cacheLength))
 }
 
+// EntryKey は、このパケットがミスしたときに挿入される entry の長さと network を返す。挿入しないときは ok=false。
+// CacheFiveTuple の既定の経路（exclusive・index 固定）と同じ選び方をする。ミスの内訳の解析に使う。
+func (cache *UnifiedCache) EntryKey(f *FiveTuple) (length int8, network uint32, ok bool) {
+	if cache.InsertionPolicy != UnifiedCacheInsertionPolicyExclusive || IsAdaptiveUnifiedCacheIndexPolicy(cache.IndexPolicy) {
+		panic("EntryKey は exclusive・index 固定の UnifiedCache だけで使う")
+	}
+	if !cache.canInsertExclusive(f) {
+		return 0, 0, false
+	}
+	length, ok = selectUnifiedCacheLength(f, cache.cacheTagLength, false)
+	if !ok {
+		return 0, 0, false
+	}
+	return length, f.DstIP >> (32 - uint8(length)), true
+}
+
+// PlacementSet は、EntryKey の entry を置く set を返す。
+func (cache *UnifiedCache) PlacementSet(f *FiveTuple, length int8) uint {
+	return cache.placementSetIndex(f, int(length))
+}
+
+// SetCount は main の set 数。
+func (cache *UnifiedCache) SetCount() int {
+	return len(cache.Sets)
+}
+
 func (cache *UnifiedCache) InvalidateFiveTuple(f *FiveTuple) {
 	for _, setIdx := range cache.lookupSetIndices(f) {
 		cache.Sets[setIdx].InvalidateFiveTuple(f)

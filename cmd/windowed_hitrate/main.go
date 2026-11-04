@@ -55,6 +55,8 @@ type options struct {
 	insertionPolicy string
 	windowMode      string
 	resultJSON      string
+	breakdownJSON   string
+	breakdownWindow uint64
 }
 
 // configResult は -result-json に書く 1 構成分。result は本体 simulator と同じ形式（StatDetail に DepthSum など）。
@@ -191,7 +193,16 @@ func main() {
 		if err != nil {
 			fatalf("build warm runs: %v", err)
 		}
+		var breakdown *breakdownState
+		if opts.breakdownJSON != "" {
+			if breakdown, err = newBreakdown(opts, runs); err != nil {
+				fatalf("breakdown: %v", err)
+			}
+		}
 		stats, err = processTrace(opts, routingTable, func(packet *cache.MinPacket) error {
+			if breakdown != nil {
+				breakdown.observe(packet)
+			}
 			return processMinPacket(writer, opts, startedAt, runs, packet)
 		})
 		if err != nil {
@@ -205,6 +216,11 @@ func main() {
 		if opts.resultJSON != "" {
 			if err := writeResultJSON(opts, runs); err != nil {
 				fatalf("write result json: %v", err)
+			}
+		}
+		if breakdown != nil {
+			if err := breakdown.write(opts); err != nil {
+				fatalf("write breakdown json: %v", err)
 			}
 		}
 	}
@@ -265,6 +281,8 @@ func parseOptions() (options, error) {
 	flag.StringVar(&opts.insertionPolicy, "cache-insertion-policy", opts.insertionPolicy, "UnifiedCache insertion policy")
 	flag.StringVar(&opts.windowMode, "window-mode", opts.windowMode, "window mode: warm or cold")
 	flag.StringVar(&opts.resultJSON, "result-json", "", "write the whole-run simulator result (StatDetail) of each config as JSON (warm mode only)")
+	flag.StringVar(&opts.breakdownJSON, "breakdown-json", "", "write the miss breakdown (fully associative LRU, first references) and set load of each PS config as JSON (warm mode only)")
+	flag.Uint64Var(&opts.breakdownWindow, "breakdown-window", 100000, "packets per window for the set load of -breakdown-json")
 	flag.Parse()
 
 	if opts.ruleFile == "" {
