@@ -35,6 +35,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm  # noqa: E402
+import matplotlib.ticker  # noqa: E402
 
 # docs/guidelines/figures.md：categorical 1〜4 を使い、同じ方式は図をまたいで同じ色にする
 BLUE, ORANGE, AQUA, PURPLE, GRAY = "#2a78d6", "#eb6834", "#1baf7a", "#7a5ad6", "#8a8984"
@@ -163,7 +164,7 @@ def miss_by_capacity(d, out):
         ax.set_xlabel("総 entry 数")
         style(ax)
     axes[0].set_ylabel("ミス率 [%]（対数軸、11 trace の算術平均）")
-    axes[-1].legend(fontsize=8, frameon=False, loc="upper right")
+    axes[0].legend(fontsize=8, frameon=False, loc="lower left")
     fig.suptitle(f"index の作り方とミス率（{COND}）", fontsize=11)
     fig.tight_layout()
     save(fig, out, "miss_by_capacity")
@@ -249,6 +250,9 @@ def vs_l(d, out):
                         mfc=color if fill else "white", mec=color, label=NAME[idx])
             ax.axvline(24, color=GRAY, lw=0.8, ls=":")
             ax.set_yscale("log")
+            ax.set_yticks([1, 2, 4, 8, 16], ["1", "2", "4", "8", "16"])
+            ax.yaxis.set_minor_locator(matplotlib.ticker.NullLocator())
+            ax.set_ylim(0.9, 18)
             ax.set_title(f"{c // 1024}K entry・{w}-way", fontsize=9)
             style(ax)
             if i == len(ways) - 1:
