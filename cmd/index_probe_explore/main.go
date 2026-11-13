@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,24 @@ type replay struct {
 	sets, way                      int
 	tags                           []uint64 // MRU first within each set. key = prefix<<8 | length.
 	reads, writes, hits, trainHits uint64
+	staged                         bool
+	query                          []int
+	trainBucketHits                [33]uint64
+	lastBucket                     int
+	trainReads                     uint64
+}
+
+// Freeze the probe order using only hits in the selection prefix. The cache
+// placement remains fixed; changing lookup order does not move any entries.
+func (r *replay) freezeOrder() {
+	r.query = append([]int(nil), r.cfg.lengths...)
+	sort.Slice(r.query, func(i, j int) bool {
+		a, b := r.query[i], r.query[j]
+		if r.trainBucketHits[a] != r.trainBucketHits[b] {
+			return r.trainBucketHits[a] > r.trainBucketHits[b]
+		}
+		return a < b
+	})
 }
 
 func newReplay(c config, capacity, way int) *replay {
@@ -67,6 +86,10 @@ func (r *replay) access(p packet) bool {
 	// All implementable policies enumerate candidate sets using dst only.
 	// The leaf length is used below ONLY on a miss to select placement.
 	lengths := r.cfg.lengths
+	if r.staged && len(r.query) > 0 {
+		lengths = r.query
+	}
+	r.lastBucket = 0
 	var ideal [1]int
 	if r.cfg.kind == "ideal" {
 		ideal[0] = 16
@@ -105,9 +128,15 @@ func (r *replay) access(p packet) bool {
 				bestSet, bestPos, bestLen = s, pos, length
 			}
 		}
+		// Cached exclusive leaf regions cannot overlap with a different leaf
+		// region, so the first matching set is sufficient for a correct answer.
+		if r.staged && bestSet >= 0 {
+			break
+		}
 	}
 	r.reads += uint64(n)
 	if bestSet >= 0 {
+		r.lastBucket = floorLength(bestLen, r.cfg.lengths)
 		base := bestSet * r.way
 		k := r.tags[base+bestPos]
 		copy(r.tags[base+1:base+bestPos+1], r.tags[base:base+bestPos])
@@ -120,7 +149,7 @@ func (r *replay) access(p packet) bool {
 	}
 	placement := lengths[0]
 	if r.cfg.kind == "floor" {
-		placement = floorLength(length, lengths)
+		placement = floorLength(length, r.cfg.lengths)
 	}
 	s := index(p.dst, placement, r.sets, r.cfg.kind == "direct")
 	base := s * r.way
@@ -211,6 +240,8 @@ func main() {
 	out := flag.String("out", "", "CSV output")
 	train := flag.Int("train", 1000000, "selection prefix; also report disjoint suffix")
 	jobs := flag.Int("jobs", 4, "concurrent configuration replays")
+	floorOnly := flag.Bool("floor-only", false, "replay only floor configurations")
+	staged := flag.Bool("staged", false, "early exit at first exclusive leaf hit; train probe order on prefix")
 	flag.Parse()
 	if *out == "" || *jobs < 1 || *train < 0 || (*dstleaf == "" && (opts.trace == "" || opts.ruleFile == "")) {
 		panic("invalid arguments")
@@ -233,7 +264,15 @@ func main() {
 			panic(err)
 		}
 		for _, c := range configurations() {
-			tasks = append(tasks, task{newReplay(c, capacity, 8), capacity})
+			if *floorOnly && c.kind != "floor" {
+				continue
+			}
+			r := newReplay(c, capacity, 8)
+			r.staged = *staged
+			if *staged && c.kind != "floor" {
+				panic("staged requires floor-only")
+			}
+			tasks = append(tasks, task{r, capacity})
 		}
 	}
 	queue := make(chan task)
@@ -244,10 +283,17 @@ func main() {
 			defer wg.Done()
 			for task := range queue {
 				for i, p := range packets {
+					if i == *train {
+						task.r.trainReads = task.r.reads
+						if task.r.staged {
+							task.r.freezeOrder()
+						}
+					}
 					if task.r.access(p) {
 						task.r.hits++
 						if i < *train {
 							task.r.trainHits++
+							task.r.trainBucketHits[task.r.lastBucket]++
 						}
 					}
 				}
@@ -268,10 +314,10 @@ func main() {
 	}
 	defer f.Close()
 	w := csv.NewWriter(f)
-	w.Write([]string{"trace", "config", "kind", "capacity", "way", "candidates", "packets", "train_packets", "hits", "train_hits", "suffix_hits", "reads", "writes"})
+	w.Write([]string{"trace", "config", "kind", "capacity", "way", "candidates", "packets", "train_packets", "hits", "train_hits", "suffix_hits", "reads", "writes", "train_reads", "staged", "probe_order"})
 	for _, task := range tasks {
 		r := task.r
-		w.Write([]string{*label, r.cfg.name, r.cfg.kind, strconv.Itoa(task.capacity), "8", strconv.Itoa(max(1, len(r.cfg.lengths))), strconv.Itoa(len(packets)), strconv.Itoa(*train), fmt.Sprint(r.hits), fmt.Sprint(r.trainHits), fmt.Sprint(r.hits - r.trainHits), fmt.Sprint(r.reads), fmt.Sprint(r.writes)})
+		w.Write([]string{*label, r.cfg.name, r.cfg.kind, strconv.Itoa(task.capacity), "8", strconv.Itoa(max(1, len(r.cfg.lengths))), strconv.Itoa(len(packets)), strconv.Itoa(*train), fmt.Sprint(r.hits), fmt.Sprint(r.trainHits), fmt.Sprint(r.hits - r.trainHits), fmt.Sprint(r.reads), fmt.Sprint(r.writes), fmt.Sprint(r.trainReads), fmt.Sprint(r.staged), fmt.Sprint(r.query)})
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {
