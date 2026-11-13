@@ -2,7 +2,8 @@ package main
 
 import (
 	"math/rand"
-	"strings"
+	"os"
+	"path/filepath"
 	"test-module/cache"
 	"test-module/routingtable"
 	"testing"
@@ -10,7 +11,16 @@ import (
 
 func TestBaselineMatchesProductionPerPacket(t *testing.T) {
 	table := routingtable.NewRoutingTablePatriciaTrie()
-	table.ReadRule(strings.NewReader("0.0.0.0/0 1\n"))
+	path := filepath.Join(t.TempDir(), "default.rule")
+	if err := os.WriteFile(path, []byte("0.0.0.0/0 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	table.ReadRule(f)
 	tagLengths := make([][2]int, 8)
 	for i := range tagLengths {
 		tagLengths[i] = [2]int{9, 24}
@@ -34,7 +44,7 @@ func TestBaselineMatchesProductionPerPacket(t *testing.T) {
 				}
 				dst := uint32(region)<<(32-9) | uint32(rng.Intn(64))<<8 | uint32(rng.Intn(256))
 				p := packet{dst, leaf}
-				f := &cache.FiveTuple{DstIP: dst, IsLeafIndex: leaf, Proto: "tcp"}
+				f := &cache.FiveTuple{DstIP: dst, IsLeafIndex: leaf}
 				wh, _ := want.IsCachedWithFiveTuple(f, true)
 				if !wh {
 					want.CacheFiveTuple(f)
