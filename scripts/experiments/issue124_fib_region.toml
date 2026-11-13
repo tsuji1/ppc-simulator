@@ -1,6 +1,6 @@
-name = "issue124-fib-only-regional-index"
+name = "issue124-fib-only-regional-index-five-sizes"
 issue = 124
-note = "FIB-only immutable /8,/12,/16 destination-region length tables; mode/count/sqrt/address rules; one direct cache set read; no current-packet leaf used before cache lookup; main experiment untouched"
+note = "FIB-only immutable /8,/10,/12,/14,/16 tables (128B to 32KiB); mode/count/sqrt/address rules; one direct cache set read; no current-packet leaf used before cache lookup; main experiment untouched"
 cwd = "/home/tsuji/yuzugon/worktrees/osada-issue124-fib-region"
 inputs = [
  "run:20261113-114416-30d4a9/outputs/out/issue124_prefix_probes/private",
