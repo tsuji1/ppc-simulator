@@ -12,7 +12,7 @@ import (
 func TestBaselineMatchesProductionPerPacket(t *testing.T) {
 	table := routingtable.NewRoutingTablePatriciaTrie()
 	path := filepath.Join(t.TempDir(), "default.rule")
-	if err := os.WriteFile(path, []byte("0.0.0.0/0 1\n"), 0600); err != nil {
+	if err := os.WriteFile(path, []byte("0.0.0.0 0 1\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	f, err := os.Open(path)
