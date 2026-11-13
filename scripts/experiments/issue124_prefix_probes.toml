@@ -1,0 +1,40 @@
+name = "issue124-prefix-probe-exploration"
+issue = 124
+note = "Isolated exploratory 11 real traces, first 10M TCP/UDP packets, 8-way, 1K/8K/64K; floor buckets share all entries; nice 10, four replay workers, no DB"
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue124-explore"
+inputs = [
+ "scripts/experiments/final_entry_sweep_traces.tsv",
+ "/home/tsuji/yuzugon/pcap/non-anon/2025-09-27.pcap",
+ "/home/tsuji/yuzugon/pcap/non-anon/2025-12-27.pcap",
+ "/home/tsuji/yuzugon/pcap/non-anon/2026-03-27.pcap",
+ "/home/tsuji/yuzugon/pcap/jpix2sinet90s_5tuple.txt",
+ "/home/tsuji/yuzugon/pcap/sinet2jpix90s_5tuple.txt",
+ "/home/tsuji/yuzugon/pcap/equinix-sanjose.dirA.20140320-132400.UTC.anon.pcap",
+ "/home/tsuji/yuzugon/pcap/equinix-chicago.dirB.20140320-140100.UTC.anon.pcap",
+ "/home/tsuji/yuzugon/pcap/equinix-nyc.dirB.20190117-135900.UTC.anon.pcap",
+ "/home/tsuji/yuzugon/pcap/caida100g/20250320-130000.dira.anon.first10s.pcap",
+ "/home/tsuji/yuzugon/pcap/caida100g/20250320-130000.dirb.anon.first10s.pcap",
+ "/home/tsuji/yuzugon/pcap/caida100g/20251120-130000.dira.anon.first10s.pcap",
+ "/home/tsuji/yuzugon/rules/rib.20250927.0600.unique.rule",
+ "/home/tsuji/yuzugon/rules/rib.20251227.0600.unique.rule",
+ "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+ "/home/tsuji/yuzugon/rules/rrc06.bview.20180502.0000.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.isc.rib.20140320.1400.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.chicago.rib.20160628.1400.unique.rule",
+ "/home/tsuji/yuzugon/rules/rrc11.bview.20190117.1600.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule",
+ "c/liblctrie.so"
+]
+outputs = ["out/issue124_prefix_probes"]
+[env]
+PATH = "/home/tsuji/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin"
+GOTOOLCHAIN = "go1.26.1"
+GOMAXPROCS = "4"
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["nice", "-n", "10", "go", "test", "./cmd/index_probe_explore", "./cmd/windowed_hitrate"]
+[[steps]]
+name = "explore"
+argv = ["nice", "-n", "10", "bash", "scripts/run_index_probe_explore.sh", "scripts/experiments/final_entry_sweep_traces.tsv", "out/issue124_prefix_probes", "4"]
