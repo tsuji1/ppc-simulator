@@ -36,7 +36,8 @@ type replay struct {
 	trainBucketHits                [33]uint64
 	lastBucket                     int
 	trainReads                     uint64
-	predictor                      []uint8 // most recently successful bucket; 0 = invalid
+	predictor                      []uint8         // most recently successful bucket; 0 = invalid
+	region                         *fibRegionTable // immutable FIB-only destination-prefix selector
 }
 
 // Freeze the probe order using only hits in the selection prefix. The cache
@@ -87,6 +88,11 @@ func (r *replay) access(p packet) bool {
 	// All implementable policies enumerate candidate sets using dst only.
 	// The leaf length is used below ONLY on a miss to select placement.
 	lengths := r.cfg.lengths
+	var regional [1]int
+	if r.region != nil {
+		regional[0] = r.region.lookup(p.dst)
+		lengths = regional[:]
+	}
 	if r.staged && len(r.query) > 0 {
 		lengths = r.query
 	}
@@ -270,12 +276,41 @@ func main() {
 	floorOnly := flag.Bool("floor-only", false, "replay only floor configurations")
 	staged := flag.Bool("staged", false, "early exit at first exclusive leaf hit; train probe order on prefix")
 	predictorBits := flag.Int("predictor-bits", 0, "optional /16 region last-bucket predictor, 2^bits entries; 0 = none")
+	fibRegion := flag.Bool("fib-region", false, "FIB-only per-region length tables plus direct-18 and ideal references")
+	regionBits := flag.String("region-bits", "8,12,16", "destination high-bit table sizes for FIB-only mode")
+	regionOut := flag.String("region-out", "", "private packed FIB table output directory")
 	flag.Parse()
 	if *predictorBits < 0 || *predictorBits > 16 || (*predictorBits > 0 && !*staged) {
 		panic("invalid predictor")
 	}
 	if *out == "" || *jobs < 1 || *train < 0 || (*dstleaf == "" && (opts.trace == "" || opts.ruleFile == "")) {
 		panic("invalid arguments")
+	}
+	var regionTables []*fibRegionTable
+	if *fibRegion {
+		if opts.ruleFile == "" || *staged || *floorOnly || *predictorBits != 0 {
+			panic("FIB region mode requires rulefile and cannot combine with probes")
+		}
+		root, err := readFIBShape(opts.ruleFile)
+		if err != nil {
+			panic(err)
+		}
+		for _, raw := range strings.Split(*regionBits, ",") {
+			g, err := strconv.Atoi(raw)
+			if err != nil || g < 1 || g > 16 {
+				panic("region bits must be 1..16")
+			}
+			hist := root.regionHist(g)
+			for _, method := range []string{"mode", "count", "sqrt", "address"} {
+				rt := buildFIBRegionTable(hist, g, method)
+				regionTables = append(regionTables, rt)
+				if *regionOut != "" {
+					if err := rt.writePacked(*regionOut); err != nil {
+						panic(err)
+					}
+				}
+			}
+		}
 	}
 	packets, err := load(opts, *dstleaf, *export)
 	if err != nil {
@@ -294,7 +329,11 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-		for _, c := range configurations() {
+		configs := configurations()
+		if *fibRegion {
+			configs = []config{{"direct-18", "direct", []int{18}}, {"ideal", "ideal", nil}}
+		}
+		for _, c := range configs {
 			if *floorOnly && c.kind != "floor" {
 				continue
 			}
@@ -306,6 +345,11 @@ func main() {
 			if *staged && c.kind != "floor" {
 				panic("staged requires floor-only")
 			}
+			tasks = append(tasks, task{r, capacity})
+		}
+		for _, rt := range regionTables {
+			r := newReplay(config{rt.name(), "direct", nil}, capacity, 8)
+			r.region = rt
 			tasks = append(tasks, task{r, capacity})
 		}
 	}
@@ -348,10 +392,14 @@ func main() {
 	}
 	defer f.Close()
 	w := csv.NewWriter(f)
-	w.Write([]string{"trace", "config", "kind", "capacity", "way", "candidates", "packets", "train_packets", "hits", "train_hits", "suffix_hits", "reads", "writes", "train_reads", "staged", "probe_order"})
+	w.Write([]string{"trace", "config", "kind", "capacity", "way", "candidates", "packets", "train_packets", "hits", "train_hits", "suffix_hits", "reads", "writes", "train_reads", "staged", "probe_order", "region_bits", "table_bits", "fib_method", "table_length_hist"})
 	for _, task := range tasks {
 		r := task.r
-		w.Write([]string{*label, r.cfg.name, r.cfg.kind, strconv.Itoa(task.capacity), "8", strconv.Itoa(max(1, len(r.cfg.lengths))), strconv.Itoa(len(packets)), strconv.Itoa(*train), fmt.Sprint(r.hits), fmt.Sprint(r.trainHits), fmt.Sprint(r.hits - r.trainHits), fmt.Sprint(r.reads), fmt.Sprint(r.writes), fmt.Sprint(r.trainReads), fmt.Sprint(r.staged), fmt.Sprint(r.query)})
+		gb, tb, method, hist := "0", "0", "", ""
+		if r.region != nil {
+			gb, tb, method, hist = strconv.Itoa(r.region.g), strconv.Itoa(4*len(r.region.lengths)), r.region.method, r.region.histString()
+		}
+		w.Write([]string{*label, r.cfg.name, r.cfg.kind, strconv.Itoa(task.capacity), "8", strconv.Itoa(max(1, len(r.cfg.lengths))), strconv.Itoa(len(packets)), strconv.Itoa(*train), fmt.Sprint(r.hits), fmt.Sprint(r.trainHits), fmt.Sprint(r.hits - r.trainHits), fmt.Sprint(r.reads), fmt.Sprint(r.writes), fmt.Sprint(r.trainReads), fmt.Sprint(r.staged), fmt.Sprint(r.query), gb, tb, method, hist})
 	}
 	w.Flush()
 	if err := w.Error(); err != nil {

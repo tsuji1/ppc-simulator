@@ -1,0 +1,30 @@
+name = "issue124-fib-only-regional-index"
+issue = 124
+note = "FIB-only immutable /8,/12,/16 destination-region length tables; mode/count/sqrt/address rules; one direct cache set read; no current-packet leaf used before cache lookup; main experiment untouched"
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue124-fib-region"
+inputs = [
+ "run:20261113-114416-30d4a9/outputs/out/issue124_prefix_probes/private",
+ "/home/tsuji/yuzugon/rules/rib.20250927.0600.unique.rule",
+ "/home/tsuji/yuzugon/rules/rib.20251227.0600.unique.rule",
+ "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+ "/home/tsuji/yuzugon/rules/rrc06.bview.20180502.0000.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.isc.rib.20140320.1400.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.chicago.rib.20160628.1400.unique.rule",
+ "/home/tsuji/yuzugon/rules/rrc11.bview.20190117.1600.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule",
+ "/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule",
+ "scripts/experiments/final_entry_sweep_traces.tsv",
+ "c/liblctrie.so"
+]
+outputs = ["out/issue124_fib_region"]
+[env]
+PATH = "/home/tsuji/.local/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin"
+GOTOOLCHAIN = "go1.26.1"
+GOMAXPROCS = "4"
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["nice", "-n", "10", "go", "test", "./cmd/index_probe_explore"]
+[[steps]]
+name = "fib-region-replay"
+argv = ["nice", "-n", "10", "bash", "scripts/run_fib_region_index.sh", "run:20261113-114416-30d4a9/outputs/out/issue124_prefix_probes", "out/issue124_fib_region"]
