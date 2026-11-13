@@ -136,7 +136,9 @@ func (r *replay) access(p packet) bool {
 	}
 	r.reads += uint64(n)
 	if bestSet >= 0 {
-		r.lastBucket = floorLength(bestLen, r.cfg.lengths)
+		if r.cfg.kind == "floor" {
+			r.lastBucket = floorLength(bestLen, r.cfg.lengths)
+		}
 		base := bestSet * r.way
 		k := r.tags[base+bestPos]
 		copy(r.tags[base+1:base+bestPos+1], r.tags[base:base+bestPos])
