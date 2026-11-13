@@ -36,6 +36,7 @@ type replay struct {
 	trainBucketHits                [33]uint64
 	lastBucket                     int
 	trainReads                     uint64
+	predictor                      []uint8 // most recently successful bucket; 0 = invalid
 }
 
 // Freeze the probe order using only hits in the selection prefix. The cache
@@ -90,6 +91,24 @@ func (r *replay) access(p packet) bool {
 		lengths = r.query
 	}
 	r.lastBucket = 0
+	predSlot := 0
+	var predictedOrder [16]int
+	if len(r.predictor) > 0 {
+		// Predictor sees destination /16 only, never current packet's leaf.
+		predSlot = index(p.dst, 16, len(r.predictor), false)
+		predicted := int(r.predictor[predSlot])
+		if predicted != 0 {
+			predictedOrder[0] = predicted
+			n := 1
+			for _, length := range lengths {
+				if length != predicted {
+					predictedOrder[n] = length
+					n++
+				}
+			}
+			lengths = predictedOrder[:n]
+		}
+	}
 	var ideal [1]int
 	if r.cfg.kind == "ideal" {
 		ideal[0] = 16
@@ -138,6 +157,9 @@ func (r *replay) access(p packet) bool {
 	if bestSet >= 0 {
 		if r.cfg.kind == "floor" {
 			r.lastBucket = floorLength(bestLen, r.cfg.lengths)
+			if len(r.predictor) > 0 {
+				r.predictor[predSlot] = uint8(r.lastBucket)
+			}
 		}
 		base := bestSet * r.way
 		k := r.tags[base+bestPos]
@@ -152,6 +174,9 @@ func (r *replay) access(p packet) bool {
 	placement := lengths[0]
 	if r.cfg.kind == "floor" {
 		placement = floorLength(length, r.cfg.lengths)
+		if len(r.predictor) > 0 {
+			r.predictor[predSlot] = uint8(placement)
+		}
 	}
 	s := index(p.dst, placement, r.sets, r.cfg.kind == "direct")
 	base := s * r.way
@@ -244,7 +269,11 @@ func main() {
 	jobs := flag.Int("jobs", 4, "concurrent configuration replays")
 	floorOnly := flag.Bool("floor-only", false, "replay only floor configurations")
 	staged := flag.Bool("staged", false, "early exit at first exclusive leaf hit; train probe order on prefix")
+	predictorBits := flag.Int("predictor-bits", 0, "optional /16 region last-bucket predictor, 2^bits entries; 0 = none")
 	flag.Parse()
+	if *predictorBits < 0 || *predictorBits > 16 || (*predictorBits > 0 && !*staged) {
+		panic("invalid predictor")
+	}
 	if *out == "" || *jobs < 1 || *train < 0 || (*dstleaf == "" && (opts.trace == "" || opts.ruleFile == "")) {
 		panic("invalid arguments")
 	}
@@ -271,6 +300,9 @@ func main() {
 			}
 			r := newReplay(c, capacity, 8)
 			r.staged = *staged
+			if *predictorBits > 0 {
+				r.predictor = make([]uint8, 1<<*predictorBits)
+			}
 			if *staged && c.kind != "floor" {
 				panic("staged requires floor-only")
 			}

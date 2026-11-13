@@ -117,36 +117,41 @@ func TestProbeLookupIndependentOfLeafAnnotation(t *testing.T) {
 }
 
 func TestStagedEqualsParallelOnDisjointLeafRegions(t *testing.T) {
-	for _, cfg := range configurations() {
-		if cfg.kind != "floor" {
-			continue
-		}
-		a, b := newReplay(cfg, 256, 8), newReplay(cfg, 256, 8)
-		b.staged = true
-		rng := rand.New(rand.NewSource(88))
-		for i := 0; i < 50000; i++ {
-			if i == 1000 {
-				b.freezeOrder()
+	for _, bits := range []int{0, 4, 10} {
+		for _, cfg := range configurations() {
+			if cfg.kind != "floor" {
+				continue
 			}
-			region := rng.Intn(24)
-			leaf := int8(9 + region%17)
-			dst := uint32(region)<<(32-9) | uint32(rng.Intn(64))<<8 | uint32(rng.Intn(256))
-			p := packet{dst, leaf}
-			ah, bh := a.access(p), b.access(p)
-			if ah != bh {
-				t.Fatalf("%s packet %d staged=%v parallel=%v", cfg.name, i, bh, ah)
+			a, b := newReplay(cfg, 256, 8), newReplay(cfg, 256, 8)
+			b.staged = true
+			if bits > 0 {
+				b.predictor = make([]uint8, 1<<bits)
 			}
-			if bh && i < 1000 {
-				b.trainBucketHits[b.lastBucket]++
+			rng := rand.New(rand.NewSource(88))
+			for i := 0; i < 50000; i++ {
+				if i == 1000 {
+					b.freezeOrder()
+				}
+				region := rng.Intn(24)
+				leaf := int8(9 + region%17)
+				dst := uint32(region)<<(32-9) | uint32(rng.Intn(64))<<8 | uint32(rng.Intn(256))
+				p := packet{dst, leaf}
+				ah, bh := a.access(p), b.access(p)
+				if ah != bh {
+					t.Fatalf("%s packet %d staged=%v parallel=%v", cfg.name, i, bh, ah)
+				}
+				if bh && i < 1000 {
+					b.trainBucketHits[b.lastBucket]++
+				}
 			}
-		}
-		for i := range a.tags {
-			if a.tags[i] != b.tags[i] {
-				t.Fatalf("%s cache state differs", cfg.name)
+			for i := range a.tags {
+				if a.tags[i] != b.tags[i] {
+					t.Fatalf("%s cache state differs", cfg.name)
+				}
 			}
-		}
-		if b.reads > a.reads {
-			t.Fatal("staged used more reads")
+			if b.reads > a.reads {
+				t.Fatal("staged used more reads")
+			}
 		}
 	}
 }
