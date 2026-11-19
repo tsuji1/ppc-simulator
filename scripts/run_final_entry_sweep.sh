@@ -13,6 +13,7 @@
 #   FB_RD       FlowBench の -rd（既定 "0.70 1"）
 #   FB_FD       FlowBench の -fd（既定 "1 1"）
 #   PACKETS     1 trace で使う packet 数（既定 10000000）
+#   WAY         way 数（既定 8。MPLC の各層・VPLC で同じ。VPLC の -cache-tag-length は全 way 9-24 を way 数ぶん並べる）
 #   GO          go のパス（PATH にないとき）
 #   RESULT_JSON      1 で results/ に StatDetail の JSON を出す（既定 1。0 で出さない。1 構成 50MB ほどになる）
 #   BREAKDOWN_WINDOW 指定すると breakdown/<slug>_<容量>.json に、ミスの内訳（FA LRU・初回参照）と set の偏り（この packet 数の window ごと）を出す
@@ -30,6 +31,8 @@ fb_seeds=${FB_SEEDS-"1 2 3"}
 fb_rd=${FB_RD:-"0.70 1"}
 fb_fd=${FB_FD:-"1 1"}
 packets=${PACKETS:-10000000}
+way=${WAY:-8}
+tag_length=$(printf "9-24,%.0s" $(seq "$way")); tag_length=${tag_length%,}
 result_json=${RESULT_JSON:-1}
 breakdown_window=${BREAKDOWN_WINDOW:-}
 script_dir=$(cd "$(dirname "$0")" && pwd)
@@ -53,6 +56,7 @@ trap 'rm -rf "$tmp"' EXIT
   echo "simulator $(git -C "$repo_dir" rev-parse HEAD)"
   echo "capacities $capacities"
   echo "packets $packets"
+  echo "way $way"
   echo "flowbench -rd $fb_rd -fd $fb_fd seeds $fb_seeds"
 } > "$out_dir/versions.txt"
 
@@ -99,7 +103,7 @@ one() {
     extra+=(-breakdown-json "$out_dir/breakdown/${slug}_$cap.json" -breakdown-window "$breakdown_window")
   fi
   "$tmp/bin/windowed_hitrate" -rulefile "$rule" -trace "$trace" -max "$packets" \
-    -windows 1000000,"$packets" -progress-interval 0 -way 8 \
+    -windows 1000000,"$packets" -progress-interval 0 -way "$way" -cache-tag-length "$tag_length" \
     -mp-capacities "$half,$half" -mp-refbits 24,18 -mp-index direct,crc -ps-capacity "$cap" -ps-index-types "$ps_types" \
     -output-dir "$out_dir/hitrate" -output-csv "$out_dir/hitrate/${slug}_$cap.csv" \
     "${extra[@]}" \
@@ -109,7 +113,7 @@ one() {
   echo "done $label $cap"
 }
 export -f one
-export tmp out_dir packets ps_types result_json breakdown_window
+export tmp out_dir packets way tag_length ps_types result_json breakdown_window
 
 : > "$out_dir/hitrate/labels.tsv"
 while IFS=$'\t' read -r label trace rule; do
