@@ -1,0 +1,36 @@
+# #124 の掃引（final_entry_sweep.toml）を 16-way にしたもの（#131）。trace・総 entry 数・方式・packet 数は同じ。
+# 実 trace 11 本と FlowBench（-rd 0.70 1 -fd 1 1、seed 1〜3）、先頭 10M packet、16-way。
+# banana で実行する: researchctl run ~/yuzugon/worktrees/osada-issue131-16way/scripts/experiments/final_entry_sweep_16way.toml
+name = "final-entry-sweep-16way"
+issue = 131
+note = "#124 の総 entry 数 256〜64K の掃引を 16-way で（MPLC・VPLC（L=8..24）・ideal の hit と StatDetail、#131）"
+# 他の作業と checkout を共有しない。事前に
+# git worktree add --detach ~/yuzugon/worktrees/osada-issue131-16way origin-github/wip/aloheart-sync と
+# git submodule update --init third_party/fib-flowbench をしておく
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue131-16way"
+inputs = [
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/final_entry_sweep_16way"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+WAY = "16"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cmd/windowed_hitrate/"]
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_sweep_16way",
+  "6",
+]
