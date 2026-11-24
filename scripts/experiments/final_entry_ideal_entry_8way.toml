@@ -1,0 +1,38 @@
+# #124 の掃引（final_entry_sweep.toml・final_entry_sweep_16way.toml）の VPLC ideal を、entry の長さ（9..24）で index する
+# ideal-entry（CacheIndexType=50）でやり直す（8-way）。従来の ideal（2）は leaf を 16..24 に収めて index していた。
+# trace・総 entry 数・packet 数・FlowBench の seed は元の掃引と同じ。MPLC・VPLC direct は回さない（IDEAL_ENTRY_ONLY=1）。
+# banana で実行する: researchctl run ~/yuzugon/worktrees/osada-issue124-ideal-entry/scripts/experiments/final_entry_ideal_entry_8way.toml
+name = "final-entry-ideal-entry-8way"
+issue = 124
+note = "#124 の総 entry 数 256〜64K の掃引の VPLC ideal を 9..24 の entry 長で index し直す（ideal-entry、8-way）"
+# 他の作業と checkout を共有しない。事前に
+# git worktree add --detach ~/yuzugon/worktrees/osada-issue124-ideal-entry origin-github/wip/aloheart-sync と
+# git submodule update --init third_party/fib-flowbench をしておく
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue124-ideal-entry"
+inputs = [
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/final_entry_ideal_entry_8way"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+WAY = "8"
+IDEAL_ENTRY_ONLY = "1"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cache/", "./cmd/windowed_hitrate/"]
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_ideal_entry_8way",
+  "6",
+]

@@ -24,6 +24,12 @@ const (
 // prefix 長 L で index する場合はこちらを使う（CacheIndexType=L / 3,4,5 の CRC32 index は deprecated、issue #78）。
 const CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE = 100
 
+// CACHE_INDEX_TYPE_IDEAL_ENTRY は、挿入する entry の長さ（パケットの leaf 長を cache-tag-length の範囲に収めた長さ。
+// tag が 9-24 なら clamp(leaf, 9, 24)）の prefix を CRC32 して set index にする ideal（LPM が先に要る上限）。
+// CACHE_INDEX_TYPE_IDEAL（2）は leaf 長を 16..24 に収めて index するので、leaf が 9..15 の entry も /16 で
+// index していた（同じ entry が複数の set に入りうる）。2 は既存結果の再現のために残す。
+const CACHE_INDEX_TYPE_IDEAL_ENTRY = 50
+
 const (
 	CACHE_INDEX_TYPE_WINDOW_DIRECT_BASE = 20000
 	CACHE_INDEX_TYPE_WINDOW_XOR_BASE    = 30000
@@ -643,6 +649,8 @@ func (cache *UnifiedCache) setIdxForType(f *FiveTuple, idxType int, skew bool) u
 		}
 
 		return cache.hashSetIdx(dstIP, skew)
+	case CACHE_INDEX_TYPE_IDEAL_ENTRY:
+		return cache.hashSetIdx(f.DstIP>>(32-cache.idealEntryLength(f)), skew)
 	case CACHE_INDEX_TYPE_PREFIX24:
 		dstIP := f.DstIP >> (8) //使う
 		return cache.hashSetIdx(dstIP, skew)
@@ -655,6 +663,19 @@ func (cache *UnifiedCache) setIdxForType(f *FiveTuple, idxType int, skew bool) u
 	default:
 		panic(fmt.Sprintf("Unknown CacheIndexType: %d", idxType))
 	}
+}
+
+// idealEntryLength は CACHE_INDEX_TYPE_IDEAL_ENTRY の index 長。挿入する entry と同じ長さ（selectUnifiedCacheLength）で、
+// tag の最大より長い leaf（挿入しない）は tag の最大で引く。
+func (cache *UnifiedCache) idealEntryLength(f *FiveTuple) uint32 {
+	if length, ok := selectUnifiedCacheLength(f, cache.cacheTagLength, true); ok {
+		return uint32(length)
+	}
+	maxLen := 0
+	for _, tagLength := range cache.cacheTagLength {
+		maxLen = max(maxLen, tagLength[1])
+	}
+	return uint32(maxLen)
 }
 
 func appendUniqueSet(indices []uint, index uint) []uint {

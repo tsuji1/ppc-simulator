@@ -17,6 +17,8 @@
 #   GO          go のパス（PATH にないとき）
 #   RESULT_JSON      1 で results/ に StatDetail の JSON を出す（既定 1。0 で出さない。1 構成 50MB ほどになる）
 #   BREAKDOWN_WINDOW 指定すると breakdown/<slug>_<容量>.json に、ミスの内訳（FA LRU・初回参照）と set の偏り（この packet 数の window ごと）を出す
+#   IDEAL_ENTRY_ONLY 1 で VPLC ideal-entry（CacheIndexType=50、entry の長さ 9..24 で index）だけを回す（MPLC・VPLC direct は回さない）。
+#                    従来の ideal（2、leaf を 16..24 に収めて index）を差し替えるため。既定 0
 # MPLC は各層に半分ずつ（/24 と /18）。index は direct（主）と CRC（参考）の両方を出す。VPLC は先頭 1M の window と全体の両方の hit を出し、
 # L の選択は集計側（research-routing-table-cache の scripts/summarize_final_entry_sweep.py）で行う。
 set -euo pipefail
@@ -89,6 +91,12 @@ fi
 
 # VPLC: ideal（2）と direct prefix index L=8..24（100+L）
 ps_types=2,$(seq -s, 108 124)
+mp_configs=""
+if [[ ${IDEAL_ENTRY_ONLY:-0} == 1 ]]; then
+  ps_types=50
+  mp_configs=none
+fi
+echo "ps-index-types $ps_types mp-configs ${mp_configs:-default}" >> "$out_dir/versions.txt"
 
 one() {
   local label=$1 trace=$2 rule=$3 cap=$4
@@ -98,6 +106,9 @@ one() {
   local extra=()
   if [[ $result_json == 1 ]]; then
     extra+=(-result-json "$out_dir/results/${slug}_$cap.json")
+  fi
+  if [[ -n $mp_configs ]]; then
+    extra+=(-mp-configs "$mp_configs")
   fi
   if [[ -n $breakdown_window ]]; then
     extra+=(-breakdown-json "$out_dir/breakdown/${slug}_$cap.json" -breakdown-window "$breakdown_window")
@@ -113,7 +124,7 @@ one() {
   echo "done $label $cap"
 }
 export -f one
-export tmp out_dir packets way tag_length ps_types result_json breakdown_window
+export tmp out_dir packets way tag_length ps_types mp_configs result_json breakdown_window
 
 : > "$out_dir/hitrate/labels.tsv"
 while IFS=$'\t' read -r label trace rule; do

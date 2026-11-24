@@ -273,10 +273,10 @@ func parseOptions() (options, error) {
 	flag.IntVar(&opts.way, "way", opts.way, "way for MP and PS caches")
 	flag.StringVar(&rawMPCapacities, "mp-capacities", "2048,2048", "comma-separated MP layer capacities")
 	flag.StringVar(&rawMPRefbits, "mp-refbits", "24,18", "comma-separated MP layer refbits")
-	flag.StringVar(&rawMPConfigs, "mp-configs", "", "several MP configs run in one pass, e.g. \"24:128,18:128;24:64,18:192\" (overrides -mp-capacities/-mp-refbits)")
+	flag.StringVar(&rawMPConfigs, "mp-configs", "", "several MP configs run in one pass, e.g. \"24:128,18:128;24:64,18:192\" (overrides -mp-capacities/-mp-refbits); none skips MP")
 	flag.StringVar(&rawMPIndex, "mp-index", "crc", "comma-separated MP set index: crc and/or direct")
 	flag.IntVar(&opts.psCapacity, "ps-capacity", opts.psCapacity, "Prefix-Shared cache capacity")
-	flag.StringVar(&rawPSIndexTypes, "ps-index-types", "21,2", "comma-separated Prefix-Shared cache index types; 2 is ideal; none skips PS")
+	flag.StringVar(&rawPSIndexTypes, "ps-index-types", "21,2", "comma-separated Prefix-Shared cache index types; 2 is ideal (leaf clamped to 16..24), 50 is ideal-entry (index by the inserted entry length, 9..24 for tag 9-24); none skips PS")
 	flag.StringVar(&rawCacheTagLength, "cache-tag-length", defaultTagLengthWay8, "UnifiedCache tag length spec")
 	flag.StringVar(&opts.insertionPolicy, "cache-insertion-policy", opts.insertionPolicy, "UnifiedCache insertion policy")
 	flag.StringVar(&opts.windowMode, "window-mode", opts.windowMode, "window mode: warm or cold")
@@ -303,7 +303,10 @@ func parseOptions() (options, error) {
 	if err != nil {
 		return opts, fmt.Errorf("invalid -windows: %w", err)
 	}
-	if strings.TrimSpace(rawMPConfigs) != "" {
+	if strings.TrimSpace(rawMPConfigs) == "none" {
+		// "none" で MP を回さない（PS の構成だけを掃引するとき）
+		opts.mpConfigs = nil
+	} else if strings.TrimSpace(rawMPConfigs) != "" {
 		opts.mpConfigs, err = parseMPConfigs(rawMPConfigs)
 		if err != nil {
 			return opts, fmt.Errorf("invalid -mp-configs: %w", err)
@@ -341,8 +344,8 @@ func parseOptions() (options, error) {
 	for _, indexType := range opts.psIndexTypes {
 		// 100+L (L=0..32) is the direct prefix index (cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE)
 		direct := indexType >= cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE && indexType <= cache.CACHE_INDEX_TYPE_PREFIX_DIRECT_BASE+32
-		if (indexType < 0 || indexType > 24) && !direct {
-			return opts, fmt.Errorf("PS cache index type must be 0..24 or 100..132: %d", indexType)
+		if (indexType < 0 || indexType > 24) && !direct && indexType != cache.CACHE_INDEX_TYPE_IDEAL_ENTRY {
+			return opts, fmt.Errorf("PS cache index type must be 0..24, 50 (ideal-entry) or 100..132: %d", indexType)
 		}
 	}
 	opts.cacheTagLength, err = parseCacheTagLength(rawCacheTagLength)
@@ -580,6 +583,8 @@ func buildConfigSpecs(opts options) ([]configSpec, error) {
 		indexName := fmt.Sprintf("index%d", indexType)
 		if indexType == cache.CACHE_INDEX_TYPE_IDEAL {
 			indexName = "ideal"
+		} else if indexType == cache.CACHE_INDEX_TYPE_IDEAL_ENTRY {
+			indexName = "ideal-entry"
 		}
 		configs = append(configs, configSpec{
 			id:              fmt.Sprintf("ps-%s-cap%d", indexName, opts.psCapacity),

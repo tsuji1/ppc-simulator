@@ -158,6 +158,23 @@ func TestBreakdownSetLoad(t *testing.T) {
 	}
 }
 
+// ideal-entry（50）は entry の長さ（9..24）で set を選ぶので、/9 の entry も 1 つの set にしか入らない。
+func TestBreakdownSetLoadIdealEntry(t *testing.T) {
+	rule, trace := writeBreakdownFixture(t, 4000)
+	opts := options{
+		ruleFile: rule, trace: trace, way: 8, windows: []uint64{1000}, insertionPolicy: "exclusive",
+		mpIndexes: []string{"direct"}, psCapacity: 128, psIndexTypes: []int{cache.CACHE_INDEX_TYPE_IDEAL_ENTRY},
+		cacheTagLength: tagLengthWay8, breakdownJSON: filepath.Join(t.TempDir(), "b.json"), breakdownWindow: 1000,
+	}
+	_, got := runBreakdown(t, opts)
+	if len(got.Observers) != 1 || got.Observers[0].CacheIndexType != cache.CACHE_INDEX_TYPE_IDEAL_ENTRY {
+		t.Fatalf("observers: %+v", got.Observers)
+	}
+	if d := got.Observers[0].Dup; math.Abs(d-1.0) > 1e-12 {
+		t.Fatalf("ideal-entry の dup = %v、1 のはず", d)
+	}
+}
+
 func TestSetLoadObserverClose(t *testing.T) {
 	o := &setLoadObserver{sets: 4, way: 2, pairs: map[uint64]struct{}{}}
 	// set 0 に 4 entry、set 1 に 2 entry、set 2・3 は空。key は 6 個

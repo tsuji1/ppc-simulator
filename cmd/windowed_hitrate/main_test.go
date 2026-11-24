@@ -87,6 +87,19 @@ func TestBuildConfigSpecsMPOnly(t *testing.T) {
 	}
 }
 
+// PS だけ（MP なし）で ideal-entry（50）を回す構成。id は ps-ideal-entry-cap{容量}。
+func TestBuildConfigSpecsIdealEntryOnly(t *testing.T) {
+	opts := options{way: 8, mpIndexes: []string{"direct"}, psCapacity: 1024,
+		psIndexTypes: []int{cache.CACHE_INDEX_TYPE_IDEAL_ENTRY}, cacheTagLength: tagLengthWay8, insertionPolicy: "exclusive"}
+	configs, err := buildConfigSpecs(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(configs) != 1 || configs[0].id != "ps-ideal-entry-cap1024" {
+		t.Fatalf("構成 = %+v, want ps-ideal-entry-cap1024 の 1 つ", configs)
+	}
+}
+
 func TestWriteResultJSON(t *testing.T) {
 	dir := t.TempDir()
 	// 本番の rule と同じく default route を入れる（無いと最長一致の検索が空になる）
