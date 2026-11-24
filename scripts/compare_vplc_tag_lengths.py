@@ -29,7 +29,7 @@ def run_trial(binary, out, packets, trial):
             str(binary), "-rulefile", rule, "-trace", trace,
             "-max", str(packets), "-windows", str(packets), "-progress-interval", "0",
             "-way", str(WAY), "-cache-tag-length", ",".join([tag] * WAY),
-            "-insertion-policy", "exclusive", "-mp-configs", "none",
+            "-cache-insertion-policy", "exclusive", "-mp-configs", "none",
             "-ps-capacity", str(capacity), "-ps-index-types", ",".join(INDEXES),
             "-output-dir", str(out), "-output-csv", str(output_csv),
             "-breakdown-json", str(breakdown), "-breakdown-window", "1000000",
