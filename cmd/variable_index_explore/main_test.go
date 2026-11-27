@@ -250,7 +250,7 @@ func TestRunStaticMatchesReference(t *testing.T) {
 		withDirectIndex(t, direct)
 		withXorIndex(t, kind == "xor")
 		tr := randomTrace(1, 20000)
-		for _, l := range []int{12, 16, 18, 24, 32} {
+		for _, l := range []int{1, 4, 8, 12, 16, 18, 24, 32} {
 			const capacity, way = 64, 4
 			nsets := capacity / way
 			ref := &refLRU{way: way, sets: map[int][]struct {

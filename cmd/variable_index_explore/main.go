@@ -1101,7 +1101,8 @@ func main() {
 		maxPer     = flag.Int("max", 10_000_000, "packets per file")
 		mode       = flag.String("mode", "static", "static | shadow | region | split")
 		indexKind  = flag.String("index", "direct", "set index function (list): direct (low bits of top L bits) | xor (XOR-fold of top L bits, issue 123) | crc (DEPRECATED: CRC32 of top L bits)")
-		lmax       = flag.Int("lmax", 24, "static / static-train: largest index length L to sweep (9..lmax, up to 32)")
+		lmax       = flag.Int("lmax", 24, "static / static-train: largest index length L to sweep (lmin..lmax, up to 32)")
+		lmin       = flag.Int("lmin", 9, "static / static-train: smallest index length L to sweep (1..lmax)")
 		caps       = flag.String("capacity", "1024,4096,16384", "capacities")
 		wayList    = flag.String("way", "8", "associativity (list; with several ways or -index kinds, output files get _<index>_w<way>)")
 		cands      = flag.String("cands", "16-24", "candidate index lengths")
@@ -1152,6 +1153,10 @@ func main() {
 		}
 	}
 	ways := parseInts(*wayList)
+	if *lmin < 1 || *lmin > *lmax {
+		fmt.Fprintf(os.Stderr, "invalid -lmin %d: expected 1..lmax\n", *lmin)
+		os.Exit(2)
+	}
 	if *lmax < 9 || *lmax > 32 {
 		fmt.Fprintf(os.Stderr, "invalid -lmax %d: expected 9..32\n", *lmax)
 		os.Exit(2)
@@ -1190,7 +1195,7 @@ func main() {
 						add(func() *result { return runStatic(t, 0, n, c, *way, fixed) })
 						continue
 					}
-					for l := 9; l <= *lmax; l++ {
+					for l := *lmin; l <= *lmax; l++ {
 						add(func() *result { return runStatic(t, 0, n, c, *way, l) })
 					}
 					add(func() *result { return runIdeal(t, c, *way) })
@@ -1203,7 +1208,7 @@ func main() {
 					for _, tr := range parseInts(*trainPkts) {
 						add(func() *result {
 							best, bestHit := 0, uint64(0)
-							for l := 9; l <= *lmax; l++ {
+							for l := *lmin; l <= *lmax; l++ {
 								if r := runStatic(t, 0, tr, c, *way, l); r.Hits > bestHit {
 									best, bestHit = l, r.Hits
 								}
@@ -1213,7 +1218,7 @@ func main() {
 							return r
 						})
 					}
-					for l := 9; l <= *lmax; l++ {
+					for l := *lmin; l <= *lmax; l++ {
 						add(func() *result {
 							r := runStatic(t, evalFrom, n, c, *way, l)
 							r.Policy = "static-eval"
