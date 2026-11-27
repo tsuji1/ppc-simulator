@@ -1029,16 +1029,32 @@ func (cache *UnifiedCache) cacheAtSetWithLength(setIdx uint, f *FiveTuple, cache
 	return evicted
 }
 
+// cacheInclusiveFiveTuple は、宛先に一致する rule のうち長さが tag の範囲に入るもの（祖先を含む）を入れる。
+// leaf は exclusive と同じ長さの選び方（selectUnifiedCacheLength）で入れる。leaf が tag の範囲より短い
+// （/0 の番兵や /8 など）ときは範囲の先頭の長さ（例: /9）に切り詰めて入れる。以前はちょうどの長さしか
+// 入れなかったので、こうした leaf は inclusive では一度も cache に入らなかった（#153）。
+// 祖先は切り詰めない（切り詰めると、その範囲内のほかの宛先が祖先の entry に誤ってヒットする）。
 func (cache *UnifiedCache) cacheInclusiveFiveTuple(f *FiveTuple) []*FiveTuple {
 	prefixes, _ := cache.RoutingTable.SearchIP(ipaddress.NewIPaddress(f.DstIP), 32)
+	leafLength := -1
+	if cache.canInsertExclusive(f) {
+		if length, ok := selectUnifiedCacheLength(f, cache.cacheTagLength, false); ok {
+			leafLength = int(length)
+		}
+	}
 	evictedFiveTuples := []*FiveTuple{}
 	for _, prefix := range prefixes {
 		prefixLen := len(prefix)
-		if !cache.canCacheExactLength(prefixLen) {
+		if prefixLen == leafLength || !cache.canCacheExactLength(prefixLen) {
 			continue
 		}
 		setIdx := cache.placementSetIndex(f, prefixLen)
 		evictedFiveTuples = append(evictedFiveTuples, cache.cacheAtSetWithLength(setIdx, f, uint8(prefixLen))...)
+	}
+	// leaf は最後に入れる（以前と同じく、長い entry ほど後に入る順にする）
+	if leafLength >= 0 {
+		setIdx := cache.placementSetIndex(f, leafLength)
+		evictedFiveTuples = append(evictedFiveTuples, cache.cacheAtSetWithLength(setIdx, f, uint8(leafLength))...)
 	}
 	return evictedFiveTuples
 }

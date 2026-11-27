@@ -974,3 +974,46 @@ func TestUnifiedCacheEpochParameterIncludesEpochLength(t *testing.T) {
 		t.Fatalf("adaptiveepochlength=%v, want 1024", parameter["adaptiveepochlength"])
 	}
 }
+
+// #153: leaf が tag の範囲より短い（/0 の番兵など）とき、inclusive でも exclusive と同じく範囲の先頭の長さで入れる。
+func TestUnifiedCacheInclusiveCachesShortLeafAtTagStart(t *testing.T) {
+	routingTable := newTestRoutingTable(t, ""+
+		"0.0.0.0 0 192.0.2.0\n"+
+		"10.0.0.0 16 192.0.2.16\n")
+	for _, policy := range []string{UnifiedCacheInsertionPolicyExclusive, UnifiedCacheInsertionPolicyInclusive} {
+		cache := NewUnifiedCache(4, 4, routingTable, CACHE_INDEX_TYPE_DIRECT, [][2]int{{9, 24}}, policy, false)
+		unrouted := &FiveTuple{Proto: IP_TCP, DstIP: 0xc0000201, IsLeafIndex: 1}
+		cache.CacheFiveTuple(unrouted)
+		line := &cache.Sets[0]
+		if len(line.Entries) != 1 {
+			t.Fatalf("%s: len(Entries) = %d, want 1", policy, len(line.Entries))
+		}
+		if _, ok := line.Entries[line.entryKey(unrouted.DstIP, 9)]; !ok {
+			t.Fatalf("%s: /9 entry for the /0 leaf was not cached", policy)
+		}
+		if hit, _ := cache.IsCachedWithFiveTuple(unrouted, false); !hit {
+			t.Fatalf("%s: expected hit on the /9 entry", policy)
+		}
+	}
+}
+
+// #153: routed な宛先では /0 の番兵（祖先）を /9 に切り詰めて入れない。
+func TestUnifiedCacheInclusiveDoesNotTruncateShortAncestor(t *testing.T) {
+	routingTable := newTestRoutingTable(t, ""+
+		"0.0.0.0 0 192.0.2.0\n"+
+		"10.0.0.0 16 192.0.2.16\n")
+	cache := NewUnifiedCache(4, 4, routingTable, CACHE_INDEX_TYPE_DIRECT, [][2]int{{9, 24}}, UnifiedCacheInsertionPolicyInclusive, false)
+	routed := &FiveTuple{Proto: IP_TCP, DstIP: 0x0a000001, IsLeafIndex: 16}
+	cache.CacheFiveTuple(routed)
+	line := &cache.Sets[0]
+	if len(line.Entries) != 1 {
+		t.Fatalf("len(Entries) = %d, want 1", len(line.Entries))
+	}
+	if _, ok := line.Entries[line.entryKey(routed.DstIP, 16)]; !ok {
+		t.Fatal("missing cached 10.0.0.0/16 entry")
+	}
+	sibling := &FiveTuple{Proto: IP_TCP, DstIP: 0x0a010001, IsLeafIndex: 16}
+	if hit, _ := cache.IsCachedWithFiveTuple(sibling, false); hit {
+		t.Fatal("unexpected hit for 10.1.0.1 (no /9 entry should exist)")
+	}
+}
