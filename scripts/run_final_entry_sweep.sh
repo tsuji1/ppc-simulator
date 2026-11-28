@@ -13,7 +13,9 @@
 #   FB_RD       FlowBench の -rd（既定 "0.70 1"）
 #   FB_FD       FlowBench の -fd（既定 "1 1"）
 #   PACKETS     1 trace で使う packet 数（既定 10000000）
-#   WAY         way 数（既定 8。MPLC の各層・VPLC で同じ。VPLC の -cache-tag-length は全 way 9-24 を way 数ぶん並べる）
+#   WAY         way 数（既定 8。MPLC の各層・VPLC で同じ。VPLC の -cache-tag-length は TAG_LENGTH を way 数ぶん並べる）
+#   TAG_LENGTH  VPLC に入れる entry の prefix 長の範囲（既定 9-24。1-32 で全長、#152）。MPLC には効かない
+#   IDEAL_TYPE  VPLC ideal の CacheIndexType（既定 2: leaf を 16..24 に収めて index。50: ideal-entry、入れる entry の長さで index）
 #   GO          go のパス（PATH にないとき）
 #   RESULT_JSON      1 で results/ に StatDetail の JSON を出す（既定 1。0 で出さない。1 構成 50MB ほどになる）
 #   BREAKDOWN_WINDOW 指定すると breakdown/<slug>_<容量>.json に、ミスの内訳（FA LRU・初回参照）と set の偏り（この packet 数の window ごと）を出す
@@ -34,7 +36,9 @@ fb_rd=${FB_RD:-"0.70 1"}
 fb_fd=${FB_FD:-"1 1"}
 packets=${PACKETS:-10000000}
 way=${WAY:-8}
-tag_length=$(printf "9-24,%.0s" $(seq "$way")); tag_length=${tag_length%,}
+tag_range=${TAG_LENGTH:-9-24}
+tag_length=$(printf "$tag_range,%.0s" $(seq "$way")); tag_length=${tag_length%,}
+ideal_type=${IDEAL_TYPE:-2}
 result_json=${RESULT_JSON:-1}
 breakdown_window=${BREAKDOWN_WINDOW:-}
 script_dir=$(cd "$(dirname "$0")" && pwd)
@@ -59,6 +63,7 @@ trap 'rm -rf "$tmp"' EXIT
   echo "capacities $capacities"
   echo "packets $packets"
   echo "way $way"
+  echo "tag-length $tag_range"
   echo "flowbench -rd $fb_rd -fd $fb_fd seeds $fb_seeds"
 } > "$out_dir/versions.txt"
 
@@ -89,8 +94,8 @@ if [[ -n $fb_seeds ]]; then
   done
 fi
 
-# VPLC: ideal（2）と direct prefix index L=8..24（100+L）
-ps_types=2,$(seq -s, 108 124)
+# VPLC: ideal（IDEAL_TYPE、既定 2）と direct prefix index L=8..24（100+L）
+ps_types=$ideal_type,$(seq -s, 108 124)
 mp_configs=""
 if [[ ${IDEAL_ENTRY_ONLY:-0} == 1 ]]; then
   ps_types=50

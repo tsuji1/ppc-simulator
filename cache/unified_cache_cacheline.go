@@ -19,15 +19,15 @@ type UnifiedCacheLine struct {
 	directIndexSize  uint
 	wayQuotaWideMax  int
 	wayQuotaWideWays int
-	HitCount         [32]uint32
+	HitCount         [33]uint32
 	EvictedCache     map[uint32]uint32
 	// 初期参照性ミス数
-	FirstMissCount      [32]uint32
-	UniqueDstIP         [32][]uint32
-	UniqueDstIPHitCount [32]map[uint32]uint32
+	FirstMissCount      [33]uint32
+	UniqueDstIP         [33][]uint32
+	UniqueDstIPHitCount [33]map[uint32]uint32
 	// 2回目以降の参照性ミス数
-	SecondMissCount   [32]uint32
-	SecondMissIPCount [32]map[uint32]uint32
+	SecondMissCount   [33]uint32
+	SecondMissIPCount [33]map[uint32]uint32
 	parentIndex       uint
 	BaseSize          uint
 }
@@ -47,11 +47,11 @@ type unifiedCacheLineEntryKey struct {
 }
 
 type UnifiedCacheLineStat struct {
-	HitCount            [32]uint32
-	FirstMissCount      [32]uint32
-	SecondMissCount     [32]uint32
-	UniqueDstIPHitCount [32]map[uint32]uint32
-	SecondMissIPCount   [32]map[uint32]uint32
+	HitCount            [33]uint32
+	FirstMissCount      [33]uint32
+	SecondMissCount     [33]uint32
+	UniqueDstIPHitCount [33]map[uint32]uint32
+	SecondMissIPCount   [33]map[uint32]uint32
 }
 
 func (cache *UnifiedCacheLine) ReturnMaskedIP(IP uint32, prefix uint8) uint32 {

@@ -262,7 +262,7 @@ func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, re
 			closeOutputFiles()
 			return "", "", fmt.Errorf("run %s has inconsistent UnifiedCache set-stat row counts", runID)
 		}
-		for prefixLen := 0; prefixLen < 32; prefixLen++ {
+		for prefixLen := range unifiedStat.WholeCacheFirstMissCount {
 			var lineHits, lineFirstMisses, lineSecondMisses uint64
 			for _, perSet := range unifiedStat.CachelineHitCount {
 				lineHits += uint64(perSet[prefixLen])
@@ -298,7 +298,7 @@ func writeLocalCSVResults(outputDir, executionID, traceName, ruleName string, re
 			}
 		}
 		for setIdx := range unifiedStat.CachelineHitCount {
-			for prefixLen := 0; prefixLen < 32; prefixLen++ {
+			for prefixLen := range unifiedStat.CachelineHitCount[setIdx] {
 				setRow := []string{
 					executionID,
 					runID,

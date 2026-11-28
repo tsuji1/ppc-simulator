@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"test-module/ipaddress"
 	"test-module/routingtable"
@@ -137,24 +138,25 @@ type UnifiedCache struct {
 	DebugMode                     bool
 	cacheTagLength                [][2]int
 	directIndexSize               uint
+	prefixStatColumns             int
 	minCacheIndex                 uint8
 	writeCount                    uint64
 	writeCountMax                 uint64
 	// Whole-cache first/second miss tracking is separate from per-set counters.
-	WholeCacheFirstMissCount   [32]uint32
-	WholeCacheSecondMissCount  [32]uint32
-	wholeCacheSeenMissNetworks [32]map[uint32]struct{}
+	WholeCacheFirstMissCount   [33]uint32
+	WholeCacheSecondMissCount  [33]uint32
+	wholeCacheSeenMissNetworks [33]map[uint32]struct{}
 	// These counters estimate misses caused by the exclusive leaf-only insert gate.
-	ExclusiveRejectedFirstMissCount   [32]uint32
-	ExclusiveRejectedSecondMissCount  [32]uint32
-	InclusiveNonLeafInsertedCount     [32]uint32
-	exclusiveRejectedSeenMissNetworks [32]map[uint32]struct{}
-	AdaptiveLookupCount               [32]uint64
-	AdaptiveSelectionCount            [32]uint64
+	ExclusiveRejectedFirstMissCount   [33]uint32
+	ExclusiveRejectedSecondMissCount  [33]uint32
+	InclusiveNonLeafInsertedCount     [33]uint32
+	exclusiveRejectedSeenMissNetworks [33]map[uint32]struct{}
+	AdaptiveLookupCount               [33]uint64
+	AdaptiveSelectionCount            [33]uint64
 	AdaptiveSwitchCount               uint64
 	AdaptiveEpochAccessCount          uint64
-	AdaptiveEpochObservationCount     [32]uint64
-	AdaptiveEpochDecisionCount        [32]uint64
+	AdaptiveEpochObservationCount     [33]uint64
+	AdaptiveEpochDecisionCount        [33]uint64
 	AdaptiveCompletedEpochs           uint64
 }
 
@@ -165,20 +167,20 @@ func (c *UnifiedCache) StatString() string {
 
 type UnifiedCacheStat struct {
 	DepthSum                         uint64
-	CachelineHitCount                [][32]uint32
-	CachelineFirstMissCount          [][32]uint32
-	CachelineSecondMissCount         [][32]uint32
-	WholeCacheFirstMissCount         [32]uint32
-	WholeCacheSecondMissCount        [32]uint32
-	ExclusiveRejectedFirstMissCount  [32]uint32
-	ExclusiveRejectedSecondMissCount [32]uint32
-	InclusiveNonLeafInsertedCount    [32]uint32
-	AdaptiveLookupCount              [32]uint64
-	AdaptiveSelectionCount           [32]uint64
+	CachelineHitCount                [][]uint32
+	CachelineFirstMissCount          [][]uint32
+	CachelineSecondMissCount         [][]uint32
+	WholeCacheFirstMissCount         []uint32
+	WholeCacheSecondMissCount        []uint32
+	ExclusiveRejectedFirstMissCount  []uint32
+	ExclusiveRejectedSecondMissCount []uint32
+	InclusiveNonLeafInsertedCount    []uint32
+	AdaptiveLookupCount              []uint64
+	AdaptiveSelectionCount           []uint64
 	AdaptiveSwitchCount              uint64
 	AdaptiveFinalIndexLength         int
 	AdaptiveEpochAccessCount         uint64
-	AdaptiveEpochDecisionCount       [32]uint64
+	AdaptiveEpochDecisionCount       []uint64
 	AdaptiveCompletedEpochs          uint64
 	SetProbeCount                    uint64
 	MaxSetProbeCount                 uint64
@@ -244,8 +246,8 @@ func IsAdaptiveUnifiedCacheIndexPolicy(policy string) bool {
 	return policy == UnifiedCacheIndexPolicyLastInserted || policy == UnifiedCacheIndexPolicyEpochFrequent
 }
 
-func unifiedPrefixIndex(prefixLen int8) (int, bool) {
-	if prefixLen < 0 || prefixLen >= 32 {
+func (cache *UnifiedCache) unifiedPrefixIndex(prefixLen int8) (int, bool) {
+	if prefixLen < 0 || int(prefixLen) >= cache.prefixStatColumns {
 		return 0, false
 	}
 	return int(prefixLen), true
@@ -310,7 +312,7 @@ func xorFoldIndex(value uint32, valueBits int, indexBits uint) uint {
 
 func selectUnifiedCacheLength(f *FiveTuple, cacheTagLength [][2]int, allowNonLeaf bool) (int8, bool) {
 	leafLen := int(f.IsLeafIndex)
-	if leafLen < 0 || leafLen >= 32 {
+	if leafLen < 0 || leafLen > 32 {
 		return 0, false
 	}
 
@@ -326,12 +328,12 @@ func selectUnifiedCacheLength(f *FiveTuple, cacheTagLength [][2]int, allowNonLea
 		case leafLen <= end:
 			selected = int8(leafLen)
 			found = true
-		case allowNonLeaf:
+		case allowNonLeaf && leafLen < 32:
 			selected = int8(end)
 			found = true
 		}
 	}
-	if !found || selected < 0 || selected >= 32 {
+	if !found || selected < 0 || selected > 32 {
 		return 0, false
 	}
 	return selected, true
@@ -446,19 +448,20 @@ func (cache *UnifiedCache) TopSecondMissIPRecords(limit int) []UnifiedSecondMiss
 }
 
 func (cache *UnifiedCache) Stat() interface{} {
+	columns := cache.prefixStatColumns
 	UnifiedCacheStat := UnifiedCacheStat{
 		DepthSum:                         cache.DepthSum,
-		WholeCacheFirstMissCount:         cache.WholeCacheFirstMissCount,
-		WholeCacheSecondMissCount:        cache.WholeCacheSecondMissCount,
-		ExclusiveRejectedFirstMissCount:  cache.ExclusiveRejectedFirstMissCount,
-		ExclusiveRejectedSecondMissCount: cache.ExclusiveRejectedSecondMissCount,
-		InclusiveNonLeafInsertedCount:    cache.InclusiveNonLeafInsertedCount,
-		AdaptiveLookupCount:              cache.AdaptiveLookupCount,
-		AdaptiveSelectionCount:           cache.AdaptiveSelectionCount,
+		WholeCacheFirstMissCount:         slices.Clone(cache.WholeCacheFirstMissCount[:columns]),
+		WholeCacheSecondMissCount:        slices.Clone(cache.WholeCacheSecondMissCount[:columns]),
+		ExclusiveRejectedFirstMissCount:  slices.Clone(cache.ExclusiveRejectedFirstMissCount[:columns]),
+		ExclusiveRejectedSecondMissCount: slices.Clone(cache.ExclusiveRejectedSecondMissCount[:columns]),
+		InclusiveNonLeafInsertedCount:    slices.Clone(cache.InclusiveNonLeafInsertedCount[:columns]),
+		AdaptiveLookupCount:              slices.Clone(cache.AdaptiveLookupCount[:columns]),
+		AdaptiveSelectionCount:           slices.Clone(cache.AdaptiveSelectionCount[:columns]),
 		AdaptiveSwitchCount:              cache.AdaptiveSwitchCount,
 		AdaptiveFinalIndexLength:         cache.ActiveIndexLen,
 		AdaptiveEpochAccessCount:         cache.AdaptiveEpochAccessCount,
-		AdaptiveEpochDecisionCount:       cache.AdaptiveEpochDecisionCount,
+		AdaptiveEpochDecisionCount:       slices.Clone(cache.AdaptiveEpochDecisionCount[:columns]),
 		AdaptiveCompletedEpochs:          cache.AdaptiveCompletedEpochs,
 		SetProbeCount:                    cache.SetProbeCount,
 		MaxSetProbeCount:                 cache.MaxSetProbeCount,
@@ -477,12 +480,12 @@ func (cache *UnifiedCache) Stat() interface{} {
 	debugDirPath := "debug"
 	for i := 0; i < len(cache.Sets); i++ {
 		UnifiedCacheStat.ExtensionSetCountBySet = append(UnifiedCacheStat.ExtensionSetCountBySet, uint32(len(cache.extensionBanksBySet[i])))
-		cacheLineStat := cache.Sets[i].Stat()
-		UnifiedCacheStat.CachelineHitCount = append(UnifiedCacheStat.CachelineHitCount, cacheLineStat.(UnifiedCacheLineStat).HitCount)
+		cacheLineStat := cache.Sets[i].Stat().(UnifiedCacheLineStat)
+		UnifiedCacheStat.CachelineHitCount = append(UnifiedCacheStat.CachelineHitCount, cacheLineStat.HitCount[:columns])
 
-		UnifiedCacheStat.CachelineFirstMissCount = append(UnifiedCacheStat.CachelineFirstMissCount, cacheLineStat.(UnifiedCacheLineStat).FirstMissCount)
-		UnifiedCacheStat.CachelineSecondMissCount = append(UnifiedCacheStat.CachelineSecondMissCount, cacheLineStat.(UnifiedCacheLineStat).SecondMissCount)
-		secondMisscount := cacheLineStat.(UnifiedCacheLineStat).SecondMissCount
+		UnifiedCacheStat.CachelineFirstMissCount = append(UnifiedCacheStat.CachelineFirstMissCount, cacheLineStat.FirstMissCount[:columns])
+		UnifiedCacheStat.CachelineSecondMissCount = append(UnifiedCacheStat.CachelineSecondMissCount, cacheLineStat.SecondMissCount[:columns])
+		secondMisscount := cacheLineStat.SecondMissCount
 
 		max_secondMisscount := uint32(0)
 		max_index := 0
@@ -494,7 +497,7 @@ func (cache *UnifiedCache) Stat() interface{} {
 		}
 
 		if cacheDebugFileOutputEnabled && cache.Size > 4096 && max_secondMisscount < 200 && max_secondMisscount > 100 && cache.writeCount == 0 {
-			uniqueDstIPHitCount := cacheLineStat.(UnifiedCacheLineStat).UniqueDstIPHitCount
+			uniqueDstIPHitCount := cacheLineStat.UniqueDstIPHitCount
 			fmt.Printf("Max second miss count exceeded: %d (index: %d)\n", max_secondMisscount, max_index)
 
 			cache.writeCount++
@@ -529,7 +532,7 @@ func (cache *UnifiedCache) Stat() interface{} {
 
 		}
 		if cacheDebugFileOutputEnabled && cache.Size > 4096 && max_secondMisscount > 3000 {
-			uniqueDstIPHitCount := cacheLineStat.(UnifiedCacheLineStat).UniqueDstIPHitCount
+			uniqueDstIPHitCount := cacheLineStat.UniqueDstIPHitCount
 			fmt.Printf("Max second miss count exceeded: %d (index: %d)\n", max_secondMisscount, max_index)
 
 			save := uniqueDstIPHitCount[max_index]
@@ -910,7 +913,7 @@ func (cache *UnifiedCache) finishAdaptiveEpoch() {
 	}
 	cache.AdaptiveCompletedEpochs++
 	cache.AdaptiveEpochAccessCount = 0
-	cache.AdaptiveEpochObservationCount = [32]uint64{}
+	cache.AdaptiveEpochObservationCount = [33]uint64{}
 }
 
 func (cache *UnifiedCache) wholeCacheMissNetwork(f *FiveTuple) (int8, uint32, bool) {
@@ -918,7 +921,7 @@ func (cache *UnifiedCache) wholeCacheMissNetwork(f *FiveTuple) (int8, uint32, bo
 	if cacheLength < int8(cache.minCacheIndex) {
 		cacheLength = int8(cache.minCacheIndex)
 	}
-	if f.IsLeafIndex < 0 || f.IsLeafIndex >= 32 || cacheLength < 0 || cacheLength >= 32 {
+	if _, ok := cache.unifiedPrefixIndex(f.IsLeafIndex); !ok || cacheLength < 0 || cacheLength > 32 {
 		return 0, 0, false
 	}
 	dstNetwork := f.DstIP >> (32 - uint8(cacheLength))
@@ -951,7 +954,7 @@ func (cache *UnifiedCache) canInsertExclusive(f *FiveTuple) bool {
 }
 
 func (cache *UnifiedCache) recordExclusiveRejectedMiss(f *FiveTuple) {
-	prefixIdx, ok := unifiedPrefixIndex(f.IsLeafIndex)
+	prefixIdx, ok := cache.unifiedPrefixIndex(f.IsLeafIndex)
 	if !ok {
 		return
 	}
@@ -972,7 +975,7 @@ func (cache *UnifiedCache) recordExclusiveRejectedMiss(f *FiveTuple) {
 }
 
 func (cache *UnifiedCache) recordInclusiveNonLeafInsert(f *FiveTuple) {
-	prefixIdx, ok := unifiedPrefixIndex(f.IsLeafIndex)
+	prefixIdx, ok := cache.unifiedPrefixIndex(f.IsLeafIndex)
 	if !ok {
 		return
 	}
@@ -980,7 +983,7 @@ func (cache *UnifiedCache) recordInclusiveNonLeafInsert(f *FiveTuple) {
 }
 
 func (cache *UnifiedCache) canCacheExactLength(prefixLen int) bool {
-	if prefixLen < 0 || prefixLen >= 32 {
+	if prefixLen < 0 || prefixLen > 32 {
 		return false
 	}
 	for _, tagLength := range cache.cacheTagLength {
@@ -1327,7 +1330,11 @@ func NewUnifiedCacheWithIndexConfig(size uint, way uint, routingTable *routingta
 		}
 	}
 	minLength := 32
+	prefixStatColumns := 32
 	for _, minmaxLength := range cacheTagLength {
+		if minmaxLength[1] == 32 {
+			prefixStatColumns = 33
+		}
 		if minmaxLength[0] < minLength {
 			minLength = minmaxLength[0]
 		}
@@ -1387,8 +1394,9 @@ func NewUnifiedCacheWithIndexConfig(size uint, way uint, routingTable *routingta
 		RoutingTable:                      *routingTable,
 		DebugMode:                         debugMode,
 		directIndexSize:                   directIndexSize,
+		prefixStatColumns:                 prefixStatColumns,
 		minCacheIndex:                     uint8(minLength),
-		exclusiveRejectedSeenMissNetworks: [32]map[uint32]struct{}{},
+		exclusiveRejectedSeenMissNetworks: [33]map[uint32]struct{}{},
 	}
 
 }
