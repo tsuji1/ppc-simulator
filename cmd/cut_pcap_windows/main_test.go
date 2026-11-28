@@ -45,7 +45,7 @@ func TestCutWindows(t *testing.T) {
 	ts := []int64{base, base + 5e8, base + 1e9, base + 5e9, base + 99e8, base + 10e9, base + 105e8, base + 25e9, base + 26e9}
 	bufs := []*bytes.Buffer{{}, {}}
 	windows := []*window{
-		{startNs: base, endNs: base + 1e9},          // [0s,1s) → 0, 1
+		{startNs: base, endNs: base + 1e9},         // [0s,1s) → 0, 1
 		{startNs: base + 99e8, endNs: base + 11e9}, // [9.9s,11s) → 4, 5, 6
 	}
 	for i := range windows {
