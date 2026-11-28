@@ -2,15 +2,15 @@
 # CAIDA 100G の 1 時間 trace（potato NAS の gz 3 本）から、複数の 10 秒窓を切り出す。
 # gz は 1 本 580〜820 GB あり NAS から約 107 MB/s でしか読めないので、1 本につき 1 回だけ展開して全部の窓を書く。
 #
-# 使い方: cut_caida100g_windows.sh OUT_DIR [OFFSETS] [DUR]
-#   OUT_DIR  出力先（researchctl run では "$RESEARCHCTL_OUT/caida100g" を渡す）
+# 使い方: cut_caida100g_windows.sh [OUT_DIR] [OFFSETS] [DUR]
+#   OUT_DIR  出力先（省略または空で "$RESEARCHCTL_OUT/caida100g"。run の work/ に残す）
 #   OFFSETS  13:00:00 UTC からの窓の開始（既定 0m,10m,20m,30m,40m,50m）
 #   DUR      窓の長さ（既定 10s）
 # 出力: OUT_DIR/<trace>.t<秒>s.pcap、<trace>.windows.tsv（窓ごとの packet 数）、SHA256SUMS、capinfos.tsv
 # 先頭の窓（t0s）は 2026-10-12 に切り出した *.first10s.pcap と同じになるはずなので、sha256 を比べて check.txt に書く。
 set -euo pipefail
 
-out_dir=$1
+out_dir=${1:-${RESEARCHCTL_OUT:?OUT_DIR か RESEARCHCTL_OUT が要る}/caida100g}
 offsets=${2:-0m,10m,20m,30m,40m,50m}
 dur=${3:-10s}
 src=${CAIDA_SRC:-/mnt/potato_nas_readonly/network-trace/caida}
