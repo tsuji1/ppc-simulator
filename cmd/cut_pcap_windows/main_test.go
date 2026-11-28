@@ -51,21 +51,30 @@ func TestCutWindows(t *testing.T) {
 	for i := range windows {
 		windows[i].w = bufio.NewWriter(bufs[i])
 	}
-	read, err := cut(bytes.NewReader(makePcap(ts)), windows, func(hdr []byte) error {
+	var doneOrder []int64
+	res, err := cut(bytes.NewReader(makePcap(ts)), windows, func(hdr []byte) error {
 		for _, w := range windows {
 			w.w.Write(hdr)
 		}
 		return nil
+	}, func(w *window) error {
+		doneOrder = append(doneOrder, w.startNs)
+		return w.w.Flush()
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if read != 8 {
-		t.Errorf("read=%d、最後の窓の終わりを越えた最初の packet（8 個目）で止まるはず", read)
+	if res.read != 8 || res.truncated {
+		t.Errorf("read=%d truncated=%v、最後の窓の終わりを越えた最初の packet（8 個目）で止まるはず", res.read, res.truncated)
+	}
+	if len(doneOrder) != 2 || doneOrder[0] != base || doneOrder[1] != base+99e8 {
+		t.Errorf("onDone の順: %v", doneOrder)
 	}
 	want := [][]byte{{0, 1}, {4, 5, 6}}
 	for i, w := range windows {
-		w.w.Flush()
+		if !w.done {
+			t.Errorf("窓 %d が done でない", i)
+		}
 		got := payloads(t, bufs[i].Bytes())
 		if !bytes.Equal(got, want[i]) {
 			t.Errorf("窓 %d: got %v want %v", i, got, want[i])
@@ -76,6 +85,50 @@ func TestCutWindows(t *testing.T) {
 	}
 	if windows[1].firstNs != base+99e8 || windows[1].lastNs != base+105e8 {
 		t.Errorf("窓 1 の first/last: %d %d", windows[1].firstNs, windows[1].lastNs)
+	}
+}
+
+// gz が途中で切れていたとき（packet の途中で入力が尽きる）、終わった窓だけ done になり、エラーにはしない。
+func TestCutTruncatedInput(t *testing.T) {
+	base := int64(1_000_000_000) * 1000
+	// 0s, 1.5s, 2.5s, 3.5s の 4 packet。最後の packet の中身を切り落とす
+	data := makePcap([]int64{base, base + 15e8, base + 25e8, base + 35e8})
+	data = data[:len(data)-1]
+	bufs := []*bytes.Buffer{{}, {}}
+	windows := []*window{
+		{startNs: base, endNs: base + 1e9},       // 1.5s の packet で終わる → done
+		{startNs: base + 2e9, endNs: base + 5e9}, // 終わる前に入力が切れる → done にならない
+	}
+	for i := range windows {
+		windows[i].w = bufio.NewWriter(bufs[i])
+	}
+	var done int
+	res, err := cut(bytes.NewReader(data), windows, func(hdr []byte) error { return nil }, func(w *window) error {
+		done++
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("切れた入力でエラーにしない: %v", err)
+	}
+	if !res.truncated || res.read != 3 || res.lastTsNs != base+25e8 {
+		t.Errorf("res=%+v", res)
+	}
+	if !windows[0].done || windows[1].done || done != 1 {
+		t.Errorf("done: %v %v (onDone %d 回)", windows[0].done, windows[1].done, done)
+	}
+	if windows[1].written != 1 {
+		t.Errorf("窓 1 の written=%d", windows[1].written)
+	}
+}
+
+// 窓の終わりより前で入力が普通に終わった（EOF）ときは truncated にしない。
+func TestCutCleanEOF(t *testing.T) {
+	base := int64(1_000_000_000) * 1000
+	windows := []*window{{startNs: base, endNs: base + 10e9, w: bufio.NewWriter(&bytes.Buffer{})}}
+	res, err := cut(bytes.NewReader(makePcap([]int64{base, base + 1e9})), windows,
+		func([]byte) error { return nil }, func(*window) error { return nil })
+	if err != nil || res.truncated || res.read != 2 || windows[0].done {
+		t.Errorf("res=%+v err=%v done=%v", res, err, windows[0].done)
 	}
 }
 
