@@ -1,0 +1,57 @@
+# #159: FlowBench の -fd を変えた trace（1 rule あたりの flow 数を減らし、/24 の rule も使われるようにしたもの）で、
+# #152 の総 entry 数の掃引（final_entry_tag_1_32_8way.toml）と同じ構成の MPLC・VPLC を回す。実 trace は回さない。
+# -rd は 0.70 1 のまま。-fd は 0.7 1・1 10（/24 の packet share が WIDE に近い 9〜10%）と 0.5 1（/24 が 72%）。
+# 条件は research-routing-table-cache の scripts/flowbench_fd_stats.sh（run 20261128-130048-1320d4）で選んだ。
+# banana で実行する: researchctl run ~/yuzugon/worktrees/osada-issue159/scripts/experiments/final_entry_flowbench_fd_8way.toml
+name = "final-entry-flowbench-fd-8way"
+issue = 159
+note = "#159 FlowBench の -fd（0.7 1・1 10・0.5 1、seed 1〜3）で #152 と同じ総 entry 数 256〜64K の掃引（8-way、VPLC /1〜/32、ideal-entry）"
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue159"
+inputs = [
+  "scripts/experiments/no_real_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/final_entry_flowbench_fd_8way"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+WAY = "8"
+TAG_LENGTH = "1-32"
+IDEAL_TYPE = "50"
+
+[[steps]]
+name = "sweep-fd0.7-1"
+argv = [
+  "env", "FB_FD=0.7 1",
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/no_real_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_flowbench_fd_8way/fd0.7-1",
+  "8",
+]
+
+[[steps]]
+name = "sweep-fd1-10"
+argv = [
+  "env", "FB_FD=1 10",
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/no_real_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_flowbench_fd_8way/fd1-10",
+  "8",
+]
+
+[[steps]]
+name = "sweep-fd0.5-1"
+argv = [
+  "env", "FB_FD=0.5 1",
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/no_real_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_flowbench_fd_8way/fd0.5-1",
+  "8",
+]

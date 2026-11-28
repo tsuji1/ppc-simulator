@@ -72,7 +72,8 @@ mkdir -p "$tmp/bin"
 
 # 実 trace と FlowBench の trace を (label, trace, rule) の一覧にまとめる
 jobs_file=$out_dir/traces/list.tsv
-grep -v '^#' "$trace_list" | awk -F'\t' 'NF >= 3' > "$jobs_file"
+# 実 trace を回さないときは、コメントだけの一覧を渡す（grep が 0 行で 1 を返しても止めない）
+{ grep -v '^#' "$trace_list" || true; } | awk -F'\t' 'NF >= 3' > "$jobs_file"
 
 if [[ -n $fb_seeds ]]; then
   (cd "$flowbench_dir/source" && g++ -std=c++17 -O2 trace_generator.cpp -o "$tmp/flowbench-trace")
