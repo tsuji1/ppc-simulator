@@ -1,0 +1,41 @@
+# #161: 最終比較（final_entry_tag_1_32_8way.toml と同じ条件）を、CAIDA 100G 3 本の 13:00 から 0〜50 分（10 分おき）の 10 秒窓で回す。
+# 窓ごとの MPC（/24+/18）と VPC のミス率の差が時刻でどう変わるかを見る。
+# 条件: 8-way、TAG_LENGTH=1-32、IDEAL_TYPE=50、先頭 10M packet、総 entry 数 4K〜64K。FlowBench は回さない（FB_SEEDS を空）。
+# +00m の窓は final_entry_tag_1_32_8way の CAIDA（first10s）と同じ pcap なので、同じ値になるはず（集計で確かめる）。
+# banana で実行する: researchctl run ~/yuzugon/osada-ppc-simulator/scripts/experiments/caida_windows_8way.toml
+name = "caida-windows-8way"
+issue = 161
+note = "#161 CAIDA 100G 3 本 × 6 窓（13:00 から 10 分おきの 10 秒）で最終比較（8-way、/1〜/32、4K〜64K）"
+cwd = "/home/tsuji/yuzugon/osada-ppc-simulator"
+inputs = [
+  "scripts/experiments/caida_windows_traces.tsv",
+  "/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule",
+  "/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule",
+  "/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/SHA256SUMS",
+]
+outputs = ["out/caida_windows_8way"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+WAY = "8"
+TAG_LENGTH = "1-32"
+IDEAL_TYPE = "50"
+FB_SEEDS = ""
+CAPACITIES = "4096 8192 16384 32768 65536"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cache/", "./cmd/windowed_hitrate/"]
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/caida_windows_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/caida_windows_8way",
+  "6",
+]

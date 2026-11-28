@@ -1,0 +1,20 @@
+# #161 CAIDA 100G 3 本の 13:00 からの 0〜50 分（10 分おき）の 10 秒窓（label、trace、rule）。切り出しは run 20261128-135901-5fb6b0（banana）
+# 先頭 10M packet だけを使う（run_final_entry_sweep.sh の PACKETS の既定）。rule は final_entry_sweep_traces.tsv の CAIDA と同じ
+CAIDA 25-03 A +00m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dira.anon.t0s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B +00m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dirb.anon.t0s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A +00m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20251120-130000.dira.anon.t0s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule
+CAIDA 25-03 A +10m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dira.anon.t600s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B +10m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dirb.anon.t600s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A +10m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20251120-130000.dira.anon.t600s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule
+CAIDA 25-03 A +20m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dira.anon.t1200s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B +20m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dirb.anon.t1200s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A +20m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20251120-130000.dira.anon.t1200s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule
+CAIDA 25-03 A +30m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dira.anon.t1800s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B +30m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dirb.anon.t1800s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A +30m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20251120-130000.dira.anon.t1800s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule
+CAIDA 25-03 A +40m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dira.anon.t2400s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B +40m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dirb.anon.t2400s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A +40m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20251120-130000.dira.anon.t2400s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule
+CAIDA 25-03 A +50m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dira.anon.t3000s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-03 B +50m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20250320-130000.dirb.anon.t3000s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20250320.1400.unique.rule
+CAIDA 25-11 A +50m	/home/tsuji/yuzugon/research-runs/20261128-135901-5fb6b0/work/caida100g/20251120-130000.dira.anon.t3000s.pcap	/home/tsuji/yuzugon/rules/route-views.isc.rib.20251120.1400.unique.rule
