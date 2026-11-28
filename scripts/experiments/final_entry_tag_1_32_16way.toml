@@ -1,0 +1,39 @@
+# #152: #124 の総 entry 数の掃引（16-way は final_entry_sweep_16way.toml）を、VPLC に入れる entry の prefix 長を /1〜/32 にして回し直す（16-way）。
+# trace・総 entry 数・packet 数・FlowBench の seed・MPLC（/24+/18）・VPLC direct の L（8..24）は #124 と同じ。
+# VPLC ideal は ideal-entry（CacheIndexType=50、入れる entry の長さ 1..32 で index）。
+# MPLC は -cache-tag-length の影響を受けないので、#124 の掃引と同じ値になるはず（集計で確かめる）。
+# banana で実行する: researchctl run ~/yuzugon/worktrees/osada-issue152/scripts/experiments/final_entry_tag_1_32_16way.toml
+name = "final-entry-tag-1-32-16way"
+issue = 152
+note = "#152 VPLC の格納 prefix 長を /1〜/32 にして #124 の総 entry 数 256〜64K の掃引をやり直す（16-way、ideal は ideal-entry）"
+# 事前に git worktree add -b issue152-tag-1-32 ~/yuzugon/worktrees/osada-issue152 origin-github/codex/vplc-tag-length-sweep と
+# git submodule update --init third_party/fib-flowbench をしておく
+cwd = "/home/tsuji/yuzugon/worktrees/osada-issue152"
+inputs = [
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+]
+outputs = ["out/final_entry_tag_1_32_16way"]
+
+[env]
+GOTOOLCHAIN = "go1.26.1"
+GO = "/usr/local/go/bin/go"
+WAY = "16"
+TAG_LENGTH = "1-32"
+IDEAL_TYPE = "50"
+
+[[steps]]
+name = "test"
+kind = "test"
+argv = ["/usr/local/go/bin/go", "test", "./cache/", "./cmd/windowed_hitrate/"]
+
+[[steps]]
+name = "sweep"
+argv = [
+  "bash", "scripts/run_final_entry_sweep.sh",
+  "scripts/experiments/final_entry_sweep_traces.tsv",
+  "/home/tsuji/yuzugon/tools/Flow-Bench",
+  "/home/tsuji/yuzugon/rules/rib.20260327.0600.unique.rule",
+  "out/final_entry_tag_1_32_16way",
+  "8",
+]
