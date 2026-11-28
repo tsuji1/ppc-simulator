@@ -45,7 +45,12 @@ def main():
         elif pol == "static-switch":
             tab[k]["train1M"] = (miss, f"/{p['L']}")
         elif pol == "shadow":
-            kind = "rover" if "rover" in p.get("cand", "") else "traffic"
+            if "rover" in p.get("cand", ""):
+                kind = "rover"
+            elif p.get("sample") == "traffic":
+                kind = "traffic"
+            else:
+                kind = "ideal"  # 全候補・全 set の shadow（variable_index_crc_ideal_shadow.sh）
             col = f"{kind}_ep{int(p['epoch'])//1000}k_th{p['th']}"
             tab[k][col] = (miss, f"→/{r['final_l']}、{r['switches']}回")
     for k, v in best.items():
